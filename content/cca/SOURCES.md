@@ -42,15 +42,19 @@ organized around the exact five official domains this curriculum targets, plus a
 `practice_exams.zip` of progressively harder practice exams (emailed to Jeremy,
 2026-05-23).
 
-- **License status:** the articles are published on Medium (all-rights-reserved
-  by default). They are therefore **reference / "Further reading" links** in the
-  courses **until Rick grants explicit written reuse** for adapting the prose or
-  ingesting the practice items. Rick is a teammate and offered them for team
-  use, so a reuse grant is a short conversation — **[reuse grant — Jeremy +
-  Rick decision]**. Linking is always fine and is what we do now.
-- **Do NOT** ingest `practice_exams.zip` items into any course bank until that
-  grant + a check that the items are Rick's original authorship (not
-  reverse-engineered official questions) are both confirmed.
+- **License status (articles):** the Medium articles are all-rights-reserved by
+  default, so they stay **reference / "Further reading" links** in the courses.
+  Linking is always fine and is what we do now. Adapting the *article prose* into
+  lesson content would still want Rick's explicit nod for prose specifically.
+- **`practice_exams.zip` — reuse GRANTED.** Rick approved reuse of his practice
+  exams for the curriculum (Jeremy confirmed, 2026-07-21). Ingest path once the
+  file is on the box: convert each exam to the bank shape (`{id, domain,
+  domainName, domainKey, text, options[], answerIndex, rationale, source}`), save
+  as `content/cca/banks/rick-practice-*.json` with `source` crediting Rick
+  Hightower, add it as a Course C section / mock pool in `seed_cca_courses.py`,
+  and re-run the importer. **Still required before ingest:** a quick originality
+  check that the items are Rick's own authored questions, not reverse-engineered
+  official exam questions (the one hard guardrail that survives the grant).
 
 Per-domain "Further reading" links (Towards AI / Medium — link only):
 
