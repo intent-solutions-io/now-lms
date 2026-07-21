@@ -10,7 +10,7 @@ description, level, and sections. The prep courses you're looking for are:
 - **Getting Started on Intent Solutions Learn** — you're in it now.
 - **Claude Foundations (Associate onramp)**.
 - **Building with Claude (Developer)**.
-- **Claude Certified Architect — Foundations (CCA-F) prep**.
+- **Claude Certified Architect (CCA) — Foundations (CCA-F) prep**.
 
 ## Enroll
 
