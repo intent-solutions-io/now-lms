@@ -1,0 +1,662 @@
+{
+ "source": "Intent Solutions — original practice questions (41), authored in-house from the official CCDV-F Exam Guide blueprint (Anthropic, July 2026). No question is reproduced from Anthropic's exam, its published samples, or any third-party question bank.",
+ "note": "Answer-letter labels are shuffled per sitting; answerIndex refers to the option's POSITION in the options array below, 0-based.",
+ "questions": [
+  {
+   "id": "D1",
+   "domain": 1,
+   "domainName": "Agents and Workflows",
+   "domainKey": "dev-agents",
+   "text": "A team needs to route incoming support tickets into one of five fixed categories and draft a canned reply. The steps are always the same regardless of ticket content, and the categories never change. Which architecture is the best fit?",
+   "options": [
+    "A single Claude call in a fixed, code-orchestrated pipeline (workflow) — the task is well-defined and always follows the same steps.",
+    "A fully autonomous multi-tool agent, since agents produce higher-quality output regardless of task complexity.",
+    "A manager/supervisor architecture with several subagents so classification and reply generation happen in parallel.",
+    "A custom agent loop with unrestricted tool access, since more tools always improve reliability."
+   ],
+   "answerIndex": 0,
+   "rationale": "A fixed, well-specified, low-complexity task fits a code-orchestrated workflow, not an agent. Agent tiers are justified when a task is open-ended or hard to fully specify in advance. Options B, C, and D add cost, latency, and complexity without addressing a task that has no need for open-ended exploration.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D2",
+   "domain": 1,
+   "domainName": "Agents and Workflows",
+   "domainKey": "dev-agents",
+   "text": "A code-review agent must check a large pull request against three independent, deep-dive concerns: security, style, and test coverage. Each concern requires its own investigation of the codebase. Which architecture best fits?",
+   "options": [
+    "One large single-context agent that inspects everything sequentially in one long conversation.",
+    "A supervisor agent that dispatches three subagents, one per concern, each running in an isolated context, then synthesizes their findings.",
+    "Three independent cron jobs that call the Messages API directly with no coordination between them.",
+    "A single agent that keeps expanding its context to fit the entire PR history before responding."
+   ],
+   "answerIndex": 1,
+   "rationale": "A manager/supervisor pattern with subagents gives each concern its own isolated context, preventing cross-contamination and enabling parallel investigation, then rolls the findings up through synthesis. A single agent risks context bloat and blended reasoning across unrelated concerns; uncoordinated jobs (C) never synthesize a unified verdict; D does not address separation of concerns.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D3",
+   "domain": 1,
+   "domainName": "Agents and Workflows",
+   "domainKey": "dev-agents",
+   "text": "A developer wants to build a coding agent with custom file-editing tools and full control over the agent loop, and wants the option to self-host without depending on Anthropic-hosted infrastructure. Which approach fits best?",
+   "options": [
+    "Use the Claude Agent SDK, which provides a harness for the tool-use loop, permissions, and built-in tools, and can be run self-hosted since it is a client-side framework rather than a hosted service.",
+    "Use only the raw Messages API with no SDK, since the Agent SDK can only run inside Anthropic-hosted infrastructure.",
+    "Use claude.ai's web interface and manually copy chat transcripts into the codebase.",
+    "Submit the entire coding task as a single asynchronous Batches API job."
+   ],
+   "answerIndex": 0,
+   "rationale": "The Claude Agent SDK is built for constructing custom agent loops/harnesses and runs under the developer's own infrastructure, not only as an Anthropic-hosted service. Discarding the SDK (B) forces reimplementing the tool-use loop from scratch; C and D do not fit an interactive, tool-using coding agent.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D4",
+   "domain": 1,
+   "domainName": "Agents and Workflows",
+   "domainKey": "dev-agents",
+   "text": "A team building an autonomous coding agent wants to guarantee that no tool call ever executes `git push --force` against the main branch, even if the model decides to attempt it. Where should this control be enforced?",
+   "options": [
+    "In the system prompt, instructing the model never to force-push.",
+    "In a pre-tool-execution hook that inspects the proposed bash command and blocks or denies it before it reaches the shell, regardless of what the model decided.",
+    "In a log review performed manually the following morning.",
+    "By lowering the model's temperature to reduce unpredictable behavior."
+   ],
+   "answerIndex": 1,
+   "rationale": "Hooks can deterministically intercept and block a tool call before execution, making them an enforceable control. A system-prompt instruction is advisory and can still be bypassed by the model; a next-day log review is reactive, not preventive; temperature has no bearing on whether a specific destructive command is allowed to run.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D5",
+   "domain": 1,
+   "domainName": "Agents and Workflows",
+   "domainKey": "dev-agents",
+   "text": "A long-running research agent accumulates dozens of large raw tool outputs (full web page dumps) over a session, and the team notices response quality degrading as the conversation grows. What is the most effective mitigation?",
+   "options": [
+    "Increase max_tokens on every subsequent request so the model has more room to respond.",
+    "Prune or summarize older large tool outputs out of the context, keeping only the distilled findings, to prevent context bloat.",
+    "Switch to a model with a smaller context window to force conciseness.",
+    "Disable tool use entirely so the agent relies only on its training data."
+   ],
+   "answerIndex": 1,
+   "rationale": "Pruning or summarizing stale, oversized tool output is the core context-engineering technique for preventing context drift and bloat in long agent sessions. Increasing max_tokens does not address the cause of degradation; a smaller context window reduces capability without fixing the underlying bloat; disabling tools removes needed functionality entirely.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D6",
+   "domain": 1,
+   "domainName": "Agents and Workflows",
+   "domainKey": "dev-agents",
+   "text": "A team wants a graph-based orchestration layer with explicit state machines and conditional branching between several LLM-calling nodes, while still using Claude as the underlying model. Which statement is most accurate?",
+   "options": [
+    "Frameworks like LangGraph are unnecessary because the Claude Agent SDK is the only way to orchestrate multi-step LLM logic.",
+    "A framework such as LangGraph can orchestrate explicit graph-based control flow around Claude API calls, complementing rather than replacing the model provider.",
+    "PydanticAI and LangGraph require switching away from Claude to a different model provider.",
+    "Graph-based orchestration frameworks cannot be combined with tool use."
+   ],
+   "answerIndex": 1,
+   "rationale": "Agent frameworks like LangGraph, PydanticAI, and Strands provide orchestration patterns (graphs, structured agent state) around whichever model API is used, including Claude; they complement rather than replace the Claude API or Agent SDK. A overstates the Agent SDK's exclusivity, C is factually false, and D is false since these frameworks routinely coordinate tool-using nodes.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D7",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "Business stakeholders say: \"We want customers to get an instant answer to shipping questions, and it must never expose other customers' order data.\" Which pairing correctly separates the functional requirement from the infrastructure/non-functional requirement?",
+   "options": [
+    "Functional: response must be instant; non-functional: never expose other customers' data.",
+    "Functional: answer shipping questions correctly for the requesting customer; non-functional/infrastructure: low-latency response and strict data isolation/access control between customer accounts.",
+    "Functional: use the Claude API; infrastructure: use TypeScript.",
+    "Functional and infrastructure requirements are the same thing in this context and don't need to be separated."
+   ],
+   "answerIndex": 1,
+   "rationale": "Functional requirements describe what the system must do (correctly answer the requesting customer's shipping question); non-functional/infrastructure requirements describe constraints like latency and access control. Option A swaps the definitions; C conflates technology choices with requirements; D discards a distinction that matters for design and test planning.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D8",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A team is building a Claude-powered internal tool. During which SDLC phase should they define acceptance criteria for validating the model's outputs (e.g., schema conformance, hallucination-rate thresholds)?",
+   "options": [
+    "The requirements/design phase, before implementation begins.",
+    "Only during production incident response, after users report bad outputs.",
+    "During the maintenance phase, roughly a year after launch.",
+    "Acceptance criteria are unnecessary for LLM-powered features since output is inherently unpredictable."
+   ],
+   "answerIndex": 0,
+   "rationale": "Defining acceptance criteria during requirements/design lets testing and evaluation be built in from the start, standard SDLC practice. Waiting for incident response (B) or maintenance (C) means the feature ships untested; D has it backwards — unpredictability makes explicit criteria more necessary, not less.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D9",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A developer is building a chat UI where a user uploads a photo of a whiteboard and asks Claude to transcribe and reformat it as a numbered list; responses can run long. Which combination of API features fits this use case?",
+   "options": [
+    "Send the image as vision input in the message, and stream the response so the UI renders tokens incrementally instead of waiting for the full completion.",
+    "Use the Batches API so the image is processed within a 24-hour window.",
+    "Use extended/adaptive thinking exclusively, and skip vision input by describing the whiteboard in text instead.",
+    "Cache the uploaded image content with prompt caching since caching benefits any image sent to the API."
+   ],
+   "answerIndex": 0,
+   "rationale": "Vision input handles the image directly, and streaming is the right fit for a live, potentially long-running chat response so the UI doesn't wait or time out. Batches (B) is for latency-tolerant workloads, not a live UI; describing the image in text (C) discards vision capability; caching (D) is for reused static content, not a one-off uploaded image.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D10",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "An application sends the same 20,000-token system prompt and reference document on every request, with only the final user question changing each time. What is the most effective way to reduce cost and latency?",
+   "options": [
+    "Remove the system prompt from every request so fewer tokens are billed.",
+    "Mark the static system prompt and reference document as cached content (a cache breakpoint) so repeated requests reuse the cached prefix instead of reprocessing it from scratch.",
+    "Move the static content to the Batches API, since batching automatically caches shared content.",
+    "Send the static content as a separate warm-up API call before each real request."
+   ],
+   "answerIndex": 1,
+   "rationale": "Prompt caching / cache checkpointing exists exactly for a stable prefix reused across many requests, cutting both reprocessing cost and latency on cache hits. Removing the system prompt (A) breaks functionality; batching (C) is a different, unrelated feature; a separate warm-up call (D) is not how caching works.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D11",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A team must re-classify an archive of 250,000 product reviews to populate a analytics dashboard. The work is not time-sensitive and results are acceptable any time within the next day. Cost is the dominant concern. Which approach best fits?",
+   "options": [
+    "Submit the work through the Message Batches API, which handles large asynchronous jobs within a 24-hour window at reduced cost.",
+    "Fire concurrent real-time requests and scale up the concurrency until throughput is acceptable.",
+    "Process the archive in real time but during off-peak hours to reduce contention.",
+    "Split the archive across several API keys to raise the effective rate limit."
+   ],
+   "answerIndex": 0,
+   "rationale": "A large, non-urgent, latency-tolerant workload is precisely what batch processing exists for, and it delivers the cost reduction the team is optimizing for. High concurrency on the real-time endpoint pays full price and invites rate limiting. Shifting to off-peak hours does not change per-token cost. Spreading load across multiple keys to evade limits is an operational workaround, not a cost strategy, and misuses the account structure.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D12",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A Node.js backend calls the Claude API for every incoming HTTP request. A developer writes the route handler using `.then()` chains but forgets to `await` or return the promise, causing responses to occasionally be sent before the Claude call resolves. What is the root cause and correct fix?",
+   "options": [
+    "The Claude API is inherently non-deterministic, so this is expected; add retries.",
+    "The route handler doesn't wait for the asynchronous call to complete before responding; fix by properly awaiting or returning the promise so the response is sent only after the API call resolves.",
+    "Switch to a synchronous SDK call, since async calls to the API are not reliable.",
+    "Increase max_tokens so the request finishes faster."
+   ],
+   "answerIndex": 1,
+   "rationale": "This is a classic unhandled-promise bug in async/await code, not a model or token issue. Retries (A) don't fix a logic error; synchronous calls (C) aren't how the SDK works reliably at scale; max_tokens (D) has no bearing on the missing await.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D13",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A developer used Claude Code to generate a 400-line refactor spanning 12 files. Before merging, what is the most appropriate code review practice?",
+   "options": [
+    "Merge directly, since AI-generated code doesn't need human review.",
+    "Review the diff like any other pull request — check logic, test coverage, and side effects — and prefer a reviewable commit history over one giant commit.",
+    "Skip review because Claude Code always produces correct code.",
+    "Only check that the code compiles; correctness review is unnecessary for generated code."
+   ],
+   "answerIndex": 1,
+   "rationale": "Standard SDLC and code-review discipline applies regardless of code origin: AI-generated code still needs human review, adequate test coverage, and a sane commit structure. Options A, C, and D all skip verification steps that catch regressions before they ship.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D14",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A team's tool-calling integration passes Claude's JSON tool-call output directly into a downstream REST API call without validation. In production, occasional malformed JSON crashes the request handler. What is the best refactor?",
+   "options": [
+    "Remove tool use entirely and have Claude output free-form text instead.",
+    "Wrap the JSON parsing and downstream call in proper error handling, validate the parsed object against an expected schema, and return a graceful error/retry path on failure.",
+    "Increase the model's temperature so it produces more consistent JSON.",
+    "Assume tool-call JSON is always well-formed since it's generated by the model, and only fix it if the crash recurs."
+   ],
+   "answerIndex": 1,
+   "rationale": "Defensive parsing, schema validation, and error handling around structured model output is standard engineering practice and reflects appropriate skepticism toward confident output. Dropping tool use (A) regresses functionality; raising temperature (C) doesn't guarantee valid JSON; ignoring a known failure mode (D) leaves the crash in production.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D15",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A company wants engineers to use Claude conversationally for local development and debugging with full file and terminal access, while a separate customer-facing product needs a scalable, stateless integration embedded in their web app. Which pairing of surfaces is correct?",
+   "options": [
+    "Claude Code for the engineers' local dev workflow; the Claude API (via SDK) for the customer-facing web app.",
+    "claude.ai for both use cases, since it covers every deployment surface.",
+    "Claude Desktop for the customer-facing web app, since it has the most polished UI.",
+    "The Claude API for the engineers' local dev workflow, since it's the only surface with file access."
+   ],
+   "answerIndex": 0,
+   "rationale": "Claude Code is designed for local, terminal- and file-integrated developer workflows, while the Messages API is the right integration point for embedding Claude into a scalable, customer-facing product. B, C, and D each mismatch a surface to a use case it wasn't designed for.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D16",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A developer wants Claude's response to reliably populate a downstream form with fields like customer_name, order_id, and issue_category (one of a fixed set of values). What is the most robust design choice?",
+   "options": [
+    "Ask Claude in plain English to \"please format your answer as JSON\" and parse the text response with a regex.",
+    "Define a structured output schema (typed fields, an enum for issue_category) so the response shape is constrained and validated, and still validate the parsed result defensively downstream.",
+    "Have Claude write directly to the production database via an unrestricted tool call, trusting the model's judgment on field names.",
+    "Avoid structured formats entirely and have a human retype the answer."
+   ],
+   "answerIndex": 1,
+   "rationale": "Schema-constrained structured output combined with defensive downstream validation is the reliable pattern for populating typed fields. Free text plus regex (A) is fragile; an unrestricted direct-write tool (C) has no validation and grants excessive authority; manual retyping (D) isn't scalable.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D17",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A multi-tenant SaaS product uses one long-lived conversation per customer account that accumulates months of history, including unrelated resolved tickets. Support agents notice Claude referencing stale, resolved issues when answering new questions. What's the best fix?",
+   "options": [
+    "Never start new sessions; always append to the single long-lived conversation so nothing is lost.",
+    "Practice session hygiene: scope conversations to a single ticket/topic, start fresh sessions for new issues, and pull in relevant prior context explicitly rather than accumulating everything indefinitely.",
+    "Increase the model's context window setting to fit more history.",
+    "Disable conversation history entirely so Claude never sees any prior context."
+   ],
+   "answerIndex": 1,
+   "rationale": "Session hygiene, bounding conversation scope and selectively retrieving relevant history, prevents stale, irrelevant context from degrading responses. Option A is the cause of the described problem; context window size (C) is fixed per model and doesn't fix stale content anyway; disabling history entirely (D) removes context that's actually useful.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D18",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A team's production agent silently changed behavior after Anthropic released a new model version, because their deployment config referenced a model alias that always points to the latest release. What configuration practice would have prevented this?",
+   "options": [
+    "Pin the exact model version/ID used in production config rather than an always-latest alias, and roll forward to new versions deliberately after testing.",
+    "Avoid specifying a model at all so the API automatically picks the best one.",
+    "Store the model choice only in a CLAUDE.md file, since that's the only place model versions can be configured.",
+    "Re-deploy the application every time a new model releases, without testing, to always stay current."
+   ],
+   "answerIndex": 0,
+   "rationale": "Model version pinning prevents unplanned behavior drift from provider-side upgrades, with deliberate, tested rollouts to new versions. B isn't how the API works and forfeits control; C misapplies CLAUDE.md's purpose; D skips the testing that pinning is meant to protect.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D19",
+   "domain": 2,
+   "domainName": "Applications and Integration",
+   "domainKey": "dev-integration",
+   "text": "A Claude Code project needs certain bash commands auto-approved for CI, while interactive developers should still be prompted for risky commands locally. Where should this be configured?",
+   "options": [
+    "In a settings.json permissions configuration, distinguishing project-level defaults from local/user-level overrides so CI and local sessions can behave differently.",
+    "In the CLAUDE.md file, since it governs all runtime permissions.",
+    "Nowhere — Claude Code permissions cannot differ between environments.",
+    "By hardcoding the approval logic into a custom hook that ignores settings.json entirely."
+   ],
+   "answerIndex": 0,
+   "rationale": "settings.json, with project versus local/user scoping, is the mechanism for configuring permissions, including CI-friendly presets versus interactive prompts. CLAUDE.md (B) is for instructions/context, not permission enforcement; C is false; D unnecessarily bypasses the standard mechanism.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D20",
+   "domain": 3,
+   "domainName": "Claude Code",
+   "domainKey": "dev-claudecode",
+   "text": "A monorepo has a root CLAUDE.md with general conventions and a nested apps/billing/CLAUDE.md with billing-specific rules. When Claude Code operates on a file inside apps/billing/, how are these two files used?",
+   "options": [
+    "Only the root CLAUDE.md applies; nested CLAUDE.md files are ignored.",
+    "Only the nested CLAUDE.md applies; the root file is ignored once a more specific file exists.",
+    "Both are loaded, with the nested, more specific CLAUDE.md layering additional context on top of the root file, per the CLAUDE.md hierarchy.",
+    "CLAUDE.md files are merged alphabetically by filename rather than by directory proximity."
+   ],
+   "answerIndex": 2,
+   "rationale": "Claude Code's CLAUDE.md hierarchy loads root-level context plus nested, directory-specific files, layering the more specific guidance for the working area. A and B each discard a valid source of context; D describes a merge mechanism that isn't how the hierarchy works.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D21",
+   "domain": 3,
+   "domainName": "Claude Code",
+   "domainKey": "dev-claudecode",
+   "text": "A team wants to run Claude Code non-interactively inside a CI pipeline to auto-generate a changelog from git history, with no terminal UI and machine-parseable output. Which capability should they use?",
+   "options": [
+    "Claude Code's headless/print mode, a scriptable, non-interactive invocation with structured/streaming output, invoked from the CI job.",
+    "The interactive REPL, since headless execution isn't supported.",
+    "A custom slash command that can only run inside an interactive terminal session.",
+    "claude.ai's web chat, triggered manually by an engineer after each CI run."
+   ],
+   "answerIndex": 0,
+   "rationale": "Claude Code supports headless/non-interactive invocation suited for CI and automation, producing streaming or structured output — exactly the blueprint's headless/streaming/auto-mode sub-topic. B and C wrongly assume interactivity is required; D is manual and not automatable inside the pipeline.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D22",
+   "domain": 4,
+   "domainName": "Eval, Testing, and Debugging",
+   "domainKey": "dev-eval",
+   "text": "A production integration starts returning HTTP 429 responses from the Claude API during a traffic spike, while application logs show no change in prompt content or output quality. What is the correct classification and response?",
+   "options": [
+    "This is a model output/quality failure; fix it by rewriting the prompt.",
+    "This is a rate-limiting/infrastructure error at the integration layer, not a model output failure; implement backoff/retry and review request concurrency, not prompt changes.",
+    "This indicates the model is hallucinating; switch to a larger model.",
+    "This is a JSON parsing error caused by malformed tool-call output."
+   ],
+   "answerIndex": 1,
+   "rationale": "HTTP 429 is a rate-limit/transport-layer signal, clearly distinguishable from a model output failure by status code and unchanged log content; the fix is retry/backoff and concurrency management. A, C, and D all misattribute an infrastructure-layer error to the model.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D23",
+   "domain": 4,
+   "domainName": "Eval, Testing, and Debugging",
+   "domainKey": "dev-eval",
+   "text": "Users report a support bot \"gives wrong answers\" intermittently. Logs show: (1) some requests return valid, well-formed JSON describing an outdated refund policy, and (2) other requests throw exceptions before any response reaches the user, due to a field-name mismatch after a recent API client upgrade. How should the team triage these two symptoms?",
+   "options": [
+    "Treat both as the same bug and roll back the model version.",
+    "Treat (1) as a potential model output/content issue (e.g., stale context, needing prompt or retrieval fixes) and (2) as an integration-layer bug (a breaking response-schema change), each requiring a different fix and owner.",
+    "Treat both as integration-layer bugs, since exceptions and wrong content fall in the same failure category.",
+    "Ignore (1) since well-formed JSON always means the answer is correct."
+   ],
+   "answerIndex": 1,
+   "rationale": "Separating the symptoms by layer, wrong-but-well-formed content (a context/prompt issue) versus a hard crash from a client/schema mismatch (an integration bug), enables correct root-causing. A and C conflate distinct failure classes; D wrongly assumes syntactic validity implies factual correctness.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D24",
+   "domain": 5,
+   "domainName": "Model Selection and Optimization",
+   "domainKey": "dev-modelselect",
+   "text": "A developer is surprised that a 3,000-word input document consumes roughly 4,000 tokens rather than 3,000. What best explains this?",
+   "options": [
+    "Tokens roughly correspond to word fragments/subwords rather than whole words, so token counts are typically higher than word counts for English text, and this varies by language and content type.",
+    "The API always overcounts input by a fixed 25% margin as a safety buffer.",
+    "This indicates a bug in the tokenizer that should be reported.",
+    "Tokens and words are always a 1:1 mapping in Claude's tokenizer."
+   ],
+   "answerIndex": 0,
+   "rationale": "Tokenization splits text into subword units, so token counts naturally exceed word counts, roughly 1.3x for typical English text. B and C are fabricated explanations; D is factually incorrect.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D25",
+   "domain": 5,
+   "domainName": "Model Selection and Optimization",
+   "domainKey": "dev-modelselect",
+   "text": "A team runs the identical prompt against Claude twice at default settings and gets two different, both reasonable, outputs. A stakeholder asks whether this is a bug. What's the accurate explanation?",
+   "options": [
+    "Yes, it's a bug — identical prompts must always produce identical output.",
+    "No — LLM outputs are sampled from a probability distribution, so some non-determinism is expected even with identical input, though it can be reduced (not fully eliminated) via parameters like temperature.",
+    "No — this only happens when using tool use or vision, never in plain text generation.",
+    "No — this only happens with extended/adaptive thinking enabled, never in standard responses."
+   ],
+   "answerIndex": 1,
+   "rationale": "Sampling-based generation is inherently probabilistic; lowering temperature reduces but does not guarantee eliminating output variation. A misunderstands how the technology works; C and D incorrectly restrict non-determinism to specific features.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D26",
+   "domain": 5,
+   "domainName": "Model Selection and Optimization",
+   "domainKey": "dev-modelselect",
+   "text": "A developer asks why they should use the official Anthropic SDK instead of hand-rolling raw HTTP calls to the Messages API endpoint. What is the most accurate answer?",
+   "options": [
+    "The SDK is required — raw HTTP calls to the Claude API are not possible.",
+    "The SDK is a convenience wrapper around the same underlying REST API, adding typed request/response objects, retry/error handling, and streaming helpers, but raw HTTP calls work too since it's still REST underneath.",
+    "The SDK uses a completely different, faster protocol than HTTP.",
+    "Using the SDK is mandatory for tool use, but raw HTTP works fine for plain text generation."
+   ],
+   "answerIndex": 1,
+   "rationale": "Official SDKs wrap the REST API for developer convenience while the underlying transport remains directly accessible via HTTP. A and D falsely claim the SDK is mandatory in certain cases; C invents a nonexistent protocol distinction.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D27",
+   "domain": 5,
+   "domainName": "Model Selection and Optimization",
+   "domainKey": "dev-modelselect",
+   "text": "A developer wants to build a live chat UI showing Claude's response as it's generated. They're deciding between opening a persistent WebSocket connection to the Claude API versus using HTTP with incremental event-stream style output. What's correct?",
+   "options": [
+    "The Messages API supports incremental token streaming over a standard HTTP request/response (event-stream style); a persistent WebSocket connection to the Claude API itself is not the mechanism used for this.",
+    "WebSockets are the only way to receive streamed output from Claude.",
+    "Streaming is only available through the Batches API.",
+    "HTTP cannot deliver partial/incremental responses, so streaming always requires a separate protocol."
+   ],
+   "answerIndex": 0,
+   "rationale": "Claude's Messages API streaming delivers incremental output over standard HTTP, not a raw WebSocket handshake to the model API. B, C, and D all misstate the transport mechanism.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D28",
+   "domain": 5,
+   "domainName": "Model Selection and Optimization",
+   "domainKey": "dev-modelselect",
+   "text": "A product has three components: (1) a real-time typeahead suggestion feature needing sub-second responses at huge volume, (2) a complex multi-step contract-analysis feature where accuracy matters far more than speed, and (3) a mid-complexity summarization feature used moderately often. Which model-tier mapping best reflects the intended tradeoffs?",
+   "options": [
+    "Use the largest, most capable model tier everywhere, since quality is always worth the added cost and latency.",
+    "Use the fastest/cheapest tier for (1), the most capable/highest-reasoning tier for (2), and a balanced mid-tier for (3), matching each task's quality/latency/cost profile.",
+    "Use the same mid-tier model for all three, since model choice doesn't meaningfully affect latency or cost.",
+    "Use the most capable tier for (1) and the cheapest tier for (2), since real-time features are always the highest priority."
+   ],
+   "answerIndex": 1,
+   "rationale": "Matching model tier to task requirements, fast/cheap for high-volume low-complexity work, most capable for high-stakes complex reasoning, balanced for moderate use, is the core cost/latency/quality tradeoff. A ignores cost and latency; C denies that real tradeoffs exist; D inverts the mapping by using the weakest model for the highest-stakes task.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D29",
+   "domain": 5,
+   "domainName": "Model Selection and Optimization",
+   "domainKey": "dev-modelselect",
+   "text": "A team is estimating monthly cost for a feature expected to handle 500,000 requests/month, each with roughly 2,000 input tokens and 500 output tokens, and wants to model cost before launch. What is the correct approach?",
+   "options": [
+    "Multiply total requests by a single blended per-request price, since input and output tokens cost the same.",
+    "Model cost separately for input tokens and output tokens (typically priced differently per model), multiply each by expected volume and per-request token counts, sum the two, then reconcile against actual usage after launch.",
+    "Assume cost is negligible since Claude API pricing is flat regardless of volume or token count.",
+    "Only estimate output token cost, since input tokens are provided free of charge."
+   ],
+   "answerIndex": 1,
+   "rationale": "Accurate cost modeling requires separate input/output token pricing and volume estimates, validated against real usage after launch. A, C, and D all misrepresent how Claude API usage is priced.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D30",
+   "domain": 5,
+   "domainName": "Model Selection and Optimization",
+   "domainKey": "dev-modelselect",
+   "text": "A team's monthly Claude API bill is dominated by input token costs from a large, mostly-static system prompt sent on every one of millions of daily requests. Beyond trimming unnecessary content, what caching-related strategy directly reduces this cost?",
+   "options": [
+    "Add a cache breakpoint after the static portion of the prompt so repeated requests hit cached tokens, billed at a reduced rate, instead of full-price input tokens each time.",
+    "Switch to output-only billing, which most providers offer by default.",
+    "Reduce max_tokens on the response, which lowers input token cost proportionally.",
+    "Cache the API responses client-side and stop sending requests to Claude at all."
+   ],
+   "answerIndex": 0,
+   "rationale": "Prompt caching/cache checkpointing is designed specifically to reduce repeated input-token cost for a stable prefix, billed at a reduced rate on cache hits. B is not a real billing model; C confuses output limits with input cost; D isn't caching Claude's work at all, and it breaks functionality for any genuinely new request.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D31",
+   "domain": 6,
+   "domainName": "Prompt and Context Engineering",
+   "domainKey": "dev-promptcontext",
+   "text": "A research agent needs to read and summarize 50 lengthy documents, but the main conversation should stay focused on synthesizing the final report without being flooded by every document's full text. What's the best context-engineering approach?",
+   "options": [
+    "Paste all 50 full documents into the main conversation so nothing is lost.",
+    "Dispatch each document (or batches of documents) to isolated subagent calls that read and return only a condensed summary, keeping the main context focused on synthesizing the summaries rather than raw source text.",
+    "Increase the context window setting so all 50 documents fit without any summarization.",
+    "Skip reading most documents to save context, using only the first few."
+   ],
+   "answerIndex": 1,
+   "rationale": "Context isolation via subagents is the documented technique for large fan-out work: raw source material stays in each subagent's isolated context, and only distilled findings return to the main conversation. Pasting everything (A) causes severe context bloat; the context window isn't an adjustable lever per request and larger windows don't fix bloat (C); skipping documents (D) sacrifices completeness.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D32",
+   "domain": 6,
+   "domainName": "Prompt and Context Engineering",
+   "domainKey": "dev-promptcontext",
+   "text": "A developer's prompt asks Claude to classify support tickets into categories, but outputs are inconsistent in category naming (\"billing_issue\" vs. \"Billing\" vs. \"billing\"). What's the most effective prompt engineering fix?",
+   "options": [
+    "Switch to a larger model, since bigger models are more consistent regardless of prompt clarity.",
+    "Provide explicit output constraints (the exact allowed category strings) and a few labeled examples showing the exact expected format, rather than relying on the model to infer formatting from a vague instruction.",
+    "Lower the temperature to 0 and skip providing examples, since temperature alone guarantees consistent labels.",
+    "Repeat the instruction \"be consistent\" several times in the system prompt."
+   ],
+   "answerIndex": 1,
+   "rationale": "Explicit output constraints plus few-shot examples directly teach the model the exact allowed label set and format, a core prompt engineering technique. A is unrelated to the root cause; C reduces randomness but doesn't specify the allowed labels; D is not an effective instruction-clarity technique.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D33",
+   "domain": 6,
+   "domainName": "Prompt and Context Engineering",
+   "domainKey": "dev-promptcontext",
+   "text": "An application has a fixed persona and behavioral constraints that should apply to every conversation, plus a per-request user question. Where should each go, and how should the team refine the prompt over time?",
+   "options": [
+    "Put persistent behavioral rules in the system prompt and the per-request question in the user turn; iteratively refine the system prompt based on observed failure cases rather than rewriting it from scratch each time.",
+    "Put everything, persona, rules, and the question, in the user turn, since the system prompt is deprecated.",
+    "Put the user's question in the system prompt so it takes priority over the persona.",
+    "Never revise the system prompt after initial launch, since iteration risks breaking existing behavior."
+   ],
+   "answerIndex": 0,
+   "rationale": "Standard placement puts persistent instructions in the system prompt and task-specific content in the user turn, refined iteratively against observed failures. B is false — system prompts remain a normal, supported concept; C inverts the intended roles; D forgoes iterative refinement, an explicit prompt-engineering sub-skill.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D34",
+   "domain": 6,
+   "domainName": "Prompt and Context Engineering",
+   "domainKey": "dev-promptcontext",
+   "text": "A finance application asks Claude to extract an invoice total as a number and pass it directly into a payment-processing call. Which practice best reflects skepticism toward confident output?",
+   "options": [
+    "Trust the extracted number as-is, since a confidently stated number from the model is reliable by definition.",
+    "Validate the extracted value against sanity checks (numeric pattern, plausible range, cross-check against line items if available) before using it in the payment call, and flag or reject on failure rather than assume correctness.",
+    "Skip validation to keep latency low, since payment errors can be refunded later.",
+    "Ask Claude to double-confirm its own answer by asking \"are you sure?\" and trust a \"yes\" response as sufficient verification."
+   ],
+   "answerIndex": 1,
+   "rationale": "Concrete, defensive sanity checks before acting on model output in a high-stakes context is the correct pattern. A and D both wrongly treat the model's own confidence or self-confirmation as ground truth; C ignores real financial risk.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D35",
+   "domain": 7,
+   "domainName": "Security and Safety",
+   "domainKey": "dev-security",
+   "text": "A support agent ingests PDF attachments uploaded by customers and summarizes them. One attachment contains text instructing the model to disregard its prior instructions and disclose its configuration. Which mitigation is most effective?",
+   "options": [
+    "Treat attachment content as untrusted data, keep it structurally separate from trusted instructions, and enforce limits with guardrails or hooks.",
+    "Add a system prompt line telling the model to ignore any instructions found inside customer attachments.",
+    "Scan attachments for known injection phrases and reject any that match before processing.",
+    "Lower the model's temperature so it adheres more strictly to its original system prompt."
+   ],
+   "answerIndex": 0,
+   "rationale": "The durable defense is architectural: mark retrieved content as data rather than instruction, keep the boundary explicit, and enforce what the model may actually do with hooks or guardrails rather than trusting it to resist. A system prompt instruction is advisory and is what injection attacks are designed to override. Phrase-matching is trivially evaded by rewording. Temperature has no bearing on whether injected instructions are followed.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D36",
+   "domain": 7,
+   "domainName": "Security and Safety",
+   "domainKey": "dev-security",
+   "text": "An internal agent has file-write access, a code-execution tool, and a tool that can send emails to customers. The team wants to reduce blast radius if the model is manipulated by content injected in a document it reads. What's the best guardrail design?",
+   "options": [
+    "Grant the agent all three tools with no restrictions, since Claude's training makes it safe by default.",
+    "Apply least privilege and layered guardrails: scope each tool's permissions to the minimum needed (e.g., restrict email sending to a pre-approved allowlist, sandbox code execution, require approval for file writes outside a scoped directory), rather than relying on a single defense.",
+    "Remove the system prompt entirely, since guardrails belong only in tool descriptions.",
+    "Rely solely on the model's own judgment to refuse unsafe actions, with no technical restriction on the tools themselves."
+   ],
+   "answerIndex": 1,
+   "rationale": "Least privilege combined with layered, technically enforced guardrails (scoping, sandboxing, approval gates) reduces blast radius independent of whether the model itself is manipulated. A, C, and D each rely on a single point of failure — the model's behavior alone — rather than defense in depth.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D37",
+   "domain": 7,
+   "domainName": "Security and Safety",
+   "domainKey": "dev-security",
+   "text": "A developer is debugging a Claude API integration and considers hardcoding the API key directly into a client-side JavaScript bundle so the browser can call the API directly, saving time on a backend proxy. What's the correct assessment?",
+   "options": [
+    "This is safe as long as the key is only used for low-risk features.",
+    "This is unsafe: API keys embedded in client-side code are exposed to anyone who inspects the bundle; keys should be kept server-side (env vars/secret manager) with the browser calling a backend that holds the key, plus access monitoring and rotation.",
+    "This is safe because JavaScript bundles are minified, which prevents key extraction.",
+    "This is unnecessary to avoid, since Claude API keys cannot be used maliciously by third parties."
+   ],
+   "answerIndex": 1,
+   "rationale": "Client-exposed secrets are a classic key-management failure: any key shipped to the browser is extractable and should never leave the server. The correct pattern is server-side secret storage behind a backend proxy plus monitoring/rotation. A, C, and D all understate the exposure risk — minification is not security, and an exposed key is directly abusable for cost and quota exhaustion.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D38",
+   "domain": 8,
+   "domainName": "Tools and MCPs",
+   "domainKey": "dev-tools",
+   "text": "A retailer wants Claude to query an internal pricing service that already exposes a documented REST API. Three separate Claude applications will need the same capability, and the pricing team wants to own and version it independently of any consuming app. Which approach best fits?",
+   "options": [
+    "Build an MCP server exposing the pricing operations as tools, so all three applications connect to one independently maintained integration.",
+    "Embed the pricing API call logic in each application's own tool-handling code.",
+    "Include the current price list in each application's system prompt and refresh it on a schedule.",
+    "Have each application shell out to a shared script that queries the pricing API."
+   ],
+   "answerIndex": 0,
+   "rationale": "Reuse across multiple applications plus independent ownership and versioning is exactly the condition where an MCP server earns its overhead. Duplicating the integration in three codebases guarantees drift and triples the maintenance. Embedding a price list in prompts gives stale data and consumes context on every request. A shared shell script offers some reuse but no schema, no discovery, and no clean versioning contract.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D39",
+   "domain": 8,
+   "domainName": "Tools and MCPs",
+   "domainKey": "dev-tools",
+   "text": "A weather tool is defined with the description \"get_weather: gets weather.\" In practice, Claude frequently calls it with malformed city names or fails to call it when appropriate. What's the most effective fix?",
+   "options": [
+    "Rename the tool to something more creative, since naming alone drives correct usage.",
+    "Write a detailed tool description that specifies exactly when to call it and the expected input format/constraints, and have the tool return a clear, structured error (not a crash) on bad input so Claude can self-correct.",
+    "Remove the tool description entirely so Claude infers usage from the tool name alone.",
+    "Increase the number of available tools so Claude has more options to choose from."
+   ],
+   "answerIndex": 1,
+   "rationale": "Clear, specific tool descriptions and well-structured error responses are core to reliable tool use: the model relies on the description to decide when and how to call a tool, and structured errors let it self-correct on the next turn. A, C, and D don't address the actual usability problem.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D40",
+   "domain": 8,
+   "domainName": "Tools and MCPs",
+   "domainKey": "dev-tools",
+   "text": "A coding agent has a tool that can delete files from the user's local filesystem. The team wants a human to explicitly confirm before any deletion actually happens, even though the model decides when to propose calling the tool. What pattern should they implement?",
+   "options": [
+    "Let the tool execute automatically the moment the model requests it, since faster execution improves user experience.",
+    "Implement a human-in-the-loop approval pattern: when the model requests the delete tool, surface the proposed action to the user for explicit confirmation before the client executes it, keeping this as a client-side, locally controlled tool.",
+    "Move the tool to a server-side/Anthropic-hosted tool so it always runs without local approval.",
+    "Remove the delete capability from the tool description but keep the underlying function callable, hoping the model never uses it."
+   ],
+   "answerIndex": 1,
+   "rationale": "Destructive, irreversible actions call for an approval gate before execution, a standard client-side tool pattern where the harness pauses for user confirmation. A removes the safety check entirely; moving execution server-side (C) doesn't add local approval and isn't a fix for irreversible local file operations; D relies on obscurity rather than enforcement since the function remains callable.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "D41",
+   "domain": 8,
+   "domainName": "Tools and MCPs",
+   "domainKey": "dev-tools",
+   "text": "A company wants Claude to interact with their internal ticketing system's REST API, and the same integration needs to be reusable from Claude Code, a Slack-based deployment, and a custom in-house Claude API application. Which approach best fits, compared to a custom in-process tool or a Skill?",
+   "options": [
+    "Build a Skill, since Skills are the only way to package reusable instructions and are automatically available across every Claude surface without any server component.",
+    "Build an MCP server exposing the ticketing operations as tools, since MCP is the protocol-level integration that multiple independent Claude clients can connect to and reuse without re-implementing the integration in each app.",
+    "Hard-code a custom, in-process tool separately inside each of the three applications, since custom tools are always simpler than MCP for cross-application reuse.",
+    "Rely exclusively on a built-in tool, since built-in tools can already reach any internal REST API without configuration."
+   ],
+   "answerIndex": 1,
+   "rationale": "MCP is designed for exactly this cross-application, protocol-level reusability and independent maintenance. Skills (A) package instructions/context, not a general mechanism for calling an arbitrary internal REST API across every surface without a server; duplicating a custom tool in three codebases (C) defeats reusability; built-in tools (D) do not automatically reach arbitrary internal APIs.",
+   "source": "intent-solutions-authored"
+  }
+ ]
+}

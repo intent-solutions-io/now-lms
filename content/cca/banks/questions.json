@@ -1,0 +1,1654 @@
+{
+ "source": "Original — written in-house by Intent Solutions (103 questions). Not reproduced from Anthropic's exam or from any third-party question bank.",
+ "note": "Practice set, not the official exam. Questions and answer options are reshuffled every attempt; answerIndex refers to the option's POSITION in the options array, 0-based. Domain mix follows Anthropic's published CCAR-F exam guide weighting (27/18/20/20/15).",
+ "questions": [
+  {
+   "id": "AG1",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A security team wants to automate triage of internal vulnerability reports. Every report needs a different investigation path: some require reading source files, some require querying a dependency graph, some require checking a ticket history, and the number of lookups needed is not knowable before the work starts. The team cannot enumerate the steps in advance. Which architecture is the best fit?",
+   "options": [
+    "A prompt chain with one step per data source, executed in the same fixed order for every report regardless of what the earlier steps returned.",
+    "An agent loop driven by `stop_reason`, bounded by an iteration cap and a cost ceiling.",
+    "A router that classifies each report into one of three fixed sub-workflows and runs the matching one.",
+    "A single augmented call with all three data sources pre-fetched and pasted into the prompt."
+   ],
+   "answerIndex": 1,
+   "rationale": "The defining signal for an agent over a workflow is that the number and order of steps cannot be determined in advance. An agent loop lets the model choose the next tool based on what it just learned, and bounding it with an iteration cap plus a cost ceiling keeps the open-endedness safe. The fixed prompt chain fails because it runs every lookup on every report, wasting cost and still not adapting when a finding demands a fourth lookup. The router fails because it only picks a path once, at the start, and the scenario says the path evolves during the investigation. Pre-fetching everything into one call fails because 'the number of lookups is not knowable before the work starts' means you cannot know what to pre-fetch, and stuffing all three sources wholesale will blow the context window on large repositories.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG2",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A developer's agent loop occasionally hangs or executes phantom tools. Reviewing the code, you find the loop decides whether to continue by scanning the response's content blocks and checking whether any block looks like a tool call, then also checking whether the assistant's text contains the word 'done'. What is the correct fix?",
+   "options": [
+    "Add a regular expression that matches the tool name more precisely before dispatching.",
+    "Ask the model in the system prompt to always emit a literal `<complete>` marker when it is finished, and key the loop off that marker.",
+    "Branch on the response's `stop_reason`: continue and execute tools when it is `tool_use`, and exit the loop when it is `end_turn`.",
+    "Set `tool_choice` to `any` so the model is always required to call a tool, which makes the loop condition unambiguous."
+   ],
+   "answerIndex": 2,
+   "rationale": "The API tells you explicitly why generation stopped. `stop_reason: \"tool_use\"` means the model is requesting tools and the loop must execute them and send back `tool_result` blocks; `stop_reason: \"end_turn\"` means the model finished its turn and the loop should exit. Content-type sniffing and prose markers are inference about the model's intent rather than a read of the protocol, which is exactly what produces phantom calls and hangs. A tighter regex still sniffs content and does not fix the class of bug. A prose completion marker is model-generated text and can be forgotten, reworded, or emitted mid-reasoning. Setting `tool_choice` to `any` forces a tool call on every turn, so the model can never signal completion at all, which converts an intermittent hang into a guaranteed infinite loop.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG3",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A publisher needs to convert a 400-page manual into structured product data. The document splits cleanly into 120 independent sections, and each section requires the same extraction operation. Latency matters; correctness per section is straightforward to verify with a schema check. Which orchestration approach is most appropriate?",
+   "options": [
+    "Sectioning parallelization: split the document into 120 independent calls, run them concurrently, and merge the validated results.",
+    "An orchestrator agent that reads the whole manual, then decides at runtime how to subdivide it and dispatches subagents accordingly.",
+    "A prompt chain that processes sections sequentially, passing each section's output forward as context for the next.",
+    "A voting ensemble that runs each section three times through the same prompt and takes the majority result."
+   ],
+   "answerIndex": 0,
+   "rationale": "The work is already decomposed, the subtasks are independent, and the operation is identical, which is the textbook case for sectioning parallelization. Concurrency directly attacks the stated latency constraint and the schema check catches per-section failures. The orchestrator pattern is for when the subdivision itself requires judgment; here the sections are known up front, so paying an orchestrator to rediscover them adds cost and a failure point. Sequential chaining is wrong because the sections are independent, so carrying prior output forward gives no benefit while serializing 120 calls and inflating context. Voting is a parallelization variant, but it triples cost to raise confidence on a task where a deterministic schema check already validates the output.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG4",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A localization team is unhappy with machine translations of marketing copy. The first draft is usually adequate but consistently misses idiom and tone. Native reviewers can articulate precise, actionable criticism of a draft, and applying that criticism reliably improves the next draft. Which pattern should the team automate?",
+   "options": [
+    "Routing, sending each language to a model tier chosen by how difficult that language is.",
+    "Prompt chaining, where one call translates and a second call reformats the output into the CMS schema.",
+    "A fully autonomous agent given the CMS credentials and told to keep improving translations until quality is acceptable.",
+    "Evaluator-optimizer: a generator call produces a translation, an evaluator call critiques it against explicit tone and idiom criteria, and the generator revises using that critique, looping until the evaluator passes it or a revision cap is hit."
+   ],
+   "answerIndex": 3,
+   "rationale": "Evaluator-optimizer is warranted precisely when there are clear evaluation criteria and iterative refinement measurably helps, which the scenario states in both halves. Separating the critic from the generator prevents the generator from grading its own work, and the revision cap guarantees termination. Routing picks a model but never critiques output, so the idiom problem persists. Prompt chaining into a CMS schema solves a formatting concern, not a quality one. The fully autonomous agent both grants unnecessary write access and leaves 'acceptable' undefined, so it has no reliable termination condition and no independent judge.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG5",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A support platform handles three clearly distinguishable request types: password resets (scripted, high volume), billing disputes (needs account lookups and policy reasoning), and API bug reports (needs log analysis). Blending them into one prompt has produced mediocre results on all three. What should the architect do?",
+   "options": [
+    "Increase `max_tokens` and concatenate all three sets of instructions into a single system prompt, so one general-purpose call can handle any incoming request type.",
+    "A routing step that classifies the request, then dispatches it to a prompt and tool set tuned for that category.",
+    "Give one agent every tool for all three categories and let it decide which to use per request.",
+    "Run all three specialized prompts in parallel on every request and pick whichever response is longest."
+   ],
+   "answerIndex": 1,
+   "rationale": "Routing applies when inputs fall into distinct categories that are better handled separately and the categories can be classified accurately, both of which hold here. It also lets each branch get its own tools, instructions, and even model tier, which is where the quality recovery comes from. Cramming all instructions into one prompt is the design that already produced mediocre results, and raising `max_tokens` addresses output length, not instruction interference. Handing one agent every tool retains the same instruction blending and enlarges the tool surface, which degrades selection accuracy. Running all three and picking the longest response is a fan-out with an arbitrary selection rule; length is not a correctness signal, and it triples cost.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG6",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A research agent runs unattended overnight. On one occasion it ran 900 iterations, spent far beyond budget, and produced nothing usable because it kept re-searching variations of the same query. Which combination of termination controls best prevents a repeat without crippling legitimate long runs?",
+   "options": [
+    "A single instruction in the system prompt telling the agent to stop once it has gathered enough information.",
+    "A wall-clock timeout only, since any runaway loop will eventually exceed it.",
+    "A hard iteration cap, a cumulative cost budget checked between turns, and a no-progress detector.",
+    "Reducing `max_tokens` per response so each turn is cheaper, keeping total spend bounded even if the iteration count stays high."
+   ],
+   "answerIndex": 2,
+   "rationale": "Robust termination is enforced in the loop code, not requested of the model, and it needs more than one dimension because the observed failure was semantic (no new information) as well as quantitative. The iteration cap bounds the worst case, the budget check bounds spend regardless of how cheap each turn is, and the no-progress detector catches the specific repetition pathology described. A system-prompt instruction is advisory and the model already failed to self-regulate. A wall-clock timeout bounds duration but permits an expensive fast loop to burn the budget before it fires, and it cannot distinguish productive work from spinning. Cutting `max_tokens` lowers per-turn output cost while doing nothing about iteration count, and it can make the agent worse by truncating useful responses.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG7",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "An internal ops agent receives the request: \"Close out the Henderson account.\" In this company, 'close out' means terminating the contract in one system and means reconciling the final invoice in another, and both are plausible from the request. The agent has tools for both. What is the correct design response?",
+   "options": [
+    "Pick the more common interpretation based on historical usage frequency and proceed, noting the assumption in the final summary.",
+    "Perform both actions, since doing both satisfies whichever interpretation the user meant.",
+    "Lower the temperature so the model resolves the ambiguity more deterministically.",
+    "Have the agent stop and ask the requester which of the two operations is intended before invoking either tool."
+   ],
+   "answerIndex": 3,
+   "rationale": "This is genuine ambiguity, not missing detail the agent can infer: two defensible readings, both mapped to consequential and hard-to-reverse actions. The correct pattern is to surface the ambiguity to a human before acting, which is cheap compared to an incorrect contract termination. Guessing from historical frequency propagates a silent error and disclosing the assumption afterward does not undo the write. Doing both is strictly worse, since it guarantees performing at least one unintended consequential action. Temperature affects sampling variability, not disambiguation; a deterministic wrong choice is still wrong, and lowering temperature can make the agent confidently repeat the same mistake.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG8",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "In an agent loop, a tool call fails because the model passed a malformed date to an internal API, which returns a 400 with a descriptive validation message. The current code catches the exception, logs it, and sends the model a `tool_result` containing the string \"error\". The agent then flails. What should the loop do instead?",
+   "options": [
+    "Return the `tool_result` with `is_error` set and the API's validation message included.",
+    "Silently drop the failed tool call from the conversation and re-send the previous user message to get a fresh attempt.",
+    "Retry the identical call with exponential backoff and jitter until it succeeds or a retry cap is reached, then surface the failure.",
+    "Abort the loop and surface a generic failure to the caller, since a malformed argument means the model has lost the thread."
+   ],
+   "answerIndex": 0,
+   "rationale": "A 400 validation error is a recoverable, self-describing failure. Returning it as a `tool_result` flagged as an error, with the API's actual message, gives the model the information it needs to fix the argument, which is the whole point of keeping errors inside the loop. The opaque string \"error\" is why the agent flails: it signals failure without signaling cause. Dropping the tool call breaks the message structure, because every `tool_use` block must be answered by a corresponding `tool_result`, and it also erases the evidence the model needs. Retrying an identical malformed request is futile because the failure is deterministic, not transient; backoff only helps with rate limits and outages. Aborting throws away a turn that was trivially recoverable.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG9",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A payments agent calls an internal transfer tool. Sometimes the tool returns a 429 rate-limit response, sometimes a 503 from a dependency restart, and sometimes a 422 saying the destination account is closed. The team wants one retry policy. What is the soundest design?",
+   "options": [
+    "Retry every non-200 response up to five times with exponential backoff, since a uniform policy is simpler to reason about and reduces code paths.",
+    "Never retry inside the loop; return every failure to the model and let it decide whether to call the tool again.",
+    "Retry only the 429 and 503 with exponential backoff and jitter inside the tool wrapper, and pass the 422 straight back to the model as an error result; make the transfer idempotent with a client-supplied key.",
+    "Retry all failures but only once, and if the second attempt fails, escalate the whole task to a human reviewer."
+   ],
+   "answerIndex": 2,
+   "rationale": "Transient infrastructure failures (429, 503) are the ones automatic retry is for, and jitter avoids synchronized retry storms; a closed destination account is a permanent semantic failure that no amount of retrying fixes, so it belongs back in the model's context where a different plan can be formed. The idempotency key matters specifically because retrying a money transfer risks duplicate execution. A uniform retry-everything policy will hammer the API with requests that cannot succeed and, on a transfer endpoint, risks double-charging. Pushing every failure to the model wastes model turns and latency on 429s that a two-second backoff would clear. Escalating any second failure to a human turns routine rate limiting into pager traffic and destroys the unattended value of the agent.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG10",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A fintech is building an automated check on whether outbound customer emails contain prohibited financial advice. Missing a violation is expensive; an occasional false positive just sends the email to a human queue. Which parallelization design fits best?",
+   "options": [
+    "Sectioning: split each email into paragraphs and check each one independently, which keeps every request small and lets the checks run concurrently.",
+    "Voting: run several differently-framed compliance prompts concurrently and flag on any violation.",
+    "Chaining: run a summarizer first, then check the summary for prohibited advice.",
+    "Orchestrator-subagent: an orchestrator reads the email and spawns a subagent per detected topic."
+   ],
+   "answerIndex": 1,
+   "rationale": "Voting is the parallelization variant for high-stakes detection where recall dominates precision, and an any-flags-it aggregation deliberately biases toward catching violations, which matches the stated cost asymmetry. Multiple prompt framings also decorrelate blind spots that a single framing shares. Sectioning by paragraph is the wrong split because prohibited advice can be spread across sentences and stripped of context, so per-paragraph checks lose exactly the signal that matters. Summarizing first is actively harmful: the summarizer may drop the offending sentence, and you cannot detect what has been discarded. The orchestrator-subagent pattern adds a runtime planning layer to a task with no branching complexity, buying latency and cost without improving recall.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG11",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "An agent manages a company's cloud infrastructure. Most of its work is read-only investigation, but it can also delete storage buckets. Deleting a production bucket is irreversible. The team wants autonomy for the investigation without risking a catastrophic delete. What is the best design?",
+   "options": [
+    "Keep the delete tool available but add strong system prompt language forbidding deletion of anything tagged production, and repeat the prohibition in the tool description.",
+    "Remove the delete tool entirely and have engineers perform all deletions by hand.",
+    "Let the agent delete freely into a staging area, and have a nightly job reconcile what should be restored.",
+    "Keep the read tools autonomous and gate the delete tool behind an explicit human confirmation before dispatch."
+   ],
+   "answerIndex": 3,
+   "rationale": "Human-in-the-loop should be scoped to the specific irreversible action rather than applied to the whole agent, which preserves autonomy where it is cheap and inserts friction only where a mistake is unrecoverable. Enforcing the gate at dispatch time, in code, means it holds regardless of what the model decides. Relying on system prompt language puts a safety-critical control in the layer that is least reliable under adversarial or confused inputs, and prompt instructions are not an enforcement boundary. Removing the delete tool entirely is defensible but discards real value the scenario asks to keep, and it pushes toil back onto engineers. The delete-then-reconcile scheme misrepresents an irreversible operation as recoverable, and reconciliation cannot restore data that is already gone.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG12",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A team migrated a working single-agent document-QA feature to an orchestrator with five subagents, expecting better answers. Quality is roughly unchanged, token spend rose about six times, and p95 latency doubled. Which conclusion is best supported?",
+   "options": [
+    "The subagents need larger context windows so they stop re-reading source material.",
+    "The orchestrator prompt needs more detailed task descriptions so subagents duplicate less work.",
+    "The task did not need parallel exploration, and multi-agent overhead was paid for no benefit; it should return to the simpler design.",
+    "Latency and cost are inherent to multi-agent systems and should be accepted as the price of higher-quality answers."
+   ],
+   "answerIndex": 2,
+   "rationale": "Multi-agent architectures pay a large, structural token multiplier because every subagent carries its own instructions and context and the orchestrator pays again to integrate results. That cost is justified when the work benefits from parallel exploration across separable areas; when quality is flat, the evidence says it does not, and the correct move is to revert to the simplest design that meets the requirement. Expanding context windows addresses a symptom that was not measured and does not recover the multiplier. Better task descriptions help genuinely parallel work, but nothing here suggests duplication is the constraint rather than the pattern being a poor fit. Accepting the cost as the price of higher quality contradicts the measurement: there was no quality gain to buy.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG13",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A claims-intake pipeline must extract a fixed set of fields from every submitted PDF and hand them to a downstream service. The model sometimes replies with a conversational preamble instead of calling the extraction tool, which breaks the parser. What is the most reliable fix at the API level?",
+   "options": [
+    "Set `tool_choice` to force the specific extraction tool on that call, so the model must emit a structured `tool_use` block with the schema's fields.",
+    "Instruct the model in the system prompt to respond only with JSON and no other text.",
+    "Post-process the response with a regular expression that strips any prose before the first opening brace.",
+    "Raise the temperature so the model explores tool-calling behavior more often."
+   ],
+   "answerIndex": 0,
+   "rationale": "When a step must produce structured output every time, `tool_choice` set to the named tool removes the model's discretion about whether to call it, and the tool's input schema then constrains the shape of what comes back. That is an API-level guarantee rather than a request. A system prompt asking for JSON only is an instruction the model can drift from, which is the failure already being observed. Regex stripping is a fragile repair applied after the fact; it cannot recover fields the model never emitted and will silently mangle text that legitimately contains braces. Raising the temperature increases output variability, which makes format compliance less reliable, not more.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG14",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A lead agent dispatches three subagents to investigate different modules of a large codebase. Each subagent produces a long transcript full of file reads and dead ends. The lead agent's context is filling up and its synthesis quality is degrading. What should change?",
+   "options": [
+    "Increase the subagent count so each one has less ground to cover and produces a shorter transcript.",
+    "Have each subagent return a condensed, structured finding rather than its full working transcript.",
+    "Have the lead agent read every transcript in full but instruct it to ignore the irrelevant sections and attend only to the conclusions.",
+    "Move the subagents to a smaller, cheaper model so their transcripts are shorter."
+   ],
+   "answerIndex": 1,
+   "rationale": "The value of the subagent pattern is context isolation: each subagent burns its own window on messy exploration and returns a compact result, so the lead agent's window holds conclusions rather than raw search history. Returning structured findings with references preserves traceability without the token load. Adding subagents makes the problem worse, since the lead must integrate more inbound reports, not fewer. Instructing the lead to ignore sections does not reclaim any context, because the tokens are consumed on ingestion regardless of whether the model attends to them. Switching model tiers changes cost and capability but has no reliable relationship to transcript length, and a weaker model on hard code investigation trades a context problem for an accuracy problem.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG15",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A marketing pipeline chains three calls: generate a campaign brief, expand it into ad copy, then localize the copy for four markets. When the brief comes out weak, the failure is only discovered after all six downstream calls have run. What is the most effective structural improvement?",
+   "options": [
+    "Merge the three steps into one prompt so the model can self-correct the brief while writing the copy.",
+    "Replace the chain with an autonomous agent that can revisit and rewrite the brief at any point once it judges the resulting copy to be weak.",
+    "Run all three steps in parallel to reduce total latency, then discard whichever outputs do not match.",
+    "Insert a programmatic gate after the brief step that re-runs or halts before any downstream call executes."
+   ],
+   "answerIndex": 3,
+   "rationale": "Chained workflows should carry gates between steps precisely so a bad intermediate result is caught before it propagates cost and error downstream, and a gate that can re-run or halt localizes the fix to the step that failed. Merging the steps into one prompt destroys the checkpoint entirely and typically degrades each subtask by asking one call to do three jobs. An autonomous agent adds nondeterminism and cost to a process the scenario describes as fixed and well-understood; the problem is a missing check, not insufficient autonomy. Running the steps in parallel is impossible in any useful sense here because each step consumes the previous step's output, so there is nothing to parallelize.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG16",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "An agent loop occasionally dispatches a tool call with truncated arguments, causing malformed writes. Inspection shows the loop executes any `tool_use` block it finds without inspecting the response's `stop_reason`, and the affected responses came back with `stop_reason` of `max_tokens`. What is the correct handling?",
+   "options": [
+    "Execute the tool anyway and let the downstream API's validation reject anything malformed.",
+    "Treat `max_tokens` as equivalent to `end_turn` and end the loop, returning whatever text was produced.",
+    "Detect the `max_tokens` stop reason, do not execute the partial tool call, and either raise `max_tokens` or continue the assistant turn so the block can be completed before dispatch.",
+    "Add a JSON schema validator over the tool input and retry the same request unchanged when validation fails."
+   ],
+   "answerIndex": 2,
+   "rationale": "A `stop_reason` of `max_tokens` means the response was cut off mid-generation, so any `tool_use` block in it may be incomplete and must never be dispatched. The loop needs to recognize the truncation and recover by giving the model room to finish the block. Executing anyway and leaning on downstream validation is what is already producing malformed writes, and it assumes every consuming API validates strictly, which is exactly the assumption that failed. Treating `max_tokens` as `end_turn` silently discards work in progress and reports a truncated run as a completed one. A schema validator does catch the bad payload, but retrying the identical request reproduces the same truncation deterministically, so the loop never escapes.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG17",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A clinical operations group proposes an autonomous agent that reads patient intake forms and independently schedules, cancels, and rebooks appointments, including notifying patients. Errors are difficult to detect after the fact because patients rarely report a wrongly cancelled visit until the appointment date. Which assessment is most defensible?",
+   "options": [
+    "Autonomy is appropriate because appointment scheduling is a routine, low-complexity task well within model capability.",
+    "Autonomy is appropriate provided the agent logs every action, since the logs make errors auditable.",
+    "Autonomy is appropriate once the agent clears a high accuracy threshold on a benchmark built from historical scheduling decisions, re-measured on every model upgrade.",
+    "Autonomy is not warranted for the write actions; the agent should propose changes for human confirmation."
+   ],
+   "answerIndex": 3,
+   "rationale": "The two conditions that most strongly argue against autonomy are present together: mistakes carry real cost and there is no timely feedback signal that a mistake occurred. When errors are invisible until the harm lands, no amount of downstream review compensates, so the write path needs a human confirmation while the read and draft path can stay autonomous. Calling the task routine mistakes the difficulty of the action for the consequence of getting it wrong. Logging supports investigation after the fact, but the scenario says the failure is not surfaced until the appointment date, so logs do not shorten the detection gap. Benchmark accuracy on historical decisions is useful evidence but does not address undetectable production errors, and a high score still leaves a residual failure rate applied to irreversible patient-facing actions.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG18",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "An agent has 40 tools, many of them thin wrappers such as `get_user_first_name`, `get_user_last_name`, and `get_user_email`. Completing a common task takes 15 tool round trips and the model frequently picks the wrong accessor. Which change most directly addresses both problems?",
+   "options": [
+    "Consolidate the fine-grained accessors into fewer coarse tools that each return a meaningful unit of work.",
+    "Keep the tools as they are and add extensive few-shot examples in the system prompt showing the correct call sequence.",
+    "Move to a larger model tier, which will select more accurately among the 40 tools and cut down the wrong-accessor calls.",
+    "Split the 40 tools across four subagents so each one only sees ten, narrowing the selection problem for every agent."
+   ],
+   "answerIndex": 0,
+   "rationale": "Task decomposition should be pitched at the level of meaningful units of work; over-decomposed tools inflate round trips, and near-identical tool names and descriptions are what drive selection errors. Consolidating fixes both at the source, and it shrinks the tool surface the model must disambiguate. Few-shot examples can improve sequencing but leave 15 round trips of latency and cost in place and still ask the model to distinguish confusable siblings. A larger model tier may raise selection accuracy somewhat but is an expensive workaround for a tool design defect, and it does nothing about round trips. Splitting the tools across subagents reduces each agent's surface but adds orchestration overhead and can strand a task whose steps span two subagents' tool sets.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG19",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A long-running agent re-sends its full system prompt, a large tool schema block, and the accumulated conversation on every turn. The team enables prompt caching but sees almost no cache hits. Investigation shows the system prompt embeds the current timestamp and the tool list is re-sorted on each request. What is the fix?",
+   "options": [
+    "Move the timestamp and the tool definitions to the end of the message list, after the conversation history, so they no longer affect the blocks that precede them.",
+    "Make the cached prefix byte-stable: drop the timestamp from the system prompt and emit tools in a fixed order.",
+    "Increase the cache time-to-live, since the misses are caused by entries expiring in the gaps between the agent's turns.",
+    "Disable caching for the tool block and cache only the conversation history, which is the largest component."
+   ],
+   "answerIndex": 1,
+   "rationale": "Prompt caching matches on an exact prefix, so any variation early in the request invalidates everything after it. A per-request timestamp and a non-deterministic tool ordering both mutate that prefix on every turn, which is why hit rates are near zero. The fix is to make everything before the cache breakpoint stable and let volatile content append after it. Moving the timestamp and tools to the end of the message list misunderstands the request layout: tools sit ahead of the system prompt and messages in the cached ordering, so they cannot simply be relocated to the tail, and volatile content placed anywhere inside the cached span still breaks it. Extending the TTL cannot help when the lookup key differs every turn. Caching only the conversation history is not achievable when an unstable prefix precedes it, since the mismatch occurs before the history is ever reached.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG20",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "An enterprise runs six separate agent applications, each of which needs access to the same three internal systems: a ticketing platform, a data warehouse, and a document store. Today every application maintains its own hand-rolled integration code, and a schema change to the warehouse requires six coordinated updates. What is the most appropriate architectural change?",
+   "options": [
+    "Merge the six applications into one large agent with all tools, eliminating the duplication by eliminating the applications.",
+    "Have each application call the other applications' tools directly as needed, forming a mesh.",
+    "Expose the three systems through MCP servers that all six applications connect to as clients.",
+    "Copy the integration code into a shared internal library that each of the six applications imports, pins, and vendors independently at its own release cadence."
+   ],
+   "answerIndex": 2,
+   "rationale": "MCP exists to standardize the connection between models and external systems, so writing one server per backing system and letting every client connect to it collapses six integrations into one and localizes a schema change to a single place. Merging six applications into one conflates unrelated products to solve a plumbing problem and creates an unwieldy tool surface that degrades selection. A mesh of applications calling each other multiplies coupling rather than reducing it and leaves the warehouse schema knowledge scattered. A shared library is a genuine improvement over copy-paste, but vendored imports still require six coordinated upgrades and redeploys to roll out a schema change, which is precisely the pain being described.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG21",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A high-volume moderation pipeline processes 2 million items daily. Roughly 97 percent are trivially classifiable; the remaining 3 percent involve nuanced policy judgment where errors are costly. The team currently runs every item through the most capable model tier and the cost is unsustainable. What design best resolves this?",
+   "options": [
+    "Run everything on the fastest, cheapest tier and add a second pass on the same tier to catch errors.",
+    "Route every item through a cheap first-pass classifier that resolves the clear cases and forwards only low-confidence or policy-flagged items to a more capable model.",
+    "Keep the capable model but enable prompt caching, which removes the cost difference between tiers.",
+    "Batch 100 items into each request to the capable model, reducing the number of calls by two orders of magnitude."
+   ],
+   "answerIndex": 1,
+   "rationale": "A cascade that matches model capability to case difficulty is the standard answer when a workload has a large easy majority and a small expensive minority: the cheap tier absorbs the volume, and only the hard fraction incurs the expensive call, so cost tracks difficulty rather than volume. Running everything cheaply and adding a second cheap pass does not fix the nuanced cases, because a second look from the same limited model repeats the same misjudgment. Prompt caching lowers the cost of repeated input tokens but does not change per-token output pricing or close the gap between tiers, and moderation items are mostly unique content rather than a shared prefix. Batching 100 items reduces request count but not token volume, and mixing unrelated items into one context degrades per-item judgment on exactly the nuanced cases that matter.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG22",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "Telemetry from a production agent shows a recurring pattern: the agent calls `search_kb` with the same query string four or five times in a row, receives the same empty result each time, and keeps going until the iteration cap fires. Which intervention best targets this specific failure?",
+   "options": [
+    "Raise the iteration cap so the agent has more room to eventually abandon the failing query and try a different phrasing on its own.",
+    "Remove the `search_kb` tool from the agent, since it is clearly returning unhelpful results.",
+    "Add harness-side loop detection that catches a repeated identical call and says so in the next `tool_result`.",
+    "Increase the temperature so repeated calls are less likely to be identical."
+   ],
+   "answerIndex": 2,
+   "rationale": "The pathology is that the model is not registering that a call has already failed, so the fix is to make the repetition visible in context via harness-side detection and an explicit signal fed back through the tool result. That preserves the agent's autonomy to pick a different query while removing the blind spot. Raising the iteration cap grants more budget to the same unproductive behavior and increases cost. Removing the tool is an overreaction; the tool is functioning correctly and returning a legitimate empty result, and the agent still needs knowledge-base search. Raising the temperature perturbs the query text at random, which sometimes breaks the cycle by accident but degrades the agent's reliability everywhere else and does not address the underlying failure to track prior attempts.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG23",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A refund agent is designed to escalate to a human when it is unsure. In production it escalates almost nothing, including cases that later turn out to be wrong. Investigation shows the escalation rule is: the agent escalates when it states in its response that it is not confident. What is the best redesign?",
+   "options": [
+    "Rewrite the system prompt to emphasize more strongly that the agent should escalate whenever it feels any doubt.",
+    "Escalate every refund above a fixed dollar amount and stop trying to model confidence at all, accepting the extra human review volume as the cost of safety.",
+    "Have the agent produce a second self-assessment call rating its own confidence from 1 to 10, and escalate below 7.",
+    "Define escalation on observable, deterministic criteria evaluated in the harness rather than on self-reported confidence."
+   ],
+   "answerIndex": 3,
+   "rationale": "Self-reported confidence is a poor control signal because it is unreliable and generally skewed toward overconfidence, which is exactly the observed behavior. Grounding escalation in observable features that the harness can evaluate makes the routing deterministic, testable, and tunable without redeploying a prompt. Strengthening the prompt language keeps the same unreliable signal and just asks for it more loudly. A fixed dollar threshold alone is a real improvement and is deterministic, but it is a single crude criterion that misses low-value cases with policy exceptions or contradictory records. A second self-assessment call is still the model grading itself, so it inherits the same calibration problem while adding a call's worth of cost and latency.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG24",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A developer is writing the core loop for a Claude-based agent from scratch. Which sequence correctly describes one full iteration?",
+   "options": [
+    "Send the messages; if the response contains any text, append it and stop; otherwise call tools and repeat.",
+    "Send the messages; if `stop_reason` is `tool_use`, execute the tools, append the assistant message plus one `tool_result` per `tool_use` block, and iterate; return on `end_turn`.",
+    "Send the messages; execute any tools that were requested; append only the tool outputs, as a new assistant message; iterate until a response comes back with no tools in it.",
+    "Send the messages; if tools were requested, execute them all in parallel and send back only the first result that succeeded, discarding the others to keep the context small."
+   ],
+   "answerIndex": 1,
+   "rationale": "The loop is driven by `stop_reason`, and the message protocol requires that the assistant's tool-requesting message be appended and then answered by a user message containing one `tool_result` per `tool_use` block, matched by `tool_use_id`. Terminating on `end_turn` is the correct exit. Stopping as soon as any text appears is wrong because a response can contain both text and `tool_use` blocks, so the agent would abandon requested work. Appending tool outputs as an assistant message violates the protocol; results are returned in the user role. Discarding results for tool calls that were made leaves `tool_use` blocks unanswered, which is invalid, and it throws away information the model explicitly asked for.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG25",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A long-horizon agent works through multi-hour tasks with hundreds of tool calls. Around hour two, the accumulated tool results approach the context limit and the agent starts losing track of earlier decisions. Which approach best sustains long runs?",
+   "options": [
+    "Truncate the message list to the most recent N messages before every request, so the transcript never approaches the context limit.",
+    "Ask the model to keep its responses shorter so the transcript grows more slowly.",
+    "Periodically compact the history into a structured record of decisions, findings, and open items, dropping superseded raw tool output.",
+    "Split the task across two agents that alternate turns, so each one only ever holds half of the accumulated history."
+   ],
+   "answerIndex": 2,
+   "rationale": "Long-horizon agents survive by distinguishing what must be remembered from what merely happened: compacting completed work into a structured record preserves decisions and open items while releasing the bulk of raw tool output, and persisting notes outside the window makes the memory durable across compactions. Blind truncation to the last N messages is the failure mode described, since it silently drops exactly the early decisions the agent later needs. Asking for shorter responses slows growth marginally while the dominant token load is tool results, not model prose. Alternating two agents does not halve the history in any meaningful way, because each agent still needs the other's context to continue coherently, and the handoff itself becomes an unmanaged summarization step.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG26",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A team is designing a travel-booking assistant. A flights specialist, a hotels specialist, and a policy-compliance checker each need to contribute, but one component must remain accountable for the final itinerary, must be able to re-invoke any specialist after the compliance checker objects, and must hold the conversation with the user throughout. Which pattern fits?",
+   "options": [
+    "A manager pattern: one coordinating agent owns the conversation and calls each specialist as a tool, receiving their outputs and deciding what to do next, including re-invoking a specialist.",
+    "A decentralized handoff pattern where control transfers permanently to whichever specialist is most relevant at each stage.",
+    "A single agent with all specialist instructions concatenated into one system prompt.",
+    "A fixed prompt chain: flights, then hotels, then compliance, with no path back."
+   ],
+   "answerIndex": 0,
+   "rationale": "The requirements name the manager pattern precisely: a central coordinator retains control, invokes specialists as tools, and can loop back based on their results, which is what accountability for the final itinerary and re-invocation after a compliance objection both demand. A handoff pattern transfers control away, so no component remains accountable end to end and there is no natural owner to re-invoke the flights specialist after an objection. Concatenating all specialist instructions into one prompt loses the separation that makes each specialist reliable and creates instruction interference. A fixed chain with no path back cannot satisfy the explicit requirement to re-run a step after the compliance checker objects.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG27",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "Before shipping an agent that files and updates engineering tickets, a team wants an evaluation approach that will actually catch regressions. Final-answer accuracy on a held-out set already sits at 94 percent, yet users report the agent takes strange routes and occasionally makes redundant writes. What evaluation design best addresses this?",
+   "options": [
+    "Increase the held-out set size, since 94 percent on a larger sample gives a more trustworthy accuracy figure.",
+    "Replace exact-match accuracy with a model-graded rubric over the final answer, which captures nuance and partial credit that string comparison misses.",
+    "Evaluate the trajectory as well as the outcome: assert on tool calls and arguments, count redundant writes, track iterations and cost.",
+    "Rely on production monitoring and user reports, since offline evaluation cannot reproduce real usage."
+   ],
+   "answerIndex": 2,
+   "rationale": "Agents can reach the right answer by a wrong or wasteful path, so outcome-only scoring is blind to exactly the defects users are reporting. Asserting on the sequence of tool calls and arguments, counting redundant writes, and tracking iterations and cost surfaces trajectory regressions, while end-state checks against the ticket system confirm the world actually ended up correct. A larger held-out set tightens the confidence interval on a metric that is not measuring the problem. A model-graded rubric on the final answer improves the quality signal but still evaluates only the endpoint, so redundant writes remain invisible. Deferring entirely to production monitoring gives up pre-release detection and is what let the behavior reach users in the first place.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC1",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A backend engineer at a logistics company always wants Claude Code to explain its reasoning in bullet points before editing, across every repository she works in. Her team, however, has no such convention and she does not want to impose it on the shared repo. Where should she record this preference?",
+   "options": [
+    "In a `CLAUDE.md` file committed to the root of each repository she contributes to",
+    "In the `env` block of the project's `.claude/settings.json` so it applies whenever she opens that project",
+    "In her user-level memory file at `~/.claude/CLAUDE.md`, which loads in every session regardless of working directory",
+    "In a `.claude/CLAUDE.local.md` file added to each repository's `.gitignore`"
+   ],
+   "answerIndex": 2,
+   "rationale": "User-level memory at `~/.claude/CLAUDE.md` is loaded for every session on that machine and is never committed, which exactly matches a personal cross-project preference. A committed root `CLAUDE.md` is project memory shared with every teammate, imposing the convention on the team. The `env` block in `settings.json` sets environment variables for the shell, not model instructions, so it cannot carry a behavioral preference. A per-repo local memory file works only in that one repo, must be recreated and gitignored in each, and is the deprecated pattern superseded by user-level memory and imports.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC2",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A fintech team discovers that Claude Code occasionally opens `.env` and `secrets/*.yaml` files while tracing configuration bugs, and those file contents then appear in transcripts. Compliance requires that the contents never enter the model's context at all, with no reliance on the model choosing to abstain. Which configuration meets that requirement?",
+   "options": [
+    "A `PreToolUse` hook matched to `Read` and `Grep` that inspects the target path and returns a deny decision for secret paths, so the tool call never executes",
+    "A `PostToolUse` hook on `Read` that scans the returned content and deletes any matched secret values from the transcript",
+    "A `CLAUDE.md` entry stating that `.env` and `secrets/` must never be read under any circumstances",
+    "A `deny` entry in the project's `.gitignore` file covering `.env` and `secrets/*.yaml`"
+   ],
+   "answerIndex": 0,
+   "rationale": "`PreToolUse` fires before the tool executes and can block the call outright, so the file is never read and its contents never reach the context window. `PostToolUse` runs after the tool has already returned, meaning the secret has been read before any scrubbing can happen, which fails the stated requirement. A `CLAUDE.md` instruction is advisory: it depends on the model interpreting and remembering it, and offers no guarantee. `.gitignore` governs what Git tracks, not what Claude Code is permitted to read, and has no `deny` syntax.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC3",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A platform team wants every new Claude Code session in their monorepo to begin already knowing the current sprint number, the active feature-flag names, and the current on-call engineer. All three values change weekly and are available from an internal CLI. Which mechanism supplies this automatically at the start of each session?",
+   "options": [
+    "A `UserPromptSubmit` hook that appends the values to every prompt the developer types",
+    "A `SessionStart` hook whose script queries the internal CLI and prints the values to stdout, which are added to the session context",
+    "A `PreToolUse` hook on the first tool call that fetches the values and injects them into the tool result",
+    "A `.claude/settings.json` entry that lists the three values under a `context` key"
+   ],
+   "answerIndex": 1,
+   "rationale": "`SessionStart` fires when a session begins or resumes, and its stdout is added to the session context, which is precisely how dynamic environment facts are injected once per session. A `UserPromptSubmit` hook would work mechanically but re-injects the same block on every single turn, wasting context and duplicating information. A `PreToolUse` hook fires only when a tool is invoked, so a session that opens with pure discussion would never receive the values, and the timing is arbitrary. `settings.json` has no `context` key; it configures permissions, hooks, environment variables, and model settings, not injected prose.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC4",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A team repeatedly finds that Claude Code declares a task finished while the TypeScript build is still failing. They want the session to be automatically prevented from ending until `npm run typecheck` exits zero, and they want Claude to see the compiler errors and keep working. Which configuration achieves this?",
+   "options": [
+    "A `PostToolUse` hook on `Edit` and `Write` that runs `npm run typecheck` after every file change",
+    "A `CLAUDE.md` rule requiring a passing typecheck before any completion claim",
+    "A `SubagentStop` hook that runs `npm run typecheck` when any delegated task finishes",
+    "A `Stop` hook that runs `npm run typecheck` and, on failure, blocks the stop and returns the compiler output to Claude"
+   ],
+   "answerIndex": 3,
+   "rationale": "The `Stop` hook fires when the main agent is about to finish responding, and a blocking result forces the session to continue with the hook's output supplied as feedback, which is exactly the described gate. A `PostToolUse` hook on every edit runs the typecheck far too often, slows every write, and does not gate the moment of completion. A `CLAUDE.md` rule is advisory and is the very thing that is already being ignored. `SubagentStop` fires only when a subagent finishes, so a session where the main agent did the work itself would never trigger it.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC5",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A staff engineer writes a repeatable procedure for cutting a release: bump the version, regenerate the changelog, tag, and open a PR. She wants every engineer who clones the repo to be able to run it by typing `/cut-release` with no per-machine setup. Where does the command file belong?",
+   "options": [
+    "In `.claude/commands/cut-release.md` inside the repository, committed to version control",
+    "In `~/.claude/commands/cut-release.md`, with the team instructed to copy it locally",
+    "In `.claude/skills/cut-release/SKILL.md`, since release steps are a multi-step procedure",
+    "As a `command` entry in the project's `.claude/settings.json` alongside the permission rules"
+   ],
+   "answerIndex": 0,
+   "rationale": "Project-scoped slash commands live in `.claude/commands/` in the repo; committing the file makes `/cut-release` available to everyone on clone with no setup. Putting it in `~/.claude/commands/` makes it personal, and asking each engineer to copy it is the manual setup the requirement rules out. A skill would be a defensible packaging choice in general, but skills are surfaced by the model based on their description rather than invoked by the user typing a fixed `/cut-release`, which is what was asked for. `settings.json` does not define slash commands; there is no `command` key for this.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC6",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "An internal tools team has written a detailed procedure for migrating a legacy Django model, including reference files and a validation script. They want Claude Code to apply it on its own whenever a developer mentions migrating a model, without anyone needing to remember a command name. Which packaging fits, and why?",
+   "options": [
+    "A slash command in `.claude/commands/`, because slash commands can bundle supporting reference files",
+    "A subagent in `.claude/agents/`, because only subagents can carry supporting scripts",
+    "A skill in `.claude/skills/`, because skills carry a description the model matches against the request and are invoked by the model rather than typed by the user",
+    "A section appended to the project `CLAUDE.md`, because anything loaded into every session will be applied consistently"
+   ],
+   "answerIndex": 2,
+   "rationale": "Skills are model-invoked: the frontmatter description is what Claude matches against the user's request, and the skill directory can hold reference files and scripts loaded on demand. Slash commands are user-invoked, so someone must type the name, which is the constraint being ruled out. A subagent is about delegating work into a separate context window, not about discoverability, and subagents are not the only construct that can ship scripts. Pasting the whole procedure into `CLAUDE.md` burns context in every session regardless of relevance and still gives only advisory guidance.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC7",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A data platform team wants every engineer on the repo to have the same internal metrics MCP server available in Claude Code, configured identically and reviewable in code review. The server URL differs between staging and production and is supplied by an environment variable. What is the correct approach?",
+   "options": [
+    "Add the server with `claude mcp add --scope local`, since local scope keeps each engineer's copy in sync with the repo",
+    "Commit a `.mcp.json` file at the project root declaring the server, referencing the environment variable for the URL",
+    "Add an `mcpServers` block to the project's `.claude/settings.json` so it is picked up alongside the permission rules",
+    "Add the server to `~/.claude.json` on each engineer's machine and document the steps in the README"
+   ],
+   "answerIndex": 1,
+   "rationale": "`.mcp.json` at the project root is the project-scoped MCP configuration: it is checked into version control, shared with everyone who clones the repo, and supports environment variable expansion for values that differ per environment. Local scope is private to one user in one project and is not shared or reviewable. MCP servers are not declared in `.claude/settings.json`; that file governs permissions, hooks, and model settings. Configuring each machine by hand is user scope, which drifts between engineers and is invisible to code review.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC8",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A developer wants Claude Code to stop prompting him for approval on `docker compose logs`, a command only he runs, in a repository whose `.claude/settings.json` is shared and tightly reviewed. He does not want his personal allowlist entry appearing in anyone else's checkout. Where should the rule go?",
+   "options": [
+    "In the shared `.claude/settings.json` under `permissions.allow`, since the entry is harmless",
+    "In `~/.claude/CLAUDE.md`, stating that Docker log commands are pre-approved",
+    "In the repository's `.claude/settings.json` under `permissions.ask`, which downgrades the prompt",
+    "In `.claude/settings.local.json`, which is per-user, gitignored by default, and takes precedence over the shared project settings"
+   ],
+   "answerIndex": 3,
+   "rationale": "`.claude/settings.local.json` is the per-user project settings file: it is gitignored by default and overrides the shared `.claude/settings.json`, so a personal allowlist entry stays personal. Adding it to the shared file pushes his preference onto everyone and into code review, which is what he is avoiding. Permissions are enforced by the harness, not the model, so a `CLAUDE.md` statement cannot grant approval. Moving the rule to `permissions.ask` does not remove the prompt; `ask` is the setting that causes one.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC9",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A team is wiring Claude Code into a nightly CI job that triages new Sentry issues and posts a structured summary to Slack. The job must run unattended, and the downstream Slack step needs to parse the result programmatically. Which invocation pattern is appropriate?",
+   "options": [
+    "Run `claude -p` in headless mode with `--output-format json` and an explicit `--allowedTools` list scoping what the job may do",
+    "Run `claude` interactively inside the CI container and pipe the prompt in on stdin, then scrape the terminal output",
+    "Run `claude -p` and rely on the repository's `.claude/settings.json` permission prompts being auto-approved in CI",
+    "Run `claude --continue` so the nightly job resumes the previous night's session and keeps accumulated context"
+   ],
+   "answerIndex": 0,
+   "rationale": "`claude -p` is the headless, non-interactive mode built for automation, `--output-format json` yields a parseable result rather than terminal prose, and an explicit `--allowedTools` list keeps an unattended job scoped to what it actually needs. Piping into the interactive TUI and scraping rendered output is brittle and not the supported automation path. Permission prompts do not auto-approve in CI; an unattended job that hits one simply stalls, which is why tool permissions must be declared up front. `--continue` resumes the most recent conversation in that directory, which is both unreliable across ephemeral CI runners and undesirable, since each night's triage should start clean.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC10",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "While refactoring an authentication module, a developer needs to audit roughly forty files for a deprecated helper before making changes. Reading all forty into the main session would consume most of the context window and bury the refactoring plan. What is the most appropriate use of a subagent here?",
+   "options": [
+    "Subagents are for parallelism only, so this single sequential audit should stay in the main session",
+    "Configure a subagent so its file reads are appended to the main session's context in compressed form",
+    "Delegate the audit to a subagent, which works in its own separate context window and returns only its findings to the main session",
+    "Use a subagent so the audit runs under a different permission set than the main session allows"
+   ],
+   "answerIndex": 2,
+   "rationale": "The defining property of a subagent is its own separate context window: the forty files are read there, and only the summarized findings return to the parent, which preserves the main session's context for the refactoring work. Subagents are not limited to parallel fan-out; context isolation on a single long investigation is a primary use. The subagent's intermediate reads are not merged back into the parent context in any form, compressed or otherwise, which is the whole point. And while a subagent can be given a restricted tool list, it cannot be used to escalate beyond what the session permits, so framing it as a way to get different permissions misstates the mechanism.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC11",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "An engineer closed her terminal mid-task on Friday. On Monday she has two half-finished Claude Code sessions in the same repository, one on a bug fix and one on a docs cleanup, and she needs to pick up the bug fix specifically. Which approach gets her there?",
+   "options": [
+    "Run `claude --continue`, which restores whichever prior session matches the current git branch",
+    "Run `claude --resume` and select the bug-fix session from the list of prior sessions in that directory",
+    "Start a fresh `claude` session and run `/compact` to pull the prior conversation back in",
+    "Re-open the session by passing the previous transcript file to `claude -p` on stdin"
+   ],
+   "answerIndex": 1,
+   "rationale": "`--resume` presents the prior sessions for that directory and lets her choose the specific one, which is what disambiguating between two sessions requires. `--continue` resumes the most recent conversation in the directory; it selects by recency, not by git branch, so it may well restore the docs cleanup. `/compact` summarizes the current session's context to free space; it has no ability to load a different, earlier session. Feeding a transcript into `-p` on stdin starts a new session with pasted text rather than restoring session state, tool history, or continuity.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC12",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A monorepo contains `services/billing/`, which has unusual constraints: money values must use a fixed-point decimal type and never floats. The root `CLAUDE.md` is already long, and the team does not want every session in the frontend package paying for billing-specific rules. What is the right placement?",
+   "options": [
+    "Put the rules in the root `CLAUDE.md` behind a heading named after the billing service so Claude can skip irrelevant sections",
+    "Put the rules in `services/billing/.claude/settings.json` under a project-specific instruction key",
+    "Put the rules in `~/.claude/CLAUDE.md` on each billing engineer's machine",
+    "Put a `CLAUDE.md` inside `services/billing/`, which is pulled in when Claude works with files in that subtree"
+   ],
+   "answerIndex": 3,
+   "rationale": "Claude Code supports memory files in subdirectories, loaded when it reads or works with files under that path, which scopes the billing rules to the sessions that actually need them and keeps the root file lean. Putting the rules under a heading in the root `CLAUDE.md` still loads the full text into every session; a heading does not make content conditional. `settings.json` has no key for instruction prose. User-level memory would apply everywhere on those engineers' machines, including unrelated repositories, and would not reach a frontend engineer who touched billing code.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC13",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A team lead wants Claude Code to prefer composition over inheritance, keep functions under roughly thirty lines where it does not hurt readability, and choose descriptive names over abbreviations. She asks whether to enforce this with hooks. What is the best guidance?",
+   "options": [
+    "Enforce it with a `PostToolUse` hook that rejects any written file containing a function longer than thirty lines",
+    "Enforce it with a `PreToolUse` hook on `Write` that returns a deny decision when abbreviations appear in identifiers",
+    "Keep it in `CLAUDE.md` as advisory guidance, because these are judgment calls with legitimate exceptions rather than mechanically checkable rules",
+    "Move it into a skill so the model loads the standards only when it is writing new code"
+   ],
+   "answerIndex": 2,
+   "rationale": "Hooks are the right tool for rules that a script can evaluate unambiguously; these three are stylistic preferences with explicit escape hatches ('where it does not hurt readability'), so they belong in advisory memory where the model can weigh them in context. A `PostToolUse` hook rejecting every function over thirty lines converts a soft preference into a hard failure and will block legitimate code, such as a long switch or a config block. A `PreToolUse` deny on abbreviations is worse still: it cannot distinguish `id` or `url` from genuinely poor naming, so it produces constant false rejections. A skill is a reasonable packaging idea in general, but skills are loaded on description match for procedures and reference material; baseline style preferences that apply to all code are exactly what project memory is for.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC14",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A frontend team's CI keeps failing on formatting after Claude Code sessions, because the model writes correct code that does not match their Prettier config. They want every file Claude writes or edits to be formatted automatically, with no possibility of being skipped. Which configuration is correct?",
+   "options": [
+    "A `PostToolUse` hook matched to `Write` and `Edit` that runs Prettier on the file path from the tool input",
+    "A `PreToolUse` hook matched to `Write` and `Edit` that reformats the pending content before it is written to disk",
+    "A `CLAUDE.md` instruction to run `npx prettier --write` after every file modification",
+    "A `Stop` hook that runs `npx prettier --write .` across the repository when the session ends"
+   ],
+   "answerIndex": 0,
+   "rationale": "`PostToolUse` fires after the write succeeds, so the file exists on disk and can be formatted deterministically using the path from the tool input, which is the standard auto-format pattern. `PreToolUse` runs before the tool executes; it can allow, deny, or ask, but it is not a mechanism for rewriting the content the tool is about to write. A `CLAUDE.md` instruction is advisory and depends on the model remembering it every time, which is the failure already occurring. A repo-wide `Stop` hook would format files nobody touched, producing noisy diffs, and leaves the working tree unformatted for the entire session until the very end.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC15",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "An open-source maintainer wants Claude Code to post an automated first-pass review on every incoming pull request from outside contributors, running in GitHub Actions. Which setup is appropriate for this workflow?",
+   "options": [
+    "Have each maintainer run `claude` locally against the PR branch, since Claude Code cannot be driven from a CI runner",
+    "Trigger a workflow on pull request events that runs Claude Code headlessly with an API key stored as a repository secret and a tool allowlist scoped to reading the diff and posting a comment",
+    "Configure a `PostToolUse` hook in the repository that fires when a pull request is opened and posts the review",
+    "Add the review instructions to the repository's `CLAUDE.md` so that any contributor running Claude Code locally produces the review automatically"
+   ],
+   "answerIndex": 1,
+   "rationale": "Claude Code runs non-interactively in CI, so a workflow triggered on pull request events with the API key held as a repository secret and an explicit tool allowlist is the correct shape: unattended, scoped, and reproducible. Claude Code is fully usable from a CI runner, so ruling that out is simply wrong. Hooks fire on Claude Code lifecycle and tool events inside a session; they have no awareness of GitHub webhook events like a PR being opened. Instructions in `CLAUDE.md` only affect sessions someone chooses to start, which cannot produce automatic reviews on external contributions, and outside contributors are not running the maintainer's tooling at all.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC16",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A project's `CLAUDE.md` has grown to nearly two thousand lines, covering architecture notes, a full API reference, onboarding steps, and coding standards. Sessions now start with a large fixed context cost and engineers report the model ignoring rules buried deep in the file. What is the best remediation?",
+   "options": [
+    "Split the content across several files in `.claude/` and rely on Claude discovering them when relevant",
+    "Move the whole file into a skill so that none of it loads until the model decides it is needed",
+    "Leave the content in place but reorder it so the most important rules appear first, since earlier content is weighted more heavily",
+    "Trim `CLAUDE.md` to the rules that genuinely apply to every session, and pull the rest in as `@`-imports or move reference material into skills and subdirectory memory files"
+   ],
+   "answerIndex": 3,
+   "rationale": "Project memory is loaded in full at session start, so the fix is to reduce what must always be present: keep the universally applicable rules inline, and route reference material into `@`-imports, skills that load on demand, or subdirectory memory files scoped to the code they govern. Simply dropping loose files into `.claude/` does not make them discoverable; Claude Code loads specific known paths, not arbitrary files. Moving everything into a skill overcorrects, since genuinely universal standards should still be present in every session rather than waiting on a description match. Reordering the file changes nothing about the token cost, and the premise that earlier content is inherently weighted more is not a reliable property to design around.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC17",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "An engineer writes a `PreToolUse` hook script that inspects proposed `Bash` commands and refuses any that would run a migration against the production database. Testing shows the command still executes. Her script writes an explanation to stderr and calls `exit 1`. What is wrong?",
+   "options": [
+    "Hook scripts must return their decision as JSON on stdout; exit codes are ignored entirely by `PreToolUse`",
+    "`PreToolUse` cannot block `Bash`; only path-based tools such as `Write` and `Edit` support blocking",
+    "Exit code 1 is treated as a non-blocking error; blocking requires exit code 2, which stops the tool call and feeds stderr back to Claude as the reason",
+    "The script must also be registered under `permissions.deny` in `settings.json` before the hook's exit code takes effect"
+   ],
+   "answerIndex": 2,
+   "rationale": "Hook exit codes are meaningful: 0 is success, 2 is the blocking signal that stops the tool call and returns stderr to Claude as feedback, and any other non-zero code is surfaced as a non-blocking error, which is why her exit 1 lets the command through. Structured JSON on stdout is a supported alternative for expressing a decision, but it is not the only mechanism and exit codes are certainly not ignored. `PreToolUse` matches on tool name and can block `Bash` just as it can block file tools. And hooks operate independently of `permissions.deny`; a hook does not need a corresponding permission rule to be registered before it takes effect.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CC18",
+   "domain": 2,
+   "domainName": "Claude Code Configuration & Workflows",
+   "domainKey": "claudecode",
+   "text": "A regulated healthcare company must guarantee that no engineer, on any machine, can enable a particular tool in Claude Code, even if that engineer edits their own settings files or passes command-line flags. Which mechanism provides that guarantee?",
+   "options": [
+    "Enterprise managed policy settings, deployed by IT to the system-level managed settings path, which sit at the top of the settings precedence chain",
+    "A `permissions.deny` entry in each repository's committed `.claude/settings.json`",
+    "A `permissions.deny` entry in `~/.claude/settings.json` distributed to every workstation during onboarding",
+    "A `PreToolUse` hook committed to every repository that denies the tool whenever it is invoked"
+   ],
+   "answerIndex": 0,
+   "rationale": "Managed policy settings are deployed at the system level by administrators and take precedence over command-line arguments, local project settings, project settings, and user settings, so they cannot be overridden by an engineer editing their own files or passing flags. A committed project `settings.json` is overridden by that engineer's `.claude/settings.local.json`, and it only applies inside that repo. User-level `~/.claude/settings.json` is owned by the engineer and freely editable, so it constrains nobody who does not want to be constrained. A repository hook is likewise just a committed file the engineer can edit, delete, or bypass by working outside the repo.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE1",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A legal-tech team sends Claude a 60,000-token contract corpus at the top of every request, followed by a short per-user question that changes each time. Latency and cost are both climbing. What structural change gives them the biggest win?",
+   "options": [
+    "Move the corpus to the end of the request so the model reads the question first, and enable `cache_control` on the question.",
+    "Keep the corpus at the top, mark it with a `cache_control` breakpoint, and keep the variable question after it.",
+    "Split the corpus across several `user` turns so each is small enough to be cached automatically.",
+    "Lower `temperature` to 0 so repeated requests return cached responses."
+   ],
+   "answerIndex": 1,
+   "rationale": "Prompt caching requires the cached content to be a stable prefix, so the invariant corpus must stay at the front with a `cache_control` breakpoint and the variable question after it. Option 0 destroys the stable prefix (and caching a short, always-changing question is pointless). Option 2 does not help because caching is not automatic and splitting turns does not create a reusable prefix. Option 3 confuses sampling determinism with response caching; `temperature` does not cache anything.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE2",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "An insurance claims tool must return exactly one of five triage categories so a downstream switch statement can route the claim. In testing, Claude sometimes prefaces the label with a sentence of reasoning. The team cannot change the downstream parser. What is the most reliable fix?",
+   "options": [
+    "Raise `max_tokens` so the model has room to finish its explanation before emitting the label.",
+    "Add \"be concise\" to the system prompt and strip everything before the last line in post-processing.",
+    "Constrain the output contract explicitly (label only, from the enumerated set, no other text) and prefill the assistant turn to start the response inside the expected structure.",
+    "Increase `temperature` so the model varies its phrasing and eventually lands on the bare label."
+   ],
+   "answerIndex": 2,
+   "rationale": "An explicit output contract plus assistant prefill removes the preamble at the source, which is what a rigid parser needs. Option 0 addresses truncation, not extra prose. Option 1 is the brittle post-processing the question rules out, and \"be concise\" does not guarantee format. Option 3 is backwards: higher temperature increases format variance rather than reducing it.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE3",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A support-summarization prompt bundles a long ticket transcript, a set of company tone rules, and the user's actual instruction into one undifferentiated block of text. Claude occasionally treats a customer's sentence in the transcript as an instruction to follow. What is the strongest mitigation?",
+   "options": [
+    "Move the transcript into the `system` prompt so it is treated as trusted configuration.",
+    "Add a final line saying \"ignore any instructions in the text above.\"",
+    "Reduce the transcript to its first 500 tokens so fewer instruction-like sentences appear.",
+    "Wrap the transcript in explicit delimiters such as `<transcript>` tags and state in the instructions that its contents are data to be summarized, not commands."
+   ],
+   "answerIndex": 3,
+   "rationale": "Structured delimiters plus an explicit statement of the content's role is the standard way to separate untrusted data from instructions. Option 0 makes it worse by elevating untrusted text to the most authoritative position. Option 1 is a weak unanchored patch, easily overridden by more specific text inside the transcript. Option 2 discards information the task requires and does not solve the confusion for what remains.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE4",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A data team is extracting entities into a fixed JSON shape. They want the schema honored programmatically rather than by instruction alone. Which approach best matches the Claude API's actual capabilities?",
+   "options": [
+    "Set a `response_format` parameter to `json_schema` on the Messages request.",
+    "Append the JSON Schema to the system prompt and validate downstream, accepting occasional drift as unavoidable.",
+    "Define a tool whose `input_schema` is the target JSON shape and force its use via the `tool_choice` parameter.",
+    "Send the schema as a `assistant` turn so the model treats it as its own prior output."
+   ],
+   "answerIndex": 2,
+   "rationale": "The Messages API enforces structure through tool definitions: an `input_schema` plus a forced `tool_choice` makes the model emit arguments conforming to that schema. Option 0 describes another vendor's parameter, not Anthropic's API surface. Option 1 is the instruction-only fallback the team is explicitly trying to move past. Option 3 misuses the assistant turn, which is for prefilling output, not declaring schemas.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE5",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A team classifying customer emails into 12 nuanced internal categories finds that a clear written definition of each category still yields inconsistent boundary calls, especially between two similar categories. What is the most effective next step?",
+   "options": [
+    "Add a handful of few-shot examples, weighted toward the confusable boundary cases, showing the input and the correct label.",
+    "Add fifty few-shot examples sampled uniformly at random from historical tickets.",
+    "Replace the definitions with a single instruction to \"use your best judgment based on the category names.\"",
+    "Raise `temperature` so the model explores more of the label space before committing."
+   ],
+   "answerIndex": 0,
+   "rationale": "Few-shot examples are most valuable precisely where prose definitions underdetermine the boundary, so targeted edge-case examples are the highest-leverage addition. Option 1 spends a lot of context on examples that mostly re-teach the easy cases and can bias label priors. Option 2 removes the specificity that is already partly working. Option 3 increases variance in a task that needs consistency.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE6",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "An engineer enables extended thinking for a multi-step financial reconciliation task and also prefills the assistant turn with `{\"result\":` to force JSON. The request fails. What is the correct understanding?",
+   "options": [
+    "Prefill is incompatible with extended thinking; drop the prefill and instead specify the JSON contract in the instructions, parsing the final text block.",
+    "Prefill works but must be placed in the `system` prompt when thinking is enabled.",
+    "Extended thinking requires `temperature` to be set above 1, which the request omitted.",
+    "The thinking budget must exceed `max_tokens`, and the prefill is unrelated to the failure."
+   ],
+   "answerIndex": 0,
+   "rationale": "Extended thinking does not permit prefilling the assistant turn, so the JSON contract has to be enforced through instructions (or a forced tool) with parsing applied to the final text. Option 1 misplaces prefill, which is a message-role mechanism and not a system-prompt one. Option 2 inverts the constraint: extended thinking requires temperature 1, not above it. Option 3 reverses the real relationship, since the thinking budget must be less than `max_tokens`.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE7",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A research assistant summarizes internal policy PDFs. Reviewers find summaries that state plausible policy details that appear nowhere in the source. Which prompt-level change most directly reduces this?",
+   "options": [
+    "Lower `temperature` to 0 so the model becomes factually accurate.",
+    "Ask the model to write longer summaries so it has room to be precise.",
+    "Instruct the model to quote the supporting passage for each claim and to write \"not stated in the source\" when the documents do not cover a point.",
+    "Add the phrase \"do not hallucinate\" to the system prompt."
+   ],
+   "answerIndex": 2,
+   "rationale": "Requiring per-claim grounding with quoted evidence, plus an explicit escape hatch for missing information, is the mechanism that makes unsupported claims visible and gives the model a permitted alternative to inventing. Option 0 reduces sampling variance but does not tie output to the source; a deterministic model can be confidently wrong. Option 1 typically increases unsupported filler. Option 3 is an instruction the model cannot operationalize because it has no internal flag for fabrication.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE8",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A team maintains 30 near-identical prompts across different document types. Each fix has to be applied by hand in 30 places, and drift has crept in. What is the best architectural response?",
+   "options": [
+    "Factor the shared instructions into one versioned template with typed slots for the per-document-type parts, and manage it as code.",
+    "Concatenate all 30 prompts into one mega-prompt and let the model select the relevant section.",
+    "Ask Claude to rewrite all 30 prompts at the start of each run so they stay in sync.",
+    "Keep the 30 prompts and add a nightly job that diffs them and files a ticket when they diverge."
+   ],
+   "answerIndex": 0,
+   "rationale": "A single versioned template with parameterized slots removes the duplication that causes drift and makes one fix propagate everywhere. Option 1 wastes context, hurts caching, and increases the chance of the model applying the wrong section's rules. Option 2 introduces nondeterminism into the artifact that is supposed to be the stable control. Option 3 detects drift after the fact rather than eliminating the cause, and still requires 30 manual edits.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE9",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "An ops team ingests vendor invoices where dates appear as `03/04/2026`, `4 March 2026`, and `2026-03-04`, and some vendors use day-first ordering. They need ISO-8601 output. What should the prompt do?",
+   "options": [
+    "Instruct the model to output ISO-8601 dates and rely on its general knowledge of date formats.",
+    "Ask the model to return the date exactly as written and normalize it in application code with a date-parsing library.",
+    "Require the model to emit both the raw date string and the normalized ISO-8601 value, with an explicit rule for resolving ambiguous numeric orderings using the vendor locale supplied in the prompt.",
+    "Run one call to extract dates and a second call to normalize them."
+   ],
+   "answerIndex": 2,
+   "rationale": "Ambiguous numeric dates cannot be resolved from the string alone, so the prompt must supply the disambiguating signal (vendor locale) and a stated rule, while emitting the raw value preserves auditability. Option 0 leaves the `03/04` ambiguity unresolved in either direction. Option 1 pushes the same ambiguity into a library that also cannot resolve it without locale. Option 3 doubles cost and latency while still lacking the locale rule that is the actual blocker.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE10",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A pricing engine asks Claude to compute a multi-step discount involving tiered thresholds and a currency conversion. Accuracy on the final number is what matters; the reasoning is never shown to users. What prompt design best serves this?",
+   "options": [
+    "Ask only for the final number to minimize tokens, since intermediate steps are not displayed.",
+    "Have the model work through the steps before answering, then emit the final value in a designated tag or field the application reads.",
+    "Provide five worked examples with final answers only, so the model learns to jump straight to the result.",
+    "Set `temperature` to 1 so the model considers multiple arithmetic paths."
+   ],
+   "answerIndex": 1,
+   "rationale": "Multi-step arithmetic benefits from the model reasoning before committing, and routing the final value into a designated field lets the application ignore the reasoning without losing its accuracy benefit. Option 0 removes exactly the reasoning that improves multi-step accuracy. Option 2 teaches the model to skip steps, reproducing the failure mode. Option 3 raises variance on a task where a single correct answer exists.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE11",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A code-review assistant is instructed to \"give helpful feedback.\" Reviewers complain the output is generic. The team has a concrete list of what good review comments look like: file and line reference, severity, and a suggested fix. How should the prompt change?",
+   "options": [
+    "Add \"be more specific and less generic\" to the system prompt.",
+    "Ask the model to rate its own feedback quality and retry when it scores low.",
+    "Send each file in a separate request so the model has less to cover.",
+    "Replace the vague instruction with the explicit criteria: require a file and line reference, a severity from a defined set, and a concrete suggested fix for every comment."
+   ],
+   "answerIndex": 3,
+   "rationale": "Vague instructions produce vague output; naming the required components converts a subjective goal into checkable structure. Option 0 restates the complaint without telling the model what specific means here. Option 1 adds cost and asks the model to judge against the same undefined standard. Option 2 changes the scope of the input but leaves the underspecified instruction, which is the actual cause, untouched.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE12",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "An engineer estimates request size by counting characters and dividing by four, then sizes a batching job right at the context limit. Jobs containing code and non-English text start failing. What is the correct diagnosis and fix?",
+   "options": [
+    "The context limit applies only to the system prompt, so the system prompt should be shortened.",
+    "Non-English text is not supported at long context lengths, so the corpus should be translated first.",
+    "The fix is to raise `max_tokens`, which expands the total context window for the request.",
+    "Character heuristics are approximate and vary by content type; use the token counting endpoint to measure real usage and leave headroom for the response."
+   ],
+   "answerIndex": 3,
+   "rationale": "Tokenization density differs across code, whitespace, and non-Latin scripts, so a fixed characters-per-token ratio underestimates exactly this content; measuring with the token counting endpoint and reserving room for output is the reliable approach. Option 0 is false, since the window covers the whole request plus output. Option 1 invents a limitation that does not exist. Option 2 misunderstands `max_tokens`, which reserves space for the response within the window rather than enlarging it.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE13",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A marketing team runs a prompt that generates ten distinct campaign taglines per brief. They currently run at `temperature` 0 and complain the ten outputs are repetitive variations of each other. What is the appropriate adjustment?",
+   "options": [
+    "Keep `temperature` at 0 and ask for thirty taglines, then pick ten.",
+    "Raise `temperature` toward the upper end of its range for this creative generation task, while keeping deterministic settings for the extraction steps elsewhere in the same pipeline.",
+    "Raise `temperature` globally across every call in the pipeline for consistency of configuration.",
+    "Leave `temperature` alone and instruct the model to \"be more creative.\""
+   ],
+   "answerIndex": 1,
+   "rationale": "Sampling temperature should be chosen per task: creative divergence benefits from higher temperature while extraction and classification in the same pipeline still need low variance. Option 0 samples more from the same narrow distribution, so the repetition persists. Option 2 applies a creative setting to steps that require format and value stability. Option 3 asks for an outcome that the sampling configuration is actively suppressing.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE14",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A team builds a prompt regression suite. When a production failure appears, their habit is to rewrite the whole system prompt from scratch until the failing case passes. Over six months, previously fixed bugs keep reappearing. What practice would fix this pattern?",
+   "options": [
+    "Freeze the prompt after the next rewrite and route all future fixes to post-processing code.",
+    "Add every production transcript to the prompt as few-shot examples so the model has seen each failure.",
+    "Add each observed failure as a held test case and make targeted, versioned edits to the existing prompt, re-running the full suite before shipping.",
+    "Increase the model's thinking budget so it self-corrects the cases the prompt does not cover."
+   ],
+   "answerIndex": 2,
+   "rationale": "Regressions reappear because full rewrites discard the constraints earlier fixes added; a growing test suite plus small versioned edits preserves them and proves nothing broke. Option 0 abandons prompt-level control and pushes semantic problems into brittle string handling. Option 1 bloats context, hurts cache stability, and generalizes poorly from raw transcripts. Option 3 spends compute without addressing the missing constraint in the prompt itself.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE15",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A document pipeline needs Claude to return a JSON object where an optional `reviewer_notes` field is sometimes genuinely absent. Downstream code crashes on a mix of missing keys, `null`, and empty strings. What prompt-side decision resolves this?",
+   "options": [
+    "Instruct the model to omit the field whenever it has nothing to say, and let the parser use a default.",
+    "Specify one canonical representation for absence in the schema and instructions, and require the key to be present in every response.",
+    "Ask the model to guess plausible reviewer notes so the field is never empty.",
+    "Move `reviewer_notes` into a separate call so the main object always has a fixed shape."
+   ],
+   "answerIndex": 1,
+   "rationale": "The crash comes from three encodings of the same state, so the fix is to pick one and require the key always be present, which makes the shape invariant. Option 0 keeps a variable-shape object and just moves the branching into the parser. Option 2 fabricates data to satisfy a format, which is worse than the bug. Option 3 adds a call and cost while leaving the absence-encoding question unanswered in the second response.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE16",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A chatbot's system prompt is assembled per request by interpolating the user's name, the current timestamp, and a session ID into the first paragraph, ahead of 8,000 tokens of stable policy text. Cache hit rates are near zero. What should the team do?",
+   "options": [
+    "Round the timestamp to the nearest hour so the prefix changes less often.",
+    "Remove the personalization entirely, since caching and personalization are mutually exclusive.",
+    "Shorten the policy text so there is less content to re-process on each miss.",
+    "Move the stable policy text to the front of the prompt and place the per-request personalization after it, behind the cache breakpoint."
+   ],
+   "answerIndex": 3,
+   "rationale": "Caching matches on an exact prefix, so any variable content ahead of the stable block invalidates it; reordering so the invariant policy comes first restores hits. Option 0 only reduces invalidation frequency and still breaks the prefix on every name and session change. Option 1 is a false tradeoff, since ordering solves both. Option 2 lowers the cost of each miss rather than converting misses into hits, and discards policy content the product needs.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE17",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A translation QA prompt includes three few-shot examples, all drawn from short marketing copy. In production the tool mostly handles long technical manuals, and outputs are now suspiciously terse and marketing-flavored. What is the most likely explanation and remedy?",
+   "options": [
+    "The examples are anchoring style and length to an unrepresentative distribution; replace them with examples matching production inputs, or remove them and rely on explicit instructions.",
+    "Three examples are too few for the model to generalize; add twenty more marketing examples.",
+    "The model has a length bias that can only be corrected by raising `max_tokens`.",
+    "Few-shot examples must always be placed in the `user` turn, and putting them elsewhere caused the drift."
+   ],
+   "answerIndex": 0,
+   "rationale": "Few-shot examples transfer style, length, and register as well as task shape, so unrepresentative examples actively mislead the model; matching them to production or dropping them in favor of clear instructions is the fix. Option 1 amplifies the mismatch. Option 2 confuses an output cap with a learned length prior. Option 3 asserts a placement rule that does not exist and would not explain register drift.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE18",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "An analytics assistant must answer questions strictly from a retrieved document set and must refuse when the set does not contain the answer. In evaluation it answers from general knowledge about a third of the time. Which prompt change is most likely to help?",
+   "options": [
+    "Retrieve more documents per query so the answer is more often present.",
+    "State that the retrieved documents are the only permitted source, require a citation to a document identifier for every claim, and define the exact refusal phrasing to use when no document supports the answer.",
+    "Instruct the model that it has no knowledge outside the documents.",
+    "Move the retrieved documents into the `assistant` turn so the model treats them as things it already said."
+   ],
+   "answerIndex": 1,
+   "rationale": "Scoping the permitted source, forcing per-claim citations, and giving an explicit refusal string turns an implicit expectation into a checkable behavior with a defined alternative. Option 0 improves recall but does nothing about behavior when retrieval genuinely misses. Option 2 states something the model cannot make true about itself, and it degrades honesty rather than grounding. Option 3 misuses the assistant role and can make the model treat the documents as its own assertions rather than evidence to cite.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE19",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A team wants Claude to produce a long report with a required section order: executive summary, findings, risks, recommendations. Drafts sometimes reorder sections or merge risks into findings. What is the most reliable prompt structure?",
+   "options": [
+    "Describe the desired sections in a paragraph of prose and ask for a well-organized report.",
+    "Generate each section in its own request and concatenate them in code.",
+    "Provide a tagged skeleton with one empty element per section in the required order and instruct the model to fill each element without adding, removing, or reordering elements.",
+    "Ask for the report, then send a second request asking the model to reorder its own sections."
+   ],
+   "answerIndex": 2,
+   "rationale": "An explicit tagged skeleton makes the required order and section boundaries part of the output structure rather than something the model must infer, and it gives the application deterministic parse points. Option 0 leaves organization to the model's discretion, which is the observed failure. Option 1 guarantees order but loses cross-section coherence, since each call cannot see the others. Option 3 doubles cost and depends on the same judgment that failed the first time.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE20",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A startup's single system prompt has grown to 4,000 words as every edge case discovered in production was appended to the end. New rules now sometimes contradict older ones, and behavior is unpredictable. What should the team do first?",
+   "options": [
+    "Audit the prompt for contradictory rules, resolve the conflicts, and reorganize it into labeled sections with the general principles stated before the exceptions.",
+    "Delete the oldest half of the rules, on the assumption that the newest additions reflect current requirements.",
+    "Split the prompt across the system prompt and the user turn to reduce the size of either one.",
+    "Instruct the model that when rules conflict, it should follow whichever appears last."
+   ],
+   "answerIndex": 0,
+   "rationale": "Contradictions, not length alone, are what make behavior unpredictable, so resolving conflicts and imposing a principle-then-exception structure addresses the actual cause. Option 1 deletes rules that may still be load-bearing without checking. Option 2 relocates text without removing any contradiction and weakens the persistent-instruction placement. Option 3 encodes a tiebreak that leaves both contradictory rules in place, so the observed behavior depends on append order rather than intent.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD1",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A logistics company gives Claude a tool named `lookup` whose description reads, in full, \"Looks up a record.\" The tool actually queries a shipment-tracking database and requires a carrier code and a tracking number. In testing, Claude calls it for customer questions about invoices and billing disputes, where it returns nothing useful. What is the most direct fix?",
+   "options": [
+    "Add a system prompt instruction listing the question categories that should route to `lookup` and the ones that should not, leaving the tool definition itself unchanged.",
+    "Set `tool_choice` to `{\"type\": \"any\"}` so the model is forced to pick a tool on every turn and stops guessing.",
+    "Rename it `get_shipment_status` and write a description covering what it queries, its required inputs, and when it does not apply.",
+    "Lower the temperature so the model is less likely to make speculative tool calls."
+   ],
+   "answerIndex": 2,
+   "rationale": "The model selects tools primarily from the tool name and description, which are part of the tool definition it sees on every turn. A vague name plus a one-line description gives it nothing to discriminate on, so it over-applies the tool. Naming the operation concretely and describing scope, inputs, and non-applicable cases is the fix at the source. Patching selection logic into the system prompt is a workaround that duplicates knowledge outside the tool definition and will drift as tools change. `tool_choice: any` makes the problem worse by forcing a tool call even when none applies. Temperature controls sampling randomness, not the model's understanding of what a tool does.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD2",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "An internal HR assistant has a single tool, `hr_operation`, that takes an `action` string (\"get_pto_balance\", \"submit_pto_request\", \"lookup_manager\", \"update_address\") plus a free-form `payload` object whose required fields differ per action. The team reports Claude frequently sends payloads missing required fields. What is the strongest architectural criticism?",
+   "options": [
+    "The schema cannot express per-action required fields, so the model gets no structural signal about what each operation needs.",
+    "The tool has too many parameters overall, and selection accuracy degrades sharply once a single tool exceeds three top-level parameters in its schema.",
+    "The problem is that the tool mixes reads and writes, and Claude cannot reliably call a tool that does both.",
+    "Free-form objects are not supported in tool `input_schema`, so the payload never validates."
+   ],
+   "answerIndex": 0,
+   "rationale": "A fat dispatcher tool collapses several distinct operations behind one schema, and JSON Schema in the tool definition then cannot state that `submit_pto_request` needs dates while `update_address` needs street fields. The model loses the per-operation constraint information it would otherwise use, so it improvises. Narrow tools with precise schemas restore it. The parameter-count claim is invented; there is no three-parameter threshold. Mixing reads and writes is a permissioning and safety concern worth flagging, but it is not why fields go missing. Object-typed parameters are perfectly legal in `input_schema`, so the last option is factually wrong.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD3",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A support agent calls `get_order`, and the order ID does not exist. The engineering team currently catches the exception and returns an empty tool result with no content, reasoning that returning error text might confuse the model. Users see the agent silently invent plausible order details. What should the team return instead?",
+   "options": [
+    "Nothing from the tool, but append a system prompt line saying \"if a tool returns empty, tell the user the record was not found.\"",
+    "A tool result flagged as an error whose content names the problem specifically, such as \"No order found with ID 88213. Order IDs are 6 digits; this one has 5.\"",
+    "An HTTP 404 status object serialized as JSON, since the model was trained on web data and will interpret status codes correctly.",
+    "A successful tool result containing a placeholder order record with null fields, so the model always receives a well-formed shape it can parse without special-casing."
+   ],
+   "answerIndex": 1,
+   "rationale": "Tool results can be flagged as errors via `is_error`, and the content is what the model reasons over next. A specific, actionable error message lets the model correct course, ask the user for a valid ID, or explain the failure. Returning nothing gives the model no grounding, which is exactly the condition under which it fills the gap with fabrication. A prompt-level rule about empty results is brittle and does not tell the model why the call failed. A bare status code is far less informative than a sentence explaining the actual problem. A placeholder record with nulls is the worst option here because it looks like success and invites the model to treat fabricated structure as real data.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD4",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A fintech team is adding web research to a Claude-powered analyst assistant. They need current public information from the open web, and they also need to query their own proprietary risk model, which runs as an internal service. An engineer proposes building one MCP server that wraps both a search provider and the risk model. What is the better call?",
+   "options": [
+    "Build the single combined MCP server so all external knowledge flows through one auditable interface.",
+    "Build two MCP servers, one wrapping a third-party search API and one wrapping the risk model, so both capabilities are protocol-uniform and independently deployable.",
+    "Skip tools entirely for research and instead paste relevant web pages into the context window at request time.",
+    "Use Anthropic's built-in web search tool for open-web research, and build an MCP server only for the proprietary risk model."
+   ],
+   "answerIndex": 3,
+   "rationale": "Anthropic provides a managed web search tool on the API, so wrapping a third-party search provider in custom infrastructure adds cost and maintenance for a capability that already exists server-side. The proprietary risk model has no built-in equivalent and genuinely needs a custom integration. Bundling both into one server couples an in-house capability to a commodity one and forfeits the built-in. Building two servers is the same mistake spread across two repos: protocol uniformity is not itself a benefit worth a redundant search wrapper. Pasting pages manually removes the model's ability to decide what to look up and does not scale to open-ended research.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD5",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A travel assistant must fetch weather, currency rates, and visa requirements for a destination the user just named. None of the three depends on the others. The team wants the lowest possible latency per turn. What behavior should they design for and rely on?",
+   "options": [
+    "Chain the calls deliberately, returning each tool result before offering the next tool, so the model reasons step by step over what it has already learned.",
+    "Merge the three capabilities into one `get_destination_info` tool so only one round trip is ever needed.",
+    "Set `tool_choice` to force each tool in sequence across three separate API requests.",
+    "Let the model emit multiple `tool_use` blocks in one turn, execute them concurrently, and return all results together."
+   ],
+   "answerIndex": 3,
+   "rationale": "Claude can request several independent tools in one assistant turn, and the application is free to execute them in parallel and return all the corresponding `tool_result` blocks in a single following message. That collapses three round trips into one, which is the latency win being asked for. Deliberate chaining serializes calls that have no dependency, which is the opposite of the goal. Merging into one fat tool trades away granularity and reusability, and it hides three separately failing dependencies behind one result. Forcing each tool in its own request is the most expensive option and reintroduces the serialization the parallel path avoids.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD6",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A compliance workflow requires that every user message about account status be answered from the live system of record, never from the model's own recollection of earlier turns. The team has exactly one tool, `fetch_account_status`. What is the appropriate control?",
+   "options": [
+    "Set `tool_choice` to `{\"type\": \"tool\", \"name\": \"fetch_account_status\"}` on those turns so the model must call that tool.",
+    "Set `tool_choice` to `{\"type\": \"auto\"}` and add a strongly worded system prompt requiring the tool on every account question, reinforced with few-shot examples.",
+    "Set `tool_choice` to `{\"type\": \"none\"}` and inject the account status into the system prompt before each request.",
+    "Remove all other tools from the request so the model has only one option and will therefore always use it."
+   ],
+   "answerIndex": 0,
+   "rationale": "`tool_choice` with type `tool` and a named tool forces the model to invoke that tool, which is the hard guarantee a compliance requirement needs. `auto` leaves the decision to the model no matter how emphatic the prompt is, so it cannot be relied on as a control. `none` prevents tool use entirely; pre-injecting status into the prompt also means the application must know in advance which account to fetch, which defeats the point when the user names the account mid-conversation. Reducing the tool list narrows the choice but does not compel a call at all, so the model can still answer from context.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD7",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A team ships an MCP server exposing `search_tickets`, `get_ticket`, and `close_ticket`. Three separate Claude applications connect to it: a customer-facing bot, an internal triage agent, and a read-only analytics assistant. The customer bot must never close tickets. Where does that restriction most appropriately live?",
+   "options": [
+    "In each application's system prompt, instructing the model not to call `close_ticket`.",
+    "In the server's authorization layer, scoped per client credential, so the customer bot's connection cannot invoke `close_ticket` at all.",
+    "In `close_ticket`'s description, adding a line saying it must not be used by customer-facing applications.",
+    "In a fourth MCP server built specifically for the customer bot that omits the write tools entirely, replacing the shared server for that one application."
+   ],
+   "answerIndex": 1,
+   "rationale": "Model-facing text is guidance, not enforcement, so any control that depends on the model choosing to obey it is not a security boundary. Enforcing the restriction in the server's authorization layer, keyed to which client is connected, means a `close_ticket` request from the customer bot fails even if the model is confused or the input is adversarial. A system prompt instruction and a warning in the tool description are both the same category error: they are advisory. Forking a whole second server does produce a narrower surface, but it duplicates code and drifts from the shared server over time, and it still lacks per-credential enforcement if that fork is ever reused elsewhere.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD8",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A data team's `run_report` tool returns a 40,000-row result set as raw JSON. Claude's answers degrade badly on these calls, and cost per request has tripled. The rows themselves are correct. What is the best change to the tool?",
+   "options": [
+    "Return the full result set but instruct the model in the system prompt to only read the first fifty rows and ignore the remainder when composing its answer.",
+    "Return the result set as a compact CSV string instead of JSON to cut token count roughly in half, keeping all rows.",
+    "Return aggregates plus the first page of rows and a cursor the model can pass back for more.",
+    "Split `run_report` into forty smaller tools, one per report type, so each returns a narrower slice."
+   ],
+   "answerIndex": 2,
+   "rationale": "Tool results enter the context window, so a tool that can return arbitrarily large payloads is a design defect regardless of format. Returning aggregates plus a bounded page and an explicit cursor gives the model what it usually needs immediately and a mechanism to fetch more when it genuinely does. Telling the model to ignore most of the payload does not help because the tokens are already in context and already paid for. Switching to CSV shaves tokens but leaves the underlying unbounded-result problem intact at half the size. Splitting by report type addresses granularity of selection, not payload size; one narrow report can still return 40,000 rows.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD9",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A developer tool runs entirely on an engineer's laptop and needs Claude to read local files, run tests, and inspect the local git history. There is no multi-user requirement and no shared infrastructure. Which MCP deployment shape fits?",
+   "options": [
+    "A remote MCP server behind HTTPS, so the same server can later be reused by teammates.",
+    "No MCP server at all, since local filesystem access is available as an Anthropic built-in tool.",
+    "A remote MCP server paired with a local agent installed on the laptop, tunneling filesystem and shell calls back through the network to the developer's machine.",
+    "A local MCP server launched by the client as a subprocess and spoken to over stdio, running with the developer's own permissions."
+   ],
+   "answerIndex": 3,
+   "rationale": "MCP supports local servers spawned by the client and spoken to over stdio, which is exactly the shape for capabilities that are inherently machine-local: the developer's files, their shell, their git checkout. No network exposure, no auth infrastructure, and the server runs with the user's own permissions. A remote server would have to reach back into a laptop that is not reachable, and building for hypothetical future sharing is speculative work for a single-user tool. There is no Anthropic built-in that reads a user's arbitrary local filesystem through the API. The tunnel option is the most complex arrangement and reintroduces network exposure for data that never needed to leave the machine.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD10",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A team is designing an MCP server for a document repository. Claude needs to (a) search documents by query and (b) have the current company style guide available as reference material that the client can attach to context without the model needing to decide to fetch it. How should these two be modeled?",
+   "options": [
+    "Expose search as a tool, since it needs model-supplied arguments, and the style guide as an MCP resource the client can read and surface into context on its own.",
+    "Expose both as tools, since anything the model might need must be invocable by the model.",
+    "Expose both as MCP resources, since both are ultimately reads against the same repository.",
+    "Expose search as a tool and the style guide as an MCP prompt, since prompts are the MCP mechanism for supplying reusable reference text to the model."
+   ],
+   "answerIndex": 0,
+   "rationale": "MCP distinguishes tools, which the model invokes to take an action, from resources, which are application-controlled data the client can read and place into context on its own terms. A search that depends on a runtime query is a tool; a stable reference document the client wants attached regardless of model initiative is a resource. Making both tools forces the model to remember to fetch the style guide, which it will sometimes skip. Making both resources breaks search, which needs model-supplied arguments and a decision to run. Prompts in MCP are reusable, user-selectable templates or workflows, not a general container for reference text, so the last option misassigns the primitive.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD11",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "An operations agent has 34 tools loaded, many with overlapping purposes: `find_user`, `search_users`, `get_user_by_email`, and `lookup_employee` all hit variations of the same directory. Selection accuracy is poor and getting worse as tools are added. What is the most effective remediation?",
+   "options": [
+    "Keep all 34 tools but reorder them so the most-used tools appear first in the tools array, since ordering influences selection.",
+    "Consolidate the overlapping directory tools into one clearly named tool with parameters for the lookup variants.",
+    "Raise the model's max tokens so it has more room to reason about which tool to pick.",
+    "Add a routing tool that Claude calls first, which inspects the request and returns the name of the directory tool it should call next."
+   ],
+   "answerIndex": 1,
+   "rationale": "Four tools that do nearly the same thing force the model into a distinction the tool definitions themselves do not clearly draw, and the ambiguity compounds as the catalog grows. Collapsing genuine duplicates into one well-named tool with parameters for the variants removes the ambiguity rather than working around it, and auditing for other duplicates addresses the trend. Reordering is not a documented selection lever and would be a fragile thing to depend on even if it correlated. Max tokens governs output length, not selection quality. A routing tool adds a full extra round trip and simply relocates the same ambiguous choice into another model call, where it can be answered just as wrongly.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD12",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A retail company's pricing service is a stable, well-documented REST API used by one Claude application: a single internal margin-analysis assistant with no roadmap for other consumers. A senior engineer insists on wrapping it in a custom MCP server \"because MCP is the standard.\" What is the most defensible assessment?",
+   "options": [
+    "The wrapper is warranted, because MCP servers advertise tool definitions the client can discover at runtime, which a hard-coded direct API call cannot provide.",
+    "The wrapper is warranted, because calling a REST API directly from the application means the tool results bypass the model's context window.",
+    "Direct integration is fine here; MCP earns its overhead through reuse across applications or separate ownership, and neither applies.",
+    "Direct integration is fine, but only until the API adds authentication, at which point an MCP server becomes required."
+   ],
+   "answerIndex": 2,
+   "rationale": "MCP's value is reuse and independent maintenance: one server, many clients, versioned and owned separately from any single application. With one consumer, no second client on the roadmap, and the same team owning both sides, a wrapper adds a deployment, a protocol hop, and a maintenance burden for benefits nobody collects. Defining a tool that calls the REST API directly is the proportionate choice. Runtime tool discovery is real but is not a benefit when the tool list is static and known at build time. The claim about bypassing the context window is simply false; a directly implemented tool returns its result to the model the same way. Authentication is orthogonal, since a direct integration can hold credentials perfectly well.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD13",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A payments MCP server is used by four applications. The team needs to change `create_refund` so that `reason_code` becomes required, where it was previously optional. Two of the four applications will need code changes to comply. What is the safest rollout?",
+   "options": [
+    "Make the field required immediately, since the server is the single source of truth and consumers should conform to it.",
+    "Keep `reason_code` optional in the schema but reject calls that omit it, so no consumer's tool definition changes.",
+    "Have each consuming application pin its own copy of the server so the change only affects applications that opt in by upgrading their pinned version.",
+    "Introduce the stricter behavior as a versioned variant, keep the existing tool working while consumers migrate, then deprecate it."
+   ],
+   "answerIndex": 3,
+   "rationale": "The whole point of maintaining an MCP server independently of its applications is that the two can move on separate schedules, which only works if breaking changes are staged. Adding a versioned tool alongside the existing one lets consumers migrate on their own timeline and lets the team retire the old surface deliberately. Flipping the requirement immediately breaks two live applications at once and squanders the decoupling. Advertising a field as optional while rejecting calls that omit it makes the schema lie to the model, which will keep omitting it and keep failing. Forking a copy per consumer abandons the shared server entirely and guarantees four divergent implementations, which is the situation MCP was adopted to avoid.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD14",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A scheduling tool takes a `start_time` parameter. In production, the model sends values like \"next Tuesday at 3\", \"2026-08-04T15:00\", and \"3pm CT\" on different turns, and roughly a fifth of calls fail parsing. The schema currently declares `start_time` as `{\"type\": \"string\"}` with no description. What is the best fix?",
+   "options": [
+    "Change the parameter to `{\"type\": \"integer\"}` holding a Unix timestamp, since numeric types cannot be malformed.",
+    "Accept any string and add a natural-language date parser on the server so all three forms resolve correctly.",
+    "Add a parameter description giving the exact expected format with an example, and reject other forms with an error naming that format.",
+    "Move time handling out of the schema entirely and have the model state the time in prose, which the server extracts from the surrounding message text."
+   ],
+   "answerIndex": 2,
+   "rationale": "Parameter descriptions in `input_schema` are read by the model and are the intended place to specify format constraints; a bare typed string with no description tells the model nothing, so it produces whatever form seems natural. A concrete format plus an example collapses the variation, and an error naming the required format lets the model self-correct on the rare miss. A Unix integer removes ambiguity in principle but pushes date arithmetic onto the model, which is a worse job for it than emitting a formatted string, and the value can still be wrong. A permissive server parser hides the ambiguity rather than resolving it and will silently misread relative phrases like \"next Tuesday\" whose meaning depends on a reference date the server may not share. Extracting times from surrounding prose abandons structured input and is far less reliable than the schema the tool-use API already provides.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD15",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A team building a research assistant wants Claude to write and execute short Python snippets to compute statistics over data it has retrieved. They are debating whether to build an MCP server that shells out to a Python interpreter on their own infrastructure. What should they weigh first?",
+   "options": [
+    "Whether Anthropic's built-in code execution tool already covers their needs, since it runs Python in a managed sandbox they would otherwise have to build and operate.",
+    "Whether their MCP server can be made stateless, since MCP servers cannot hold execution state between calls.",
+    "Whether Claude can generate Python at all without a dedicated code-generation tool being defined.",
+    "Whether to use `tool_choice` to force code execution on every turn, so that every statistical claim in the output is reproducible from a recorded execution trace."
+   ],
+   "answerIndex": 0,
+   "rationale": "Anthropic offers a code execution tool that runs Python in a managed sandbox, so the first question is whether that built-in covers the requirement before the team takes on the considerable burden of operating arbitrary code execution themselves, including isolation, resource limits, and escape prevention. If it does not fit, custom infrastructure becomes a real option, but that is the second question, not the first. The claim that MCP servers cannot hold state between calls is wrong; a server is an ordinary process and may maintain sessions. Claude generates code without any special tool being defined, so the third option misstates the problem, which is execution and not generation. Forcing code execution on every turn would produce needless calls on turns that require no computation.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD16",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "An agent has a `delete_customer_record` tool. Product wants Claude to be able to perform the deletion end to end during a support conversation, but legal requires a human decision before any record is destroyed. Which design satisfies both?",
+   "options": [
+    "Give the tool description a strong warning that it is destructive and must only be used when the user has clearly confirmed.",
+    "Have the tool perform the deletion but write a detailed entry to an immutable audit log that a compliance reviewer examines on a fixed weekly cadence afterward.",
+    "Have the tool stage the deletion and return a pending confirmation token, with the application requiring explicit human approval before the commit.",
+    "Restrict the tool with `tool_choice: none` on most turns and enable it only when the conversation mentions deletion."
+   ],
+   "answerIndex": 2,
+   "rationale": "When an action is irreversible and a human decision is legally required, the approval gate has to sit in the application between the model's request and the actual write. A staged deletion returning a confirmation token gives the model a complete, useful workflow while keeping the destructive commit behind an explicit human step. A warning in the tool description is guidance the model may follow and may not, which is not a legal control. Auditing after the fact detects violations but does not prevent the destruction the requirement exists to prevent. Toggling `tool_choice: none` based on keyword matching is both leaky, since deletions can be requested without the word appearing, and beside the point, since enabling the tool at all still allows an unapproved commit.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD17",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A team's MCP server exposes `execute_sql`, which accepts an arbitrary SQL string and runs it against the production analytics warehouse with a role that has full read and write access. They argue it is safe because the system prompt tells Claude to only write SELECT statements. What is the primary flaw?",
+   "options": [
+    "The tool is too coarse to be selected accurately, since one tool covering every possible query gives the model no signal about when raw SQL is the right move.",
+    "The privilege the tool's credentials carry, not the model's stated intent, defines the blast radius; the connection should use a read-only role scoped to specific tables.",
+    "Arbitrary SQL strings cannot be validated by JSON Schema, so the tool definition is malformed.",
+    "SQL results are usually too large for the context window, which is what makes this design unsafe."
+   ],
+   "answerIndex": 1,
+   "rationale": "A tool executes with whatever privileges its credentials carry, and prompt text is not an access control. Anything that can influence the generated SQL, including untrusted content pulled into the conversation, inherits full write access to production. Scoping the database role to read-only over specific tables makes the dangerous operation impossible rather than merely discouraged. Tool granularity is a legitimate concern but a secondary one here; a perfectly selected `execute_sql` is still catastrophic with a write-capable role. JSON Schema handles a string parameter without difficulty, so the tool definition is well formed even though the design is not. Large result sets are a real cost and quality issue, addressed elsewhere, but they are not the security flaw this question turns on.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD18",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A team is instrumenting a customer-facing agent and wants to know, for each tool, how often the model picks it when it should and how often it picks it wrongly. An engineer proposes measuring only end-to-end task success. What is the strongest argument for measuring tool selection separately?",
+   "options": [
+    "End-to-end success cannot be measured for agents that call tools, because the tool results are not part of the model's output.",
+    "Per-tool metrics are required before `tool_choice` can be configured correctly.",
+    "Tool selection accuracy is the only metric that correlates with user satisfaction in agentic systems, which makes end-to-end success redundant to track.",
+    "End-to-end success is an aggregate that hides which specific tool definition is failing, so per-tool data is what makes a fix actionable."
+   ],
+   "answerIndex": 3,
+   "rationale": "End-to-end success is worth tracking, but when it drops it does not say whether the model picked the wrong tool, passed bad arguments, or handled a valid result poorly. Per-tool selection data localizes the defect to a specific definition, which is what makes the fix actionable, since the remedy is usually a rewritten description or a tightened schema. End-to-end success is perfectly measurable for tool-using agents, so the second option is false. `tool_choice` is a per-request configuration that does not depend on having selection metrics. The last option overclaims: an agent can select every tool correctly and still fail the user's task, so the two metrics are complements rather than substitutes.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD19",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "An inventory tool intermittently fails with a transient upstream timeout, roughly one call in twenty. Currently the application catches the timeout and returns the raw stack trace as the tool result. Claude typically responds by apologizing to the user and giving up. What is the better handling?",
+   "options": [
+    "Retry inside the tool with a short backoff, and if retries are exhausted return a concise error saying the service was unreachable.",
+    "Return the stack trace but add a system prompt instruction telling Claude to retry any tool that returns an exception.",
+    "Return an empty successful result so the model continues the conversation without surfacing infrastructure problems to the user.",
+    "Force a second call to the same tool using `tool_choice` whenever the previous result contained an error, so failures are always retried at the model level."
+   ],
+   "answerIndex": 0,
+   "rationale": "A transient infrastructure failure is best absorbed where it occurs, so retrying inside the tool with backoff resolves most of these before the model ever sees them. When retries genuinely fail, a short error naming the condition and its transience gives the model something useful to say and act on, whereas a stack trace is noise the model cannot interpret and often reads as terminal. Pushing retry logic into the system prompt makes reliability depend on the model's judgment and burns extra inference round trips for an infrastructure concern. An empty successful result misrepresents failure as success and invites fabrication. Blindly forcing an immediate repeat call with `tool_choice` retries even non-transient errors, such as a bad argument, which will fail identically every time.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "TD20",
+   "domain": 4,
+   "domainName": "Tool Design & MCP Integration",
+   "domainKey": "tools",
+   "text": "A company is planning integrations for a new Claude agent across four capabilities: reading the team's Google Drive (a well-maintained third-party MCP server already exists), fetching current public web pages, querying an internal microservice with a clean REST API used by this agent alone, and orchestrating a proprietary multi-step provisioning workflow that three other Claude applications will also need. What is the best allocation?",
+   "options": [
+    "Build custom MCP servers for all four so the integration surface is uniform and independently versioned.",
+    "Connect the existing Drive MCP server, use the built-in web tool for public pages, call the internal REST API directly, and build a new server only for provisioning.",
+    "Build one MCP server exposing all four capabilities as tools, giving the agent a single connection to manage.",
+    "Use the built-in web tool for public pages and build custom MCP servers for the other three, since only public web access has a first-party equivalent available."
+   ],
+   "answerIndex": 1,
+   "rationale": "Each capability should get the lightest integration that meets its actual requirements. An existing, maintained MCP server is reused rather than rebuilt. Public web access has a first-party built-in, so no custom infrastructure is justified. The internal REST API has exactly one consumer and a clean interface, so a wrapper would add a hop and a deployment for no reuse benefit. The provisioning workflow is the one case with genuine multi-application demand and proprietary logic, which is precisely where an MCP server pays for itself. Building all four is uniformity for its own sake and rebuilds two integrations that already exist in better form. One combined server couples four unrelated lifecycles and cannot be reused piecemeal by the other three applications. The last option correctly spares the web tool but still rebuilds the Drive server and wraps a single-consumer API.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX1",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "An engineer adds prompt caching to a document-QA endpoint. Each request is assembled in this order: a system block containing the current UTC timestamp and the requester's display name, then a 40,000-token policy manual, then the user's question. A `cache_control` breakpoint sits at the end of the manual. After a week in production, cache hit rate is effectively zero and input costs are slightly higher than before caching was added. What is the cause and the correct fix?",
+   "options": [
+    "The manual exceeds the maximum size of a single cacheable block, so it is silently skipped; split it into four smaller blocks with a breakpoint on each.",
+    "Caching applies only to `tools` and `system` blocks, so a breakpoint placed after document content in the messages array is ignored; move the manual into `system`.",
+    "The timestamp and display name sit ahead of the manual, so the cached prefix differs on every call; move those volatile fields after the manual, below the breakpoint.",
+    "The default cache lifetime is expiring between requests; keep the ordering and switch the breakpoint to the extended one-hour TTL."
+   ],
+   "answerIndex": 2,
+   "rationale": "Prompt caching matches on an exact prefix. Anything that changes at the front of the request invalidates everything after it, so a per-request timestamp ahead of a 40k-token manual guarantees a miss on every call, and you also pay the cache-write premium each time, which explains the slight cost increase. Ordering stable content first and volatile content last is the fix. Splitting into more blocks (A) does not help because the invalidation happens upstream of all of them, and there is no such block-size ceiling. (B) is false: cacheable content is not limited to `tools` and `system`. (D) misdiagnoses the failure as expiry; a longer TTL on a prefix that changes every request still never hits.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX2",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "An internal support assistant sends a 60,000-token stable prefix (system instructions plus a product handbook) with every request. Traffic is bursty during business hours: a few questions, then idle gaps of twenty to forty minutes, then another burst. The team is currently on the default cache lifetime and sees hits inside a burst but a full cache write at the start of every burst. Cost review flags the repeated writes. What is the best change?",
+   "options": [
+    "Switch the stable prefix to the extended one-hour cache TTL, accepting its higher write premium in exchange for hits that survive the idle gaps.",
+    "Run a scheduled keep-alive request against the full prefix every four minutes, around the clock, so the entry never expires.",
+    "Remove caching entirely and move the workload to a smaller, cheaper model to offset the prefix cost.",
+    "Fine-tune a model on the product handbook so the handbook no longer needs to be sent in the prompt."
+   ],
+   "answerIndex": 0,
+   "rationale": "The idle gaps are longer than the default cache lifetime, so every burst starts cold. The extended TTL is designed exactly for this shape of traffic: you pay a higher one-time write but hit across the gaps. (B) technically refreshes the entry but pays a cache read on 60k tokens every four minutes forever, including overnight, which costs more than the write premium and breaks on any deploy that changes the prefix. (C) trades a solvable caching problem for a quality regression and still resends 60k tokens. (D) is not an option on the Anthropic API; there is no customer fine-tuning surface, and even if there were, handbook updates would require retraining.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX3",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A production agent ships eighteen shared tool definitions plus a long system prompt, all cached behind a single breakpoint. Recently the team began appending each user's enabled integrations as extra tool definitions, serialized from an unordered map. Cache hit rate collapsed from roughly 90 percent to under 10 percent even though the system prompt did not change. What is happening, and what fixes it?",
+   "options": [
+    "Tool definitions are not part of the cached prefix, so the regression must come from an unnoticed change in the system prompt; diff the prompt across deploys.",
+    "Tool definitions sit at the front of the prefix, so a per-user and non-deterministically ordered tool list invalidates everything after it; serialize tools in a stable order with the shared block first and per-user tools last, and place the breakpoint after the shared block.",
+    "Each tool needs its own cache entry; raise the number of `cache_control` breakpoints to one per tool so a changed integration invalidates only that tool.",
+    "The cache is keyed on a hash of the entire request body, so any per-user variation invalidates it; the only fix is to stop varying tools per user."
+   ],
+   "answerIndex": 1,
+   "rationale": "Tools are serialized ahead of the system prompt and messages, so an unordered, user-specific tool list changes the very front of the prefix and invalidates the rest, exactly matching the symptom of a collapsed hit rate with an unchanged system prompt. Stable ordering plus shared-before-variable placement restores a long reusable prefix. (A) is a false premise: tools are cacheable prefix content. (C) fails because only a small fixed number of breakpoints is supported, and per-tool entries would not help anyway since invalidation is positional. (D) misstates the mechanism: caching is prefix-based, not whole-body-hash-based, which is precisely why reordering the request works.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX4",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A support team wants Claude to answer customer questions from a knowledge base of roughly 900 documents totaling about 12 million tokens. Answers must cite specific procedural steps, and the endpoint has a 3-second p95 latency target. An engineer proposes putting the whole corpus in context. What should the architect recommend?",
+   "options": [
+    "Put the entire corpus in context using the extended-context beta so no relevant document can ever be missed.",
+    "Compress each document to a 200-token summary and stuff all 900 summaries into every request.",
+    "Fine-tune a model on the knowledge base so the corpus is absorbed into the weights.",
+    "Retrieve a small top-k set of relevant chunks per query, and cache the stable system instructions and answer-format preamble while passing retrieved chunks as fresh content."
+   ],
+   "answerIndex": 3,
+   "rationale": "Twelve million tokens does not fit in any available context window, and even if it did, the per-request cost and time-to-first-token would blow the latency target. Retrieval keeps the per-request payload small while caching the genuinely stable preamble captures the reuse that is actually available. (A) is not physically possible at that corpus size and would violate the SLA regardless. (B) fits, but 200-token summaries strip out the procedural detail the answers must cite, so it trades a latency problem for a correctness problem. (C) is not an available capability on the Anthropic API, and weight-baked knowledge cannot be cited or updated when a procedure changes.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX5",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A coding agent is 40 turns into a refactor. Its context is at 85 percent capacity and contains: the original task instruction and acceptance criteria, an approved plan, full contents of nine files it read, a 30,000-line build log it grepped, and its own reasoning from every turn. The next tool call will overflow the window. What should the agent drop and keep?",
+   "options": [
+    "Replace bulky raw tool output with distilled findings plus the file paths needed to re-read on demand, while preserving the task instruction, the plan, and the most recent turns verbatim.",
+    "Trim from the front, dropping the original task instruction and earliest turns first, since the oldest content is the least relevant to the next action.",
+    "Drop the system prompt and tool definitions, which are the largest fixed cost and can be re-sent only when a tool is actually needed.",
+    "Keep everything intact and switch to a model with a larger context window so no information is lost."
+   ],
+   "answerIndex": 0,
+   "rationale": "Raw tool output is high-volume and low-density, and it is recoverable: a grep result or file body can be re-fetched from a path, whereas the task goal cannot be reconstructed. Distilling it while protecting the instruction, the plan, and recency is the highest-value-per-token trade. (B) drops the acceptance criteria, which is the one thing that makes the remaining work correct, and it is the classic cause of agents drifting off-task late in a run. (C) removes the stable prefix that anchors both behavior and the prompt cache, and an agent without tool definitions cannot act. (D) postpones rather than solves: the same overflow returns twenty turns later at higher cost, and degraded attention over a bloated context is itself a quality risk.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX6",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A B2B onboarding assistant holds multi-hour conversations in which the rep and Claude agree on configuration decisions, quoted discounts, and follow-up commitments. Sessions now regularly approach the context limit. Continuity matters: forgetting a committed discount is a business incident. What long-conversation strategy should the architect adopt?",
+   "options": [
+    "Hard-truncate to the last 20 messages on every request, since recent turns are what the model is responding to.",
+    "End the session at the limit and start a fresh conversation, asking the rep to restate anything still relevant.",
+    "Compact earlier turns into a structured state block capturing decisions, entities, open items, and explicit commitments, keep recent turns verbatim, and carry that block forward on every subsequent request.",
+    "Store every prior turn in a vector store and retrieve only the turns semantically similar to the current message."
+   ],
+   "answerIndex": 2,
+   "rationale": "A structured compaction preserves the durable state that drives correctness (decisions and commitments) at a fraction of the tokens, while verbatim recency preserves the local conversational thread. Making the summary structured rather than prose is what stops a committed discount from being smoothed away. (A) silently discards commitments made an hour ago, which is the exact failure the business cannot absorb. (B) pushes the memory burden onto the human and loses anything the rep forgets. (D) is the right tool for a document corpus but wrong for conversational state: commitments are not retrieved reliably by topical similarity, and sequence and supersession information are lost.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX7",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A sales-quoting assistant caches a 25,000-token pricing sheet as a stable prefix using the extended one-hour TTL. Pricing is edited in a CMS at unpredictable times, sometimes several times a day. A rep quotes a price that was changed 35 minutes earlier, and the customer holds the company to the stale number. What is the right architectural correction?",
+   "options": [
+    "Accept it: an hour of pricing staleness is a reasonable tradeoff for the cost savings, and reps should verify prices before sending a quote.",
+    "Derive the cache key from a content version or hash published by the CMS, so any price edit produces a new prefix and a new cache entry rather than serving the previous sheet.",
+    "Shorten the TTL to the default short lifetime so the worst-case staleness window drops to a few minutes.",
+    "Keep the cached sheet and append a short list of recently changed prices after the cached block as a correction note."
+   ],
+   "answerIndex": 1,
+   "rationale": "The defect is that cache lifetime is decoupled from data freshness. Tying the prefix to a CMS-published version or content hash makes staleness impossible by construction: a change to the underlying data changes the prefix, which forces a new entry, and unchanged data keeps hitting. (A) is a policy dodge for a correctness bug with contractual consequences. (C) reduces the window but does not close it, and multiplies cache writes on a 25k-token sheet, so it costs more and is still wrong sometimes. (D) leaves two contradictory price lists in context and relies on the model to prefer the later one, which is a fragile grounding assumption for a number the company is legally bound to.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX8",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "An API gateway rejects oversized requests before forwarding them to Claude, using an estimate of character count divided by four. Since the team added image attachments and a large tool schema, users report both false rejections of requests that would have fit and occasional real context-overflow errors that slipped through. What should the team do?",
+   "options": [
+    "Tighten the heuristic to characters divided by three to build in a safety margin against underestimation.",
+    "Use an open-source model's tokenizer locally as a close-enough proxy for Claude's tokenization.",
+    "Read `usage.input_tokens` from the previous response for that conversation and extrapolate the next request's size from it.",
+    "Call the token counting endpoint with the exact payload being sent, including the same model, system, tools, and content blocks, and gate on the number it returns."
+   ],
+   "answerIndex": 3,
+   "rationale": "Character heuristics cannot model image tokens or tool-schema serialization, which is why the errors run in both directions. The token counting endpoint measures the actual request as the API will see it, so it is the only gate that is right on both sides. (A) makes false rejections worse while still failing on images, since the error is structural rather than a margin problem. (B) is wrong because tokenizers are model-specific and a foreign one gives a confidently wrong number, plus it still cannot account for image and tool overhead. (C) reports what a past request cost rather than what the next one will cost, so it cannot catch the large attachment a user is about to add.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX9",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A nightly job classifies about 200,000 documents with individual API calls, all fired concurrently. It hits sustained rate-limit errors and occasional overload errors, and its current handling (a fixed one-second wait, five attempts, then crash) turns those bursts into a thundering herd that fails the whole run. Results are not needed until the next morning. What is the right reliability change?",
+   "options": [
+    "Retry rate-limited calls immediately with no delay, since the limit window is continuously refilling.",
+    "Raise the fixed delay to 30 seconds and the attempt cap to 20 so the job eventually drains through the limit.",
+    "Move the job to the Message Batches API, and use exponential backoff with jitter that honors `retry-after` for anything still sent synchronously.",
+    "Treat a rate-limit error as a permanent failure, log the document, and reprocess it during the following night's run."
+   ],
+   "answerIndex": 2,
+   "rationale": "The workload is asynchronous by definition, which makes batch submission the correct primitive: it removes the concurrency contention entirely and costs meaningfully less. Backoff with jitter that respects `retry-after` is the right pattern for whatever remains synchronous, since jitter is what breaks the synchronized retry storm. (A) intensifies the herd and burns quota on guaranteed failures. (B) keeps the fixed delay, so every client retries in lockstep and the herd survives; it only makes the job slower. (D) is not a fix but deferred failure, and it compounds: each night's backlog is added to the next night's volume until the job never completes.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX10",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A customer-service agent has a tool called `issue_refund`. During an incident, a network timeout occurred after the refund service had already processed a charge reversal but before the tool result reached the agent. The orchestration layer retried the tool call, and 41 customers were refunded twice. What is the correct fix?",
+   "options": [
+    "Have the caller generate an idempotency key derived from the originating order and turn, pass it with every refund attempt, and have the refund service deduplicate on it.",
+    "Add an instruction to the system prompt stating that `issue_refund` must never be called more than once for the same order.",
+    "Raise the HTTP timeout on the refund call so the response reliably arrives before the client gives up.",
+    "Wrap the refund tool call in exponential backoff so the retried attempt lands cleanly instead of colliding with the first."
+   ],
+   "answerIndex": 0,
+   "rationale": "The failure is at-least-once delivery meeting a non-idempotent side effect, and the only durable fix is to make the operation idempotent at the service boundary so a duplicate request is recognized and collapsed. (B) is a prompt-level request for a guarantee the prompt cannot enforce: the second call came from the orchestration retry, not from the model deciding to call twice. (C) narrows the window without closing it; any timeout value still has a case where the response is lost after the effect commits. (D) misreads the retry as the cure when it is the trigger: backing off changes when the duplicate refund happens, not whether it does.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX11",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A summarization endpoint issues a non-streaming request with `max_tokens` set to 16,000 for documents that usually need about 800 tokens of summary. The product requires visible output within 8 seconds. In production the team sees intermittent connection resets at the load balancer and occasional client-side request timeouts on the longest documents. What should they change?",
+   "options": [
+    "Increase the load balancer and client timeouts to ten minutes and keep the non-streaming call as is.",
+    "Stream the response so first tokens arrive inside the latency budget and the connection stays active, and set `max_tokens` to the length the summary actually needs.",
+    "Split every document into eight parallel calls capped at 2,000 tokens each and concatenate the results.",
+    "Set `max_tokens` to 1,000 and have the client issue continuation requests whenever the response is cut off."
+   ],
+   "answerIndex": 1,
+   "rationale": "A non-streaming request holds the connection idle until the full response is generated, which is what trips intermediary timeouts on long generations and guarantees a time-to-first-content far outside an 8-second budget. Streaming fixes both, and right-sizing `max_tokens` removes the long tail that caused the worst cases. (A) treats the symptom, leaves the user staring at nothing for the whole generation, and violates the SLA even when it succeeds. (C) destroys summary coherence, since eight independent summaries of fragments are not a summary of the document. (D) truncates mid-summary by design and adds round trips, making tail latency worse rather than better.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX12",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A legal research assistant answers questions over contract documents supplied in the request. Reviewers find that most answers are correct, but a small fraction assert clauses that are confidently stated and not actually present in the supplied contracts. The firm needs every assertion traceable to a source before it can ship. What is the strongest fix?",
+   "options": [
+    "Add a strong instruction not to fabricate, set temperature to 0, and ask the model to say 'not found' when unsure.",
+    "Issue a second Claude call asking whether the first answer contained hallucinations, and surface that verdict alongside the answer.",
+    "Move to a larger model, which will reduce the fabrication rate on this document type.",
+    "Enable the API's citations feature on the supplied documents so each claim carries a source span, and flag or reject any answer whose claims are uncited."
+   ],
+   "answerIndex": 3,
+   "rationale": "The requirement is traceability, not just a lower error rate. Citations bind claims to spans in the actual supplied documents, which makes an unsupported assertion mechanically detectable rather than dependent on a reviewer noticing. (A) helps at the margin but produces no artifact a reviewer or the system can check, and temperature 0 makes fabrications more consistent, not less likely to exist. (B) asks the model to audit itself without independent grounding in the source text, and the same confidence that produced the fabrication tends to survive the self-check. (C) may lower the rate but leaves the failure mode intact and unverifiable, which is what the firm cannot accept.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX13",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A team ships system prompt edits to a production triage classifier several times a week with no automated checks. Twice this quarter an edit that improved one category quietly degraded another, and it was caught only after customers complained days later. The team wants to keep shipping quickly. What should the architect put in place?",
+   "options": [
+    "Build a versioned eval set from real production cases with graded expected behavior, run it on every prompt or model change, and gate deploys on the results plus a small canary rollout.",
+    "Require three engineers to manually review 20 sampled outputs and sign off before each release.",
+    "Ship every prompt change as a production A/B test and revert if the user satisfaction metric drops.",
+    "Freeze the prompt and pin the model version so that no change can introduce a regression."
+   ],
+   "answerIndex": 0,
+   "rationale": "The failure is silent cross-category regression, which only a repeatable graded suite over representative cases can catch before release; versioning it and gating on it preserves the team's shipping speed instead of slowing it. (B) does not scale, does not cover categories the reviewers do not sample, and drifts as reviewers change. (C) detects regressions only after real users absorb them and only when the effect is large enough to move an aggregate metric, which the days-long detection lag already demonstrated. (D) trades away the ability to improve the classifier and does not protect against upstream drift in the input distribution.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX14",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "During an incident, an on-call engineer cannot reproduce a bad answer a customer reported. Current logging captures only the final assistant text and the HTTP status code. Some requests contain personal data subject to a retention policy, and finance separately wants to understand a jump in input token spend. What logging design should the architect specify?",
+   "options": [
+    "Log full request and response payloads verbatim and retain them indefinitely so nothing is ever unavailable during an investigation.",
+    "Log no user text at all and rely on aggregate latency, error-rate, and spend dashboards for diagnosis.",
+    "Log a request ID, model, prompt and template version, token usage including cache read and write counts, latency, stop reason, and tool calls, plus a pointer to redacted content held under a short retention window.",
+    "Sample one percent of traffic for full payload capture and discard the remaining telemetry to control storage cost."
+   ],
+   "answerIndex": 2,
+   "rationale": "Structured metadata is what makes an LLM incident reproducible (which prompt version, which model, which tool path, where it stopped) and it simultaneously answers the finance question, since cache read and write counts explain input spend. Redacted content under short retention gives investigators the payload without holding personal data indefinitely. (A) is the retention-policy violation the environment explicitly forbids. (B) leaves on-call with exactly the blindness described in the scenario. (D) makes it overwhelmingly likely the reported request was not sampled, and discarding the rest of the telemetry throws away the cheap, non-sensitive metadata that costs almost nothing to keep.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX15",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "Monthly Claude spend has tripled. A breakdown shows the traffic is roughly 70 percent short intent classification, 20 percent document QA that repeatedly sends the same 50,000-token operations manual, and 10 percent complex multi-step reasoning. Only the reasoning tier has a user-facing latency SLA; classification runs on an internal queue. What is the highest-leverage cost plan?",
+   "options": [
+    "Halve `max_tokens` across all traffic to cap output spend at the source.",
+    "Route the classification tier to a smaller model, cache the shared manual as a stable prefix for the document QA tier, and leave the reasoning tier on the larger model.",
+    "Move all traffic to the Message Batches API to capture the batch discount across the entire workload.",
+    "Standardize everything on the smallest available model and add a retry-with-a-larger-model loop whenever confidence is low."
+   ],
+   "answerIndex": 1,
+   "rationale": "Each tier has a different cost driver, so each needs a different lever: high-volume simple work is a model-selection problem, repeated identical context is a caching problem, and the small reasoning tier is where paying for capability is justified. Tiering captures nearly all the savings without touching the quality that matters. (A) does not address input tokens, which is where the 50k-token manual spend lives, and it truncates legitimate long outputs. (C) applies an asynchronous mechanism to synchronous traffic and breaks the reasoning tier's SLA outright. (D) collapses quality on the hardest 10 percent, and a confidence-triggered escalation loop pays for two calls on exactly the requests that were already the most expensive.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "AG28",
+   "domain": 1,
+   "domainName": "Agentic Architecture & Orchestration",
+   "domainKey": "agentic",
+   "text": "A field-service agent has spent a long diagnostic conversation establishing that a rooftop unit needs a compressor replacement costing well above its dispatch authority. It must hand off to a human technician who cannot see the conversation transcript. What should the agent pass in the escalation?",
+   "options": [
+    "The site identifier plus a note that the job needs manager approval.",
+    "A structured handoff: site identifier, the diagnostic conclusion, the evidence supporting it, the authority limit exceeded, and the recommended next action.",
+    "The complete conversation transcript, so the technician has every detail and nothing is lost in summarization.",
+    "A customer-facing apology together with the technician's current position in the dispatch queue."
+   ],
+   "answerIndex": 1,
+   "rationale": "A human with no transcript access needs a self-contained brief: what was found, on what evidence, what is blocked, and what should happen next. An identifier plus a bare approval note omits the diagnosis entirely and forces a full redo. Dumping the raw transcript transfers the work of reconstructing the case rather than doing it. An apology and queue position carry no diagnostic content at all.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "PE21",
+   "domain": 3,
+   "domainName": "Prompt Engineering & Structured Output",
+   "domainKey": "prompt",
+   "text": "A compliance prompt defines a tool named `assess_retention_risk` and also contains the instruction \"assess the retention risk of each stored dataset.\" Developers report that Claude sometimes writes a prose risk assessment instead of calling the tool. What is the most likely cause?",
+   "options": [
+    "The tool is defined after the instruction in the request body, so the model has not seen it when it processes the instruction.",
+    "The tool's input schema is too complex, so the model falls back to prose when it cannot construct valid arguments.",
+    "Keyword overlap between the instruction wording and the tool name lets the model satisfy the instruction by writing the described analysis rather than invoking the tool.",
+    "`tool_choice` must be set explicitly to `auto` before the model will consider calling any defined tool."
+   ],
+   "answerIndex": 2,
+   "rationale": "When instruction wording mirrors a tool name, producing the described text reads to the model as having followed the instruction, which is exactly the observed behavior; the fix is distinct, non-overlapping vocabulary in the instruction and the tool description. Tool definitions are available regardless of their position relative to instruction text. Schema complexity typically yields malformed calls rather than a clean prose substitute. `auto` is already the default tool-selection behavior.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "CX16",
+   "domain": 5,
+   "domainName": "Context Management & Reliability",
+   "domainKey": "context",
+   "text": "A procurement assistant is handed a 340-line bill of materials inside a single prompt and asked which component carries the longest lead time. It answers correctly when the true longest-lead item appears near the top or bottom of the list, but misses it when the item sits somewhere in the middle. Feeding the identical bill of materials in seven smaller chunks resolves the problem entirely. What best explains the original failure?",
+   "options": [
+    "The component rows in the middle were dropped by request truncation before reaching the model.",
+    "Recall degrades across the middle of a long input, so items buried mid-list are attended to less reliably than those near either end.",
+    "The model cannot rank a numeric field across more than about 100 rows without invoking a calculation tool.",
+    "A bill of materials must be supplied as structured JSON rather than plain lines for field comparison to work."
+   ],
+   "answerIndex": 1,
+   "rationale": "This is the lost-in-the-middle effect: attention is strongest at the start and end of a long input and weakest through the middle, which is exactly why chunking the same content fixes it. Truncation would remove the tail rather than a middle band, and would not be cured by chunking the same total volume. The model can rank far more rows than this when they are genuinely attended to. Serialization format is not what governs mid-payload recall.",
+   "source": "intent-solutions-authored"
+  }
+ ]
+}

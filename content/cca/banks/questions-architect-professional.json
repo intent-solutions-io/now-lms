@@ -1,0 +1,582 @@
+{
+ "source": "Intent Solutions — original practice questions (36), authored in-house from the official CCAR-P Exam Guide blueprint (Anthropic, July 2026). No question is reproduced from Anthropic's exam, its published samples, or any third-party question bank.",
+ "note": "Answer-letter labels are shuffled per sitting; answerIndex refers to the option's POSITION in the options array below, 0-based.",
+ "questions": [
+  {
+   "id": "P1",
+   "domain": 1,
+   "domainName": "Solution Design & Architecture",
+   "domainKey": "archp-design",
+   "text": "A logistics company wants to automate exception handling for shipping delays: pull data from three internal systems, determine the likely root cause, draft a customer notification, and escalate to a human whenever confidence is low. The process is well-understood and repeatable. Which architecture pattern is the best fit?",
+   "options": [
+    "A deterministic workflow (prompt chaining) with fixed steps — fetch data, classify cause, draft notification, route to a human below a confidence threshold.",
+    "A single augmented-LLM call carrying an exhaustive system prompt that tries to cover every system and every escalation rule at once.",
+    "A fully autonomous multi-agent system in which agents negotiate amongst themselves which system to query next, with no fixed sequence.",
+    "An open-ended agentic loop where one Claude instance keeps choosing tools to call until it decides on its own to stop."
+   ],
+   "answerIndex": 0,
+   "rationale": "When a process is bounded and repeatable, a deterministic workflow gives predictable control flow, clear checkpoints, and a natural place to route low-confidence cases to a human — exactly what this exception-handling process needs. A single sprawling prompt tries to encode branching logic that belongs in workflow structure, not prose. Unconstrained multi-agent negotiation and open-ended agentic loops introduce unpredictability, cost, and latency this well-defined task doesn't need.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P2",
+   "domain": 1,
+   "domainName": "Solution Design & Architecture",
+   "domainKey": "archp-design",
+   "text": "A multi-agent M&A due-diligence system assigns sub-agents by document category (financial, legal, HR) with a lead agent synthesizing a final report. Because document sets overlap, sub-agents sometimes reach contradictory readings of the same clause, and the contradictions slip into the final report undetected. What is the best architectural fix?",
+   "options": [
+    "Split the categories into even narrower sub-agent specializations to shrink the overlap further.",
+    "Make the lead/orchestrator agent explicitly own conflict resolution: define source-of-truth precedence and require sub-agents to cite the exact excerpt behind each claim so contradictions can be adjudicated.",
+    "Give every sub-agent a large enough context window to read the entire document set itself.",
+    "Replace the multi-agent design with a single agent that reads everything sequentially."
+   ],
+   "answerIndex": 1,
+   "rationale": "The real gap is that no component in the system is responsible for detecting and resolving contradictions, and there's no citation trail to adjudicate them. Making the orchestrator own conflict resolution, backed by mandatory sourcing, fixes the root cause. Narrower specialization can worsen overlap; giving every sub-agent the full document set defeats the purpose of specialization and blows up cost; collapsing to one sequential agent throws away parallelism without addressing the missing adjudication step.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P3",
+   "domain": 1,
+   "domainName": "Solution Design & Architecture",
+   "domainKey": "archp-design",
+   "text": "You're designing an agent to \"generate the quarterly board deck\" — a broad, ambiguous task with many hidden sub-tasks (data gathering, narrative drafting, chart generation, formatting). Which decomposition approach best applies sound problem-solving technique to this task?",
+   "options": [
+    "Write one exhaustive prompt attempting to specify every section and edge case up front.",
+    "Let the model freely improvise the entire structure in one continuous agentic loop, trusting emergent behavior to produce a coherent deck.",
+    "Break the task into explicit sub-tasks — data gathering, narrative drafting, chart generation, formatting — each scoped to its own prompt/tool set, chained with clear dependencies and checkpoints.",
+    "Have a human write the full outline first and hand it to Claude only to fill in prose."
+   ],
+   "answerIndex": 2,
+   "rationale": "Structured decomposition into scoped sub-tasks with explicit dependencies and checkpoints is the standard technique for taming a broad, ambiguous deliverable — it makes each piece testable and observable. A single monolithic prompt is error-prone at this scope; an unstructured agentic loop sacrifices observability and predictability; having a human pre-author the entire outline isn't decomposition at all, it's just delegating the hard part back to the human.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P4",
+   "domain": 1,
+   "domainName": "Solution Design & Architecture",
+   "domainKey": "archp-design",
+   "text": "An executive sponsor wants a 40% support-cost reduction this quarter via Claude-powered ticket triage. Engineering warns that rushing full automation risks quality regressions and reputational damage. As architect, how do you align the solution with the stated business value pillar while managing the risk?",
+   "options": [
+    "Fully replace human triage immediately, since cost reduction is the explicit leadership directive.",
+    "Delay any implementation until a zero-error system can be guaranteed.",
+    "Ignore the cost target and optimize purely for quality, since technical risk outweighs the business ask.",
+    "Propose a phased rollout — Claude-assisted triage with human-in-the-loop first, measured against both cost and quality SLAs, expanding automation coverage as accuracy data justifies it, with each phase tied to a specific milestone."
+   ],
+   "answerIndex": 3,
+   "rationale": "A phased rollout ties the efficiency/cost pillar to measurable milestones while actively managing the quality risk engineering flagged — this is the senior-architect move of translating a business goal into a de-risked plan rather than picking one side. Full immediate replacement ignores real regression risk; waiting for a guarantee of zero errors is unrealistic and stalls the business goal entirely; ignoring the cost target outright abandons the stated objective instead of reconciling it.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P5",
+   "domain": 1,
+   "domainName": "Solution Design & Architecture",
+   "domainKey": "archp-design",
+   "text": "An internal coding assistant is used by 500 engineers. Leadership wants evidence the system is actually improving over time. Which feedback-loop design best supports continuous improvement while respecting engineer trust and privacy?",
+   "options": [
+    "Provide an inline feedback affordance (thumbs up/down plus optional comment) tied to anonymized, aggregated eval sampling, feeding a periodic eval-suite regression check that gates prompt/model updates before they ship.",
+    "Silently log 100% of prompts and complete code diffs for every engineer, and have someone manually review them weekly for prompt-quality issues.",
+    "Rely solely on a quarterly engineer satisfaction survey, since direct technical telemetry feels invasive.",
+    "Add a self-critique step where Claude scores its own output and store that score as the ground-truth signal for the eval dataset."
+   ],
+   "answerIndex": 0,
+   "rationale": "Explicit, structured feedback tied to aggregated evals and a regression gate closes the loop in a way that's both privacy-respecting and actionable before changes ship. Blanket logging of full diffs is a privacy problem with no structured signal and doesn't scale to manual review. A quarterly survey is far too lagging to catch regressions. Letting the model grade its own output treats a known-biased self-assessment as ground truth, which undermines the whole point of an independent eval signal.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P6",
+   "domain": 1,
+   "domainName": "Solution Design & Architecture",
+   "domainKey": "archp-design",
+   "text": "A user-facing chat feature must respond within a 2-second p95 SLA while consulting four external systems and reasoning over policy documents. The team is debating an augmented-LLM pattern versus a full agentic multi-step loop. What should the architect choose?",
+   "options": [
+    "Adopt the augmented-LLM pattern: parallelize the tool calls, pre-fetch or cache the policy context, and enforce a hard step-count/time budget with a best-effort or async fallback if it's exceeded.",
+    "Always choose the agentic multi-step loop, since it tends to produce higher-quality answers regardless of latency requirements.",
+    "Drop all external system calls and answer only from static training knowledge to guarantee the latency target.",
+    "Increase model size to compensate for the latency added by an unconstrained agentic loop."
+   ],
+   "answerIndex": 0,
+   "rationale": "The augmented-LLM pattern with parallelized tools, caching, and a time-boxed fallback directly reconciles the accuracy need with the hard SLA — a real trade-off decision grounded in the stated constraint. Defaulting to an unconstrained agentic loop ignores the SLA entirely. Removing external calls sacrifices the policy-grounded correctness the feature exists to provide. A bigger model doesn't reduce the number of tool round-trips or fix an unbounded loop's latency profile.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P7",
+   "domain": 2,
+   "domainName": "Claude Models, Prompting & Context Engineering",
+   "domainKey": "archp-models",
+   "text": "A legal assistant sends the same 12,000-token standing policy corpus and instruction block with every request, followed by a short and varying user question. Both per-request cost and time-to-first-token are concerns. Which optimization most directly addresses both?",
+   "options": [
+    "Order the request so the invariant policy corpus and instructions come first, then enable prompt caching on that prefix.",
+    "Summarize the policy corpus down to 2,000 tokens and send the summary on every request.",
+    "Move the user's question to the front of the request so the model reads it before the corpus.",
+    "Split each request into two calls, one that loads the corpus and one that asks the question."
+   ],
+   "answerIndex": 0,
+   "rationale": "Caching a large invariant prefix cuts both cost and latency on every subsequent request, and it requires the stable content to come first so the prefix matches. Summarizing reduces cost by discarding policy detail the assistant needs to be correct. Putting the question first destroys the stable prefix and prevents cache hits entirely. Splitting into two calls does not persist the corpus between them, since each request is independent.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P8",
+   "domain": 2,
+   "domainName": "Claude Models, Prompting & Context Engineering",
+   "domainKey": "archp-models",
+   "text": "A pipeline classifies 2 million support tickets a day into 40 categories, then a second step drafts replies for the roughly 5% flagged as complex. The team proposes running the largest available model for both stages, for consistency. As architect optimizing cost and latency without sacrificing needed quality, what do you recommend?",
+   "options": [
+    "Use the largest, most capable model uniformly for both classification and drafting, to avoid maintaining two prompt/eval sets.",
+    "Run the largest model only on classification, since draft replies are considered lower-risk.",
+    "Route the high-volume, well-bounded classification step to a smaller, faster model tuned with few-shot examples, and reserve the largest model for the low-volume complex-drafting step; validate the smaller model's accuracy against a held-out eval set.",
+    "Batch all 2 million tickets nightly using the largest model to lower per-token cost."
+   ],
+   "answerIndex": 2,
+   "rationale": "Right-sizing the model to task complexity and volume is the core trade-off here: a smaller model handles the high-volume, well-bounded classification task at far lower cost and latency, while the largest model is reserved for the genuinely harder, low-volume drafting task. Running the largest model uniformly is costly for no measurable benefit; reversing the assignment (large model on the simple bounded task) is backwards; nightly batching doesn't fix the model-sizing mismatch and introduces response-time delay that risks its own SLA.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P9",
+   "domain": 2,
+   "domainName": "Claude Models, Prompting & Context Engineering",
+   "domainKey": "archp-models",
+   "text": "A financial-advice assistant's system prompt says \"never provide specific stock recommendations,\" but users often ask compound questions mixing general market education with an implicit request for a specific buy/sell call. Compliance has been inconsistent. What's the best fix at the system-prompt/guardrail layer?",
+   "options": [
+    "Add a blanket rule: refuse entirely if the question mentions any stock ticker.",
+    "Remove the guardrail and rely on the model's default safety training to judge what counts as specific advice.",
+    "Move enforcement entirely to a post-hoc filter that regexes for ticker symbols and blocks the whole response if any appear.",
+    "Decompose the guardrail into explicit decision criteria distinguishing \"specific recommendation\" from \"general education,\" with examples of each, plus an instruction to answer the compliant portion and explicitly decline only the non-compliant portion, using a defined partial-refusal template."
+   ],
+   "answerIndex": 3,
+   "rationale": "Precise operational criteria, boundary examples, and a partial-compliance pattern is the standard-of-practice way to design a guardrail for a genuinely ambiguous compound request. A blanket ticker-mention refusal over-blocks legitimate education questions; removing the guardrail hands an explicit product-level control back to implicit model judgment; a regex post-filter is brittle, can block an otherwise-safe response outright, and doesn't address why the ambiguity is being mishandled in the first place.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P10",
+   "domain": 2,
+   "domainName": "Claude Models, Prompting & Context Engineering",
+   "domainKey": "archp-models",
+   "text": "A real-time fraud-flagging classifier (target under 400ms) currently prompts Claude to \"think step by step\" before returning a yes/no flag. Engineers must cut latency without hurting recall. What is the most direct fix?",
+   "options": [
+    "Remove the chain-of-thought instruction in favor of a few labeled few-shot examples with a direct answer format for the bulk of cases, reserving explicit step-by-step reasoning for a smaller set of borderline cases routed to a slower secondary review.",
+    "Keep the chain-of-thought instruction but ask the model to \"think faster.\"",
+    "Switch to a larger model so the reasoning completes more quickly.",
+    "Strip out all examples and reasoning guidance, relying purely on zero-shot judgment, to minimize prompt tokens."
+   ],
+   "answerIndex": 0,
+   "rationale": "Matching the prompting technique to the latency budget — direct, few-shot answers for the bulk of low-ambiguity cases, with deeper reasoning reserved for an escalation path — cuts latency for the common case while preserving accuracy where it's actually needed. Telling the model to \"think faster\" isn't an actionable instruction; a larger model typically has higher per-token latency and doesn't remove the extra reasoning tokens; dropping all structure risks the very recall regression the team is trying to avoid.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P11",
+   "domain": 2,
+   "domainName": "Claude Models, Prompting & Context Engineering",
+   "domainKey": "archp-models",
+   "text": "A legal-review assistant ingests entire multi-hundred-page contracts on every request, even when the user's question concerns a single clause. Cost and latency are both high, and the model occasionally seems to lose track of specific clause language in very long documents. What's the best context-engineering fix?",
+   "options": [
+    "Keep sending the full document but instruct the model firmly to \"focus only on the relevant clause.\"",
+    "Pre-process the document once (chunk and index), retrieve only the clauses relevant to the current question plus surrounding context, and reserve full-document ingestion for genuinely document-wide questions.",
+    "Raise the model's context window setting to the maximum available to guarantee nothing is missed.",
+    "Summarize the entire contract into a fixed 500-token summary up front and always answer from that summary."
+   ],
+   "answerIndex": 1,
+   "rationale": "Targeted retrieval reduces both token cost and the irrelevant-content noise that degrades recall in very long contexts, while still preserving full-document access for the questions that genuinely need it. Instructing the model to \"focus\" doesn't reduce cost or fix degradation from excess irrelevant context. Maximizing the context window doesn't address cost, latency, or the underlying degradation — more context isn't the same as more relevant context. A fixed lossy summary is dangerous for clause-specific legal precision and is the wrong tool for the query pattern described.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P12",
+   "domain": 3,
+   "domainName": "Integration",
+   "domainKey": "archp-integration",
+   "text": "An internal analytics agent is configured with tools to run queries, export reports, modify dashboard definitions, and drop database tables. The analysts using it only ever need to run queries and export reports. Applying least privilege, which change is most appropriate?",
+   "options": [
+    "Remove the dashboard-modification and table-drop tools from the agent's configuration entirely.",
+    "Keep all four tools but instruct the agent in its system prompt never to use the destructive ones.",
+    "Keep all four tools but require the agent to ask the user for confirmation before any destructive call.",
+    "Keep all four tools and review the audit log weekly for any destructive calls that occurred."
+   ],
+   "answerIndex": 0,
+   "rationale": "Least privilege means the capability is absent, not merely discouraged: a tool that is not configured cannot be invoked by any prompt, jailbreak, or model error. A system prompt prohibition is advisory and can be overridden. A confirmation step reduces but does not eliminate the risk and depends on the user reading carefully. Weekly log review detects destruction after it has happened, which is too late for a dropped table.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P13",
+   "domain": 3,
+   "domainName": "Integration",
+   "domainKey": "archp-integration",
+   "text": "A company has three data sources — a fast-changing structured product catalog (SKU, price, stock), a knowledge base of long-form troubleshooting articles, and a codebase of internal API docs — all chunked with the same fixed 512-token sliding window before embedding into one unified RAG pipeline. Support agents report retrieval frequently returns loosely related snippets for exact SKU/price lookups. What is the most likely root cause and best fix?",
+   "options": [
+    "The embedding model is too small; switching to a larger embedding model will fix exact-match retrieval regardless of chunking strategy.",
+    "Increase the chunk size to 2,000 tokens uniformly so more context is captured per chunk across all three sources.",
+    "The structured, high-cardinality lookup data is being forced through semantic chunk-and-embed retrieval when it should instead be served via direct structured lookup or metadata filtering, while the long-form articles remain well-suited to semantic chunking.",
+    "Add a second embedding pass over the already-embedded chunks to improve recall."
+   ],
+   "answerIndex": 2,
+   "rationale": "Retrieval strategy has to match data shape: exact-match structured fields like SKU or price belong in a database query or metadata filter, not a vector similarity search, while narrative content is genuinely well-suited to semantic chunking. A larger embedding model doesn't resolve a category mismatch between retrieval strategy and data shape. Increasing chunk size uniformly further dilutes the signal for exact lookups while adding irrelevant content to narrative chunks too. Re-embedding already-embedded vectors doesn't do anything meaningful.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P14",
+   "domain": 3,
+   "domainName": "Integration",
+   "domainKey": "archp-integration",
+   "text": "A team is connecting Claude to five internal systems for an ops agent: two already have well-documented REST APIs, one has an existing MCP server maintained by another team, and a legacy mainframe requires a custom adapter regardless of protocol. Several engineers propose wrapping all five, including the REST APIs, in brand-new custom MCP servers for uniformity. What's the best evaluation of connection protocols here?",
+   "options": [
+    "Build all five as new MCP servers from scratch for interface uniformity, even where REST already works well.",
+    "Skip MCP entirely and call every system's native API/CLI directly from the agent's tool-use layer.",
+    "Require every internal system to migrate to an agent-to-agent protocol so all five look identical to the orchestrator.",
+    "Reuse the existing MCP server where one already exists, connect directly to the two REST APIs where a wrapper adds no value, and build a dedicated adapter only for the legacy mainframe, where a translation layer is genuinely unavoidable."
+   ],
+   "answerIndex": 3,
+   "rationale": "The right call evaluates protocol fit per system and avoids unnecessary abstraction layers: reuse what already exists, integrate directly where a wrapper adds nothing, and reserve custom adapter work for the one system that truly needs it. Wrapping everything in new MCP servers creates needless maintenance burden for systems with no real need for it. Calling every system natively ignores an already-built, maintained MCP server and understates the complexity of a proprietary binary legacy protocol. Migrating everything to agent-to-agent protocol is a category mismatch — that protocol is for autonomous peer agent communication, not basic system integration, and would be a hugely disproportionate migration.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P15",
+   "domain": 3,
+   "domainName": "Integration",
+   "domainKey": "archp-integration",
+   "text": "A multi-agent customer-service platform runs about 50,000 sessions a day across 12 agent roles (billing, technical support, retention, etc.). Leadership wants quality regressions detected within hours, not weeks. Current observability is a single dashboard showing aggregate token spend and average latency across all sessions. What is the most important gap to close first?",
+   "options": [
+    "Break monitoring down by agent role and task outcome — resolution rate, escalation rate, tool-call error rate, and cost/latency per role — with per-role baselines, so a regression in one role isn't averaged away by the other eleven.",
+    "Add a company-wide alert that fires if total daily token spend exceeds a fixed budget.",
+    "Replace the dashboard with a single nightly \"AI quality score\" computed by having a separate Claude call grade a sample of transcripts, with no other metrics.",
+    "Reduce the number of agent roles from 12 to 3 so there is less data to monitor."
+   ],
+   "answerIndex": 0,
+   "rationale": "Observability at this scale requires segmentation by role and outcome; aggregate metrics mask a regression that's concentrated in a single role. A total-spend alert is a blunt, lagging cost signal that says nothing about quality. A single nightly LLM-judge score with no other metrics has too coarse a cadence to meet an hours-not-weeks detection target and drops operational signals like latency and tool-error rate. Cutting the number of roles solves the observability problem by shrinking the product's actual capability rather than instrumenting it properly.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P16",
+   "domain": 3,
+   "domainName": "Integration",
+   "domainKey": "archp-integration",
+   "text": "An agent has been configured with 40 tools spanning file access, web search, code execution, email, calendar, and three internal databases, to make it maximally flexible for any task. Evaluation shows tool-selection accuracy has been steadily dropping as more tools were added, with the agent frequently picking a plausible-but-wrong tool for ambiguous requests. What's the best architectural response?",
+   "options": [
+    "Add more few-shot examples to the system prompt demonstrating correct tool choice for each of the 40 tools.",
+    "Scope tool access per task or session — expose only the subset of tools relevant to the detected task or user role at a given time rather than presenting the full 40-tool surface on every call — and consider splitting into task-specific sub-agents where tool sets diverge significantly.",
+    "Switch to a model with a larger context window so all 40 tool definitions fit comfortably regardless of count.",
+    "List the tools alphabetically in the system prompt so the model has a consistent ordering to reference."
+   ],
+   "answerIndex": 1,
+   "rationale": "Narrowing the exposed tool surface via progressive discovery is the direct fix for a well-known failure mode: tool-selection accuracy degrades as the number of simultaneously exposed tools grows. Piling on more few-shot examples treats the symptom, not the root cause, and grows the prompt that's already too large. A bigger context window doesn't fix ambiguity in tool choice — the problem isn't fitting the definitions, it's discriminating between too many of them at once — and it worsens cost and latency. Alphabetical ordering doesn't touch the underlying capability-bloat problem at all.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P17",
+   "domain": 3,
+   "domainName": "Integration",
+   "domainKey": "archp-integration",
+   "text": "A fraud-detection team is deciding whether to add a cross-encoder reranking step after initial vector retrieval. Retrieval (top-50 via ANN search) takes about 40ms, but answers are occasionally wrong because the truly relevant chunk lands around rank 30 of 50 and gets truncated before reaching the model. Reranking to select the top-8 of 50 adds about 180ms. The SLA is 1.5s p95, and current p95 is 900ms. How should the architect justify the decision?",
+   "options": [
+    "Reject the reranker outright, since any added latency is unacceptable in a production system.",
+    "Skip the reranker and instead raise top-k from 50 to 200 so more chunks reach the model.",
+    "Add the reranker: the accuracy gain directly addresses the observed truncation failure mode, the added 180ms still leaves headroom within the 1.5s p95 SLA, and the change should be validated with an eval set comparing answer accuracy with and without reranking before shipping.",
+    "Skip the reranker and instead lower the temperature setting to make the model more deterministic about which chunk to trust."
+   ],
+   "answerIndex": 2,
+   "rationale": "A defensible accuracy-latency trade-off decision quantifies the actual SLA headroom (600ms of room at current usage), ties the proposed fix to the specific observed failure mode, and validates the change empirically before shipping. Rejecting any added latency outright ignores that headroom entirely. Raising top-k without reranking doesn't fix the ranking-order truncation problem and adds noise, tokens, and cost without ensuring the relevant chunk survives. Lowering temperature has no effect on which retrieved chunks make it into context at all — it doesn't address the retrieval/ranking problem.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P18",
+   "domain": 3,
+   "domainName": "Integration",
+   "domainKey": "archp-integration",
+   "text": "A \"planner\" Claude agent generates a plan and hands off to an \"executor\" Claude agent that carries out steps via a shared task queue. In production, the executor sometimes silently drops steps it doesn't know how to perform instead of reporting failure back to the planner, and no one notices until a customer complains days later. What is the most important gap in this agent-to-agent integration design?",
+   "options": [
+    "Merge the planner and executor into a single monolithic agent so there's no handoff at all.",
+    "Poll the task queue more frequently to reduce latency between planner and executor.",
+    "Replace the executor with a larger model that is less likely to encounter unsupported steps.",
+    "Add a required acknowledgment/status contract to the handoff protocol — every step handed to the executor must return an explicit success, failure, or unsupported status back to the planner, surfaced to monitoring — instead of allowing silent no-ops."
+   ],
+   "answerIndex": 3,
+   "rationale": "The gap is a missing structured handoff contract: without a required status report per step, failures go undetected for days, which is fundamentally an observability and protocol-design problem, not a capability problem. Merging the agents into one throws away a legitimate separation of concerns instead of fixing the missing contract. A larger executor model doesn't guarantee it reports failures rather than silently dropping them — it masks rather than solves the issue. Polling frequency is unrelated to whether failures are ever reported at all.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P19",
+   "domain": 4,
+   "domainName": "Evaluation, Testing & Optimization",
+   "domainKey": "archp-eval",
+   "text": "A production RAG assistant begins returning confident but wrong answers immediately after a scheduled knowledge-base re-index. The model version, prompt, and latency profile are all unchanged. Where should investigation begin?",
+   "options": [
+    "The retrieval and indexing stage, which is likely surfacing stale, mis-chunked, or irrelevant passages.",
+    "The model itself, which may have silently regressed in its handling of the domain.",
+    "The system prompt, which may need stronger instructions about answering only from context.",
+    "The user queries, which may have shifted in phrasing since the re-index."
+   ],
+   "answerIndex": 0,
+   "rationale": "The failure correlates precisely with the re-index while every other variable held constant, which points at what changed: what the retriever is returning. Suspecting the model contradicts the fact that its version did not change. Strengthening the prompt treats a grounding symptom when the supplied context is itself wrong. Query drift would not align so exactly with a scheduled indexing event.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P20",
+   "domain": 4,
+   "domainName": "Evaluation, Testing & Optimization",
+   "domainKey": "archp-eval",
+   "text": "A clinical-intake assistant is evaluated primarily on a \"helpfulness\" score from an LLM-judge, which has risen from 72 to 91 over three iterations. During the same period, no one tracked whether the assistant ever recommended delaying care for symptoms that warranted immediate escalation. What is the most important fix to the evaluation approach?",
+   "options": [
+    "Add a distinct, explicitly weighted safety metric — such as false-negative rate on an escalation/red-flag test set — evaluated independently from, and never averaged into, the general helpfulness score, since optimizing one can mask regressions in the other.",
+    "Trust the rising helpfulness score as sufficient evidence of overall system quality.",
+    "Replace the LLM-judge with a higher helpfulness weighting so the score better reflects user satisfaction.",
+    "Lower the helpfulness score's importance across the board until a safety metric is eventually built, without changing the current release process."
+   ],
+   "answerIndex": 0,
+   "rationale": "Accuracy and safety must be tracked and gated independently; blending them into one proxy score is a classic way to let a critical failure mode hide behind a rising aggregate number. Trusting the helpfulness trend ignores the exact gap identified. Weighting the judge more toward helpfulness makes the conflation worse, not better. Vaguely deprioritizing the score without a concrete gating mechanism or timeline does nothing to stop unsafe iterations from shipping in the meantime.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P21",
+   "domain": 4,
+   "domainName": "Evaluation, Testing & Optimization",
+   "domainKey": "archp-eval",
+   "text": "A team evaluates a contract-analysis agent solely against a 50-contract \"golden set\" hand-labeled by the original product team two years ago. Accuracy on this set is 96%, but customer complaints about missed clauses have been rising. What is the most likely gap, and the best fix?",
+   "options": [
+    "The golden set is too small; simply duplicate it with synthetic paraphrases of the same 50 contracts to increase its size.",
+    "Supplement the stale, narrow golden set with a continuously refreshed sample of real production cases and adversarial edge cases representing contract types and phrasings not in the original 50, adopting a mixed-methodology framework rather than one static set.",
+    "Raise the pass threshold on the existing golden set from 96% to 99% to force more rigor.",
+    "Discard the golden set entirely and evaluate solely on live customer complaints going forward."
+   ],
+   "answerIndex": 1,
+   "rationale": "A mixed-methodology approach — refreshed production sampling plus adversarial cases layered on the golden set — directly addresses distributional drift between a two-year-old static set and current traffic. Duplicating the same 50 contracts with paraphrases doesn't add coverage of new contract types or clause phrasings. Raising the threshold on a set that no longer represents production traffic doesn't fix the coverage gap. Discarding structured evaluation for only reactive complaints removes proactive regression testing entirely, which is too extreme a swing.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P22",
+   "domain": 4,
+   "domainName": "Evaluation, Testing & Optimization",
+   "domainKey": "archp-eval",
+   "text": "A team A/B tests a new system prompt against the current production prompt for a sales-qualification agent: a 50/50 traffic split for exactly two hours on a Tuesday afternoon yields a statistically significant lift in the new variant's \"lead quality score,\" which is self-reported by the same LLM that generated the qualification. The team plans to ship to 100% of traffic immediately. What is the most serious methodological flaw here?",
+   "options": [
+    "The 50/50 split is imbalanced and should instead have been 90/10 in favor of the control.",
+    "The test should have used a 100% rollout instead of a split to get faster results.",
+    "The test window is too short and unrepresentative of full traffic patterns, and the outcome metric is not independent of the system being tested — the model self-scoring its own output means the observed \"lift\" may reflect self-evaluation bias rather than a genuine quality improvement.",
+    "Statistical significance is sufficient justification regardless of the outcome metric's construction or the sample time window."
+   ],
+   "answerIndex": 2,
+   "rationale": "Two real, compounding flaws are present: a two-hour Tuesday-afternoon window doesn't represent day-of-week or time-of-day traffic variation, and grading the output with the same model that produced it is not an independent quality signal. A 50/50 split is standard and not inherently flawed. Skipping the split entirely for a full rollout defeats the purpose of controlled testing. Treating statistical significance as sufficient on its own ignores that the underlying measurement itself may be invalid — significance doesn't guarantee correct measurement.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P23",
+   "domain": 4,
+   "domainName": "Evaluation, Testing & Optimization",
+   "domainKey": "archp-eval",
+   "text": "A support-summarization feature was switched from a larger model to a smaller, faster one to cut cost. Post-launch, summaries increasingly state resolution steps never mentioned in the source conversation, though they read fluently and confidently. The on-call engineer adds the instruction \"only state facts explicitly present in the conversation,\" but two weeks later the issue persists at a similar rate. What should the architect investigate next?",
+   "options": [
+    "Repeat the instruction three times in the prompt for emphasis, since it apparently wasn't stressed strongly enough the first time.",
+    "Assume the source conversations must be unusually confusing or contradictory, since no model could summarize them correctly.",
+    "Increase the model's context window, since the issue is likely a token-budget problem.",
+    "Treat this as a likely model-capability mismatch rather than a pure prompting issue: the smaller model may lack the reasoning capacity to reliably track multi-turn conversational state and distinguish stated from inferred facts, and re-evaluate model selection or add a verification/grounding step rather than only iterating on prompt wording."
+   ],
+   "answerIndex": 3,
+   "rationale": "The clue here is that a targeted prompt fix was already tried and failed over two weeks — that negative evidence, correlated with the model downgrade, points to a capability mismatch rather than a wording problem. Repeating the same instruction louder ignores that evidence. Blaming the input data assumes a cause with no supporting evidence and ignores the timing correlation with the model swap. There's no indication conversations are exceeding context limits, so a context-window increase conflates a capacity/reasoning issue with a length issue.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P24",
+   "domain": 4,
+   "domainName": "Evaluation, Testing & Optimization",
+   "domainKey": "archp-eval",
+   "text": "Three months into production, cost analysis shows a document-processing pipeline spends 70% of its token budget on a self-critique step where Claude reviews and revises its own first-pass output. Eval data shows this step changes the final answer in only 4% of cases, and in those cases it improves accuracy about half the time (2% net positive, 2% net negative). Latency complaints are also growing. What is the most defensible optimization?",
+   "options": [
+    "Remove the self-critique step, since 96% of the time it's pure overhead and its net accuracy impact is roughly neutral; monitor post-removal for any regression, and consider a cheaper, targeted verification step only for the specific case types where the critique historically helped.",
+    "Keep the self-critique step unchanged, since any accuracy improvement, however small, justifies its cost.",
+    "Run the self-critique step only during business hours to reduce nighttime cost.",
+    "Reduce the number of documents processed per day to fit within the existing cost budget."
+   ],
+   "answerIndex": 0,
+   "rationale": "The eval data shows the step is high-cost, low-hit-rate, and net-neutral (2% gains offset by 2% losses) — removing it, with monitoring and a cheaper targeted alternative for the cases that historically benefited, is the direct cost/latency fix grounded in the data. Keeping it unchanged misreads \"any improvement\" as justification while ignoring that the gains are canceled out by losses and the step consumes 70% of budget for a 4% hit rate. Restricting it to business hours is an arbitrary schedule hack that doesn't fix the underlying inefficiency and creates inconsistent behavior by time of day. Cutting document throughput solves the budget symptom by reducing product capability instead of removing the actual waste.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P25",
+   "domain": 5,
+   "domainName": "Governance, Safety & Risk Management",
+   "domainKey": "archp-governance",
+   "text": "A security research team wants to use Claude to generate proof-of-concept exploit code for vulnerabilities already privately disclosed to vendors, as part of an internal red-team tool. Default production guardrails block all exploit-code generation, including this legitimate use case. What is the most defensible governance approach?",
+   "options": [
+    "Disable the exploit-code guardrail account-wide so the security team is unblocked.",
+    "Provision the security team a separate, access-controlled environment with a narrower, reviewed guardrail configuration appropriate to authorized security research, including logging, scoped credentials, and use-case attestation, while leaving the default guardrail intact for general production traffic.",
+    "Have the security team manually rephrase requests until they pass the existing guardrail, with no configuration change.",
+    "Grant the team's requests case-by-case exceptions approved verbally by their manager, with no logging."
+   ],
+   "answerIndex": 1,
+   "rationale": "A scoped, audited exception environment gives the legitimate specialized use case what it needs while leaving the default guardrail intact for the vastly larger population of general production traffic. Disabling the guardrail account-wide massively increases risk exposure for everyone to solve one team's need. Encouraging adversarial rephrasing to defeat the guardrail undermines its integrity and leaves no audit trail. Verbal, unlogged case-by-case approval is unauditable, inconsistent, and won't hold up under any compliance review.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P26",
+   "domain": 5,
+   "domainName": "Governance, Safety & Risk Management",
+   "domainKey": "archp-governance",
+   "text": "A healthcare provider is deploying a Claude-based scribe assistant that drafts clinical notes from doctor-patient transcripts, some of which pass through the LLM API. Under HIPAA-oriented governance requirements, which of the following is the most essential architectural control?",
+   "options": [
+    "Encrypting all data in transit with TLS, treating that as sufficient on its own to meet HIPAA-oriented obligations for any AI vendor.",
+    "Relying on the model's built-in safety training to avoid retaining or misusing sensitive health information, with no contractual or logging controls.",
+    "Ensuring the vendor contract includes a signed Business Associate Agreement (or equivalent), configuring the integration so PHI is only sent to covered services, applying minimum-necessary data handling so no more patient data is sent than the task requires, and maintaining audit logs of PHI access and processing.",
+    "Having doctors manually redact patient names before pasting transcripts into the tool."
+   ],
+   "answerIndex": 2,
+   "rationale": "The substantive governance requirement combines contractual coverage, the minimum-necessary principle, and audit logging — that's the actual architecture decision a HIPAA-oriented review would check. Transit encryption alone is necessary but far from sufficient; it ignores the BAA, minimum-necessary handling, and audit trail entirely. Trusting model behavior with no contractual or logging controls isn't a compliance control at all — it's exactly the failure mode a review would flag. Manual name redaction by clinicians is unreliable and inconsistent, and PHI includes far more identifiers than names (DOB, MRN, address, and more), so it doesn't scale as a control.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P27",
+   "domain": 5,
+   "domainName": "Governance, Safety & Risk Management",
+   "domainKey": "archp-governance",
+   "text": "An organization is designing human-in-the-loop validation for an AI-assisted loan pre-approval workflow. One faction wants every AI recommendation reviewed by a human before any action; another wants full automation with no review, citing throughput. What HITL design best balances risk and efficiency?",
+   "options": [
+    "Full human review of every recommendation regardless of confidence or impact, to eliminate risk entirely.",
+    "Full automation with no human review, since the model's accuracy metrics are already high in testing.",
+    "Random sampling of 10% of all recommendations for human review regardless of confidence or case risk, automating the rest.",
+    "A risk-tiered design: auto-approve only high-confidence, low-impact cases within defined bounds, route lower-confidence or higher-impact cases — including borderline credit, large amounts, and protected-class-adjacent edge cases — to mandatory human review, with ongoing sampling audits of the auto-approved segment to catch drift."
+   ],
+   "answerIndex": 3,
+   "rationale": "Matching review intensity to confidence and impact is the standard senior-architect answer for a regulated, high-stakes domain like lending: it captures most of the throughput gain while directing human attention to the cases that actually carry fairness and financial risk. Reviewing everything eliminates the throughput benefit entirely. Full automation ignores tail-risk and regulatory exposure — high aggregate accuracy doesn't guarantee no harmful high-impact errors. Random sampling ignores risk stratification, potentially over-reviewing trivial cases while under-reviewing the highest-risk ones.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P28",
+   "domain": 5,
+   "domainName": "Governance, Safety & Risk Management",
+   "domainKey": "archp-governance",
+   "text": "An AI-assisted resume-screening tool is found, months after launch, to recommend candidates from certain universities and zip codes at disproportionately higher rates than the historical human-reviewer baseline, correlating with protected-class demographics. The team's first proposed fix is a prompt instruction telling the model to \"ignore demographic information and be fair to all candidates.\" Why is this insufficient, and what should be done instead?",
+   "options": [
+    "A structured bias audit — disparate-impact analysis across protected classes — should be run, proxy features like university and zip code reviewed for removal from decision criteria, fairness testing documented before and after any change, and ongoing monitoring put in place; a prompt instruction alone doesn't address proxy variables correlated with protected attributes or provide auditable evidence of remediation.",
+    "It is sufficient: once explicitly instructed to ignore demographics, the model will not exhibit disparate impact.",
+    "The tool should be scrapped entirely and hiring should return to fully manual review, since any automation risks bias.",
+    "This is likely limited to one specific batch of candidates and does not require system-level investigation."
+   ],
+   "answerIndex": 0,
+   "rationale": "A prompt-level fairness instruction doesn't address proxy discrimination through variables like university or zip code, and it produces no auditable evidence of remediation — a structured bias audit, proxy-feature review, and ongoing monitoring is what a real governance response looks like. Assuming the instruction alone is sufficient is the naive assumption this scenario is testing against — models can still reflect bias correlated with proxy variables even when explicitly told not to discriminate directly. Scrapping the tool entirely overcorrects without fixing the governance gap and ignores that manual review has its own well-documented bias problems the tool should be measured against. Dismissing the pattern as an isolated batch issue avoids the systemic investigation the data actually calls for.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P29",
+   "domain": 5,
+   "domainName": "Governance, Safety & Risk Management",
+   "domainKey": "archp-governance",
+   "text": "A federal agency contractor is evaluating whether to deploy a Claude-based system for processing government data subject to FedRAMP-oriented requirements. Which factor is most critical to the architecture decision at this stage?",
+   "options": [
+    "Model output quality benchmarks alone, since a more capable model outweighs infrastructure concerns.",
+    "Verifying that the specific deployment environment or service offering has, or is pursuing, the appropriate authorization level for the data's sensitivity classification, and architecting the system so regulated data flows only through that authorized boundary, with data residency, access controls, and audit logging aligned to the required baseline.",
+    "Whether the end-user interface is visually consistent with other agency tools.",
+    "Choosing the cheapest available deployment option, since cost efficiency is the primary evaluation criterion for government contracts."
+   ],
+   "answerIndex": 1,
+   "rationale": "FedRAMP-oriented governance is fundamentally about the authorization boundary and controls applied to the specific environment handling the data — that determines whether the deployment is even permissible, independent of model quality. Model quality is irrelevant if the environment isn't authorized to handle the data at all, which is a compliance category error, not a quality trade-off. UI consistency is a legitimate but minor concern entirely orthogonal to regulatory compliance. Treating cost as the primary criterion for a compliance-gated system inverts the actual priority; an unauthorized-but-cheap deployment can be a contract or legal violation regardless of price.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P30",
+   "domain": 6,
+   "domainName": "Stakeholder Communication & Lifecycle Management",
+   "domainKey": "archp-stakeholder",
+   "text": "A VP tells the architect, \"I want an AI system that makes our claims process smarter,\" with no further detail, and is unavailable for two weeks. Two engineers are already eager to start building a multi-agent claims-triage system. What is the most appropriate next step?",
+   "options": [
+    "Start building the multi-agent system immediately based on the engineers' interpretation, since delaying risks losing momentum and the VP can course-correct later.",
+    "Choose the most technically impressive architecture, such as multi-agent orchestration, assuming impressive technology will satisfy any interpretation of \"smarter.\"",
+    "Conduct structured discovery with available stakeholders — claims adjusters, ops leads, compliance — to identify specific pain points, current bottlenecks, success metrics, and constraints, producing a scoped problem statement and draft requirements for the VP to validate when available.",
+    "Send the VP a single email asking for clarification and wait passively until a reply arrives before doing any other work."
+   ],
+   "answerIndex": 2,
+   "rationale": "Structured discovery with available proxy stakeholders de-risks a vague mandate and produces artifacts the VP can validate later, avoiding wasted build effort on an unvalidated interpretation. Committing engineering resources immediately to one guess is high risk of costly rework. Optimizing for the most technically impressive architecture solves for demonstrating capability rather than the actual business problem. Waiting passively for a single email reply blocks all progress unnecessarily when other discovery avenues are clearly available.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P31",
+   "domain": 6,
+   "domainName": "Stakeholder Communication & Lifecycle Management",
+   "domainKey": "archp-stakeholder",
+   "text": "During an architecture review, a CFO says: \"I want the highest possible accuracy, the lowest possible latency, and the lowest possible cost — all three, no compromises.\" As the architect, what is the most effective way to communicate this trade-off?",
+   "options": [
+    "Agree verbally that all three are simultaneously achievable to keep the conversation positive, then quietly prioritize based on your own judgment during implementation.",
+    "Tell the CFO the request is unreasonable and that architecture decisions should be left entirely to engineering.",
+    "Pick the cheapest configuration by default, since cost is usually the CFO's top priority, and inform them after the system is built.",
+    "Present two or three concrete, named configurations showing how each shifts the accuracy/latency/cost curve, with quantified estimates for each, and ask the CFO to weigh in on which trade-off best serves the business need."
+   ],
+   "answerIndex": 3,
+   "rationale": "Concrete, quantified trade-off options put the business decision back in the stakeholder's hands with the technical grounding they need to make it. Agreeing verbally then silently prioritizing behind the scenes sets up a future trust-breaking surprise when reality doesn't match the promised \"no compromises.\" Dismissing the request outright is unhelpful and skips the translation work an architect exists to do. Assuming the stakeholder's priority and informing them only after the system is built removes their ability to make an informed decision, which is exactly backwards.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P32",
+   "domain": 6,
+   "domainName": "Stakeholder Communication & Lifecycle Management",
+   "domainKey": "archp-stakeholder",
+   "text": "A product stakeholder insists a new AI-powered document classifier \"must never make a mistake\" before agreeing to launch, treating any error rate as a blocker. The system achieves 97% accuracy in testing, compared to 94% for the human process it replaces, per historical audit. How should the architect handle this expectation?",
+   "options": [
+    "Reframe the conversation around relative risk: share the system's measured error rate against the human-process baseline it replaces, walk through specific failure modes and their real-world consequences, and propose concrete risk-mitigation controls such as confidence-based human review, so the stakeholder can make an informed accept/mitigate decision rather than holding out for an unattainable zero-error standard.",
+    "Promise that with enough additional tuning, 100% accuracy is achievable, in order to secure sign-off, and address the gap after launch if it comes up.",
+    "Refuse to launch until the model is retrained to eliminate all errors, however long that takes, since the stakeholder's bar is the final word.",
+    "Quietly lower the reported accuracy metrics in future updates so errors appear to be an already-accepted baseline rather than something requiring new sign-off."
+   ],
+   "answerIndex": 0,
+   "rationale": "Reframing around measurable relative risk and concrete mitigations, rather than an impossible zero-error bar, keeps the stakeholder informed and in control of the actual decision. Promising 100% accuracy is achievable is dishonest expectation-setting that guarantees a future trust-breaking failure. Refusing to launch until zero errors are achieved chases a target no probabilistic system can guarantee and stalls the project indefinitely. Quietly misrepresenting reported metrics is a deceptive integrity violation, not a legitimate alignment technique.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P33",
+   "domain": 6,
+   "domainName": "Stakeholder Communication & Lifecycle Management",
+   "domainKey": "archp-stakeholder",
+   "text": "An architect who built a RAG-based internal search tool is transitioning off the project, with a different engineer taking over ongoing maintenance. There's working code and a working demo, but no other artifacts. What should be prioritized in the handoff documentation to minimize risk to the new maintainer?",
+   "options": [
+    "A polished slide deck summarizing the project's business value for future leadership presentations.",
+    "An architecture document covering key design decisions and why they were made — chunking strategy, retrieval approach, model choice — known limitations and edge cases, operational runbook items such as how to monitor and common failure signatures, and any deferred trade-offs the new maintainer should know about.",
+    "A verbal walkthrough only, since documentation quickly goes stale and the code is the real source of truth.",
+    "Comprehensive line-by-line comments added to every function in the codebase, with no separate architecture-level documentation."
+   ],
+   "answerIndex": 1,
+   "rationale": "Decision rationale, known limitations, and operational guidance are exactly what a new maintainer needs when something breaks and the original architect is gone. A slide deck aimed at leadership persuasion is the wrong audience and purpose for this handoff. A purely verbal transfer isn't durable or referenceable once the original architect leaves, risking total information loss. Line-level code comments don't convey system-level design rationale or operational knowledge, which is what actually matters when the new maintainer hits an incident.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P34",
+   "domain": 6,
+   "domainName": "Stakeholder Communication & Lifecycle Management",
+   "domainKey": "archp-stakeholder",
+   "text": "Two months after launch, a Claude-powered internal tool is meeting its committed SLA (95% task success, 2s p95 latency). Encouraged by early success, product stakeholders begin requesting a steady stream of new capabilities added directly into the production system with no additional testing timeline, saying \"it's working great, just add this next thing.\" As architect, what is the best way to manage this phase?",
+   "options": [
+    "Accommodate every request immediately in production to maintain stakeholder goodwill and momentum.",
+    "Freeze all further changes to the system indefinitely to protect the current SLA, since any change introduces risk.",
+    "Establish a lightweight but real intake and change process: each new capability request goes through a scoped evaluation against the existing SLA and eval suite before shipping, with stakeholders informed of expected timeline and any risk to current SLA commitments.",
+    "Silently implement changes without informing stakeholders of the added testing or timeline needed, to avoid conflict, and hope nothing breaks."
+   ],
+   "answerIndex": 2,
+   "rationale": "A real, if lightweight, change-control process tied to the existing eval suite and SLA, paired with transparent stakeholder communication about timeline and risk, is what supporting the iteration phase of the lifecycle actually looks like. Accommodating every request immediately risks silently degrading a committed SLA and introducing regressions without proper testing. Freezing all changes indefinitely is overly rigid and ignores that supporting iteration is part of the architect's job. Implementing changes silently avoids the conflict through concealment rather than communication, setting up a future reliability and trust crisis.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P35",
+   "domain": 7,
+   "domainName": "Developer Productivity & Operational Enablement",
+   "domainKey": "archp-devprod",
+   "text": "A 30-engineer team has adopted Claude Code, but every engineer configured it individually — different permission allowlists, different custom commands for the same repeated tasks like running the test suite or deploying to staging, and inconsistent confirmation requirements. New team members regularly hit permission prompts for already-vetted routine actions, and a few engineers have configured overly broad auto-approval settings that concern the security team. What is the best way to improve this at the team-configuration level?",
+   "options": [
+    "Mandate that every engineer manually configure their own settings more carefully, and periodically audit individual configs for problems.",
+    "Restrict Claude Code to a single \"approved\" engineer who runs all AI-assisted tasks on behalf of the team, to reduce configuration variance.",
+    "Disable all custom commands and permission configuration entirely, requiring manual confirmation for every action regardless of routineness, to eliminate risk.",
+    "Establish shared, version-controlled team-level configuration — checked-in project settings and commands covering common vetted actions, a reviewed baseline permission allowlist, and standardized custom commands for repeated workflows — so new engineers inherit consistent, security-reviewed defaults while still allowing scoped personal overrides where appropriate."
+   ],
+   "answerIndex": 3,
+   "rationale": "Shared, version-controlled, security-reviewed team configuration is the standard way to configure tools for a team: it eliminates redundant prompts for already-vetted actions while removing the unreviewed broad auto-approvals the security team is worried about. Mandating more careful individual configuration with periodic audits doesn't fix the root inconsistency and adds after-the-fact overhead instead of good defaults. Restricting the tool to one engineer eliminates the productivity benefit for the other 29 and creates a bottleneck and single point of failure. Disabling all configuration and requiring confirmation on every action defeats the productivity purpose of adopting the tool and doesn't scale to a 30-person team.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "P36",
+   "domain": 7,
+   "domainName": "Developer Productivity & Operational Enablement",
+   "domainKey": "archp-devprod",
+   "text": "During a production incident, an on-call engineer uses an AI coding assistant to investigate quickly. The assistant proposes a plausible-looking fix, and the engineer, under time pressure, is about to apply it directly to the production hotfix branch without further verification, reasoning that \"the AI already explained why it should work.\" What is the most important operational practice missing here?",
+   "options": [
+    "The engineer should still follow the debugging protocol: verify the AI's diagnosis against actual logs and error signatures before applying the fix, test in a non-production environment or with the smallest safe blast radius if time allows, and treat the AI's explanation as a hypothesis to check, not a verified root cause, even under time pressure.",
+    "Nothing; applying the AI-proposed fix directly is fine, since production incidents require speed above all else and the AI's explanation constitutes sufficient verification.",
+    "The AI assistant should be banned from use during any production incident, since speed and correctness are assumed to be in conflict during a crisis.",
+    "The engineer should ask the AI assistant to double-check its own answer a second time and apply the fix if the AI still agrees with itself."
+   ],
+   "answerIndex": 0,
+   "rationale": "Even under incident time pressure, an AI-proposed fix is a hypothesis, not a verified root cause; grounding it against real logs and error signatures and limiting blast radius is the debugging discipline that actually prevents made-worse outages. Assuming the AI's explanation alone is sufficient ignores that unverified fixes applied hastily are a leading cause of incidents getting worse, not better — speed without verification is a false economy under pressure. An outright ban throws away a genuinely useful tool instead of establishing the right practice around it. Asking the same model to double-check its own answer is a weaker, non-independent form of verification that doesn't ground the diagnosis in actual production evidence.",
+   "source": "intent-solutions-authored"
+  }
+ ]
+}
