@@ -54,6 +54,14 @@ def _validate_course_code(course_code: str) -> None:
         raise ValueError(f"Invalid course code: {course_code!r}")
 
 
+_COURSE_CODE_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
+
+
+def _validate_course_code(course_code: str) -> None:
+    if not _COURSE_CODE_RE.match(course_code):
+        raise ValueError(f"Invalid course code: {course_code!r}")
+
+
 def validate_downloadable_file(file, max_size_mb: int = 1) -> tuple[bool, str]:
     """Valida archivo subido para recursos descargables."""
     if not file or not getattr(file, "filename", None):
