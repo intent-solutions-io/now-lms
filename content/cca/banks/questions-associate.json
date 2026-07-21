@@ -1,0 +1,582 @@
+{
+ "source": "Intent Solutions — original practice questions (36), authored in-house from the official CCAO-F Exam Guide blueprint (Anthropic, July 2026). No question is reproduced from Anthropic's exam, its published samples, or any third-party question bank.",
+ "note": "Answer-letter labels are shuffled per sitting; answerIndex refers to the option's POSITION in the options array below, 0-based.",
+ "questions": [
+  {
+   "id": "A1",
+   "domain": 1,
+   "domainName": "Prompting and Task Execution",
+   "domainKey": "assoc-prompting",
+   "text": "A marketing coordinator wants Claude to write a product launch email. Which prompt is most likely to produce a usable first draft?",
+   "options": [
+    "Write a 150-word launch email for our new eco-friendly water bottle, aimed at existing newsletter subscribers, with a friendly tone and a call to action to shop the pre-order page.",
+    "Write a marketing email.",
+    "Write an email like the ones big companies send.",
+    "Write something good for marketing."
+   ],
+   "answerIndex": 0,
+   "rationale": "Specificity, specific audience, length, tone, and call-to-action reduce the model's need to guess, matching the objective to create effective prompts for business tasks. The other options are vague or reference an unspecified standard, giving Claude little to work with and inviting generic output.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A2",
+   "domain": 1,
+   "domainName": "Prompting and Task Execution",
+   "domainKey": "assoc-prompting",
+   "text": "An operations manager needs Claude to help redesign an onboarding checklist that spans HR, IT, and facilities. Which approach best applies task decomposition?",
+   "options": [
+    "Ask Claude in one prompt to \"fix onboarding,\" with no further detail.",
+    "Ask Claude to guess what's wrong with onboarding without any input from the manager.",
+    "Send Claude the entire company handbook and ask it to \"improve everything.\"",
+    "Break the request into stages — first list current pain points per department, then draft process changes for each, then merge into one checklist — reviewing each stage before moving to the next."
+   ],
+   "answerIndex": 3,
+   "rationale": "Decomposing the request into reviewable stages is the applied task-decomposition technique. Vague one-shot requests, asking Claude to guess without stakeholder input, or dumping an entire handbook with no focus all skip the structuring step decomposition requires.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A3",
+   "domain": 1,
+   "domainName": "Prompting and Task Execution",
+   "domainKey": "assoc-prompting",
+   "text": "Claude's first draft of a client proposal is accurate but reads too technical for the client's audience. What is the best next step?",
+   "options": [
+    "Discard Claude and write the proposal manually.",
+    "Send the exact same prompt again and hope for a different result.",
+    "Give Claude specific feedback on tone and provide an example of the target reading level, then ask it to revise.",
+    "Accept the draft as-is since the facts are correct."
+   ],
+   "answerIndex": 2,
+   "rationale": "Iterating with targeted feedback and a concrete example is how prompts get refined to closer match the goal. Discarding the effort, resending an unchanged prompt, or accepting an audience mismatch all fail to apply the fix that's actually needed.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A4",
+   "domain": 1,
+   "domainName": "Prompting and Task Execution",
+   "domainKey": "assoc-prompting",
+   "text": "A trainer needs Claude for two different tasks today: generating ten creative icebreaker ideas for a workshop, and analyzing survey results for statistically notable trends. How should the trainer's prompting approach differ?",
+   "options": [
+    "Use the identical prompt structure for both, since Claude adapts automatically.",
+    "For the icebreakers, prompt for open-ended volume and variety; for the survey analysis, prompt with the specific data, request methodical review, and ask for supporting evidence for each finding.",
+    "Ask for brainstorming techniques when analyzing the survey data to increase creativity.",
+    "Skip prompting instructions entirely for the analysis task since Claude will infer the right rigor level."
+   ],
+   "answerIndex": 1,
+   "rationale": "Brainstorming benefits from open, generative framing, while analysis benefits from precision, real data, and a request for supporting evidence — matching prompting strategy to task type. Assuming no strategy adjustment is needed, applying a divergent technique to a convergent task, or skipping instructions altogether all ignore that the two tasks call for different approaches.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A5",
+   "domain": 1,
+   "domainName": "Prompting and Task Execution",
+   "domainKey": "assoc-prompting",
+   "text": "A comms lead wants Claude to draft three alternative subject lines for an internal newsletter. Which instruction set will most reliably produce usable, comparable options?",
+   "options": [
+    "Draft three subject lines, each under 60 characters, in a professional but warm tone, referencing this month's theme of \"Q3 wins,\" and briefly explain the angle behind each.",
+    "Give me some subject lines.",
+    "Write subject lines for the newsletter, make them good.",
+    "Write a subject line (singular, no other detail)."
+   ],
+   "answerIndex": 0,
+   "rationale": "Specifying quantity, a length constraint, tone, a topic anchor, and a request for rationale gives Claude the structure to produce directly usable, comparable options. The remaining prompts under-specify count, tone, or constraints, so the results would be inconsistent or too vague to compare.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A6",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "A coordinator asks Claude for the current statutory notice period for a contract type and receives a confident answer citing a specific clause number. The figure is going into a client-facing summary. What is the most appropriate next step?",
+   "options": [
+    "Verify the cited clause against the authoritative statute text before the figure is used externally.",
+    "Ask Claude to confirm whether it is certain about the clause number.",
+    "Use the figure, since Claude cited a specific clause rather than answering vaguely.",
+    "Remove the clause citation but keep the notice period in the summary."
+   ],
+   "answerIndex": 0,
+   "rationale": "A specific-looking citation is exactly the shape a hallucination takes, and the only reliable check is the authoritative source itself. Asking the model to self-assess its confidence produces another generated answer, not verification. Treating specificity as evidence of accuracy is the error being tested. Dropping the citation while keeping the unverified number hides the risk instead of resolving it.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A7",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "While reviewing a Claude-generated competitive analysis, an associate notices a market-share percentage attributed to a competitor that isn't in any of the source documents provided. What should the associate conclude and do?",
+   "options": [
+    "Assume the number is accurate since Claude generally performs well on research tasks.",
+    "Remove all numbers from the report to avoid any risk.",
+    "Ask Claude to double the figure to be safe.",
+    "Treat the unsourced figure as a possible hallucination and verify it against an independent, authoritative source before using it."
+   ],
+   "answerIndex": 3,
+   "rationale": "An unsourced, specific-looking figure is a hallmark of hallucination, and the correct response is targeted verification against an independent source. Assuming accuracy by default, stripping out all numbers regardless of validity, or arbitrarily altering the figure all fail to actually verify the claim.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A8",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "A Claude-drafted internal FAQ states in one answer that the return window is 30 days, and in another answer on the same page that it is 45 days. What is the most appropriate action before publishing?",
+   "options": [
+    "Publish the FAQ as-is; minor differences are expected in AI writing.",
+    "Flag the contradiction, check the authoritative return policy, and correct both answers to match it.",
+    "Pick whichever number appears first and delete the other answer.",
+    "Ask Claude which number is correct and use its answer without further check."
+   ],
+   "answerIndex": 1,
+   "rationale": "An internal contradiction signals an error that needs resolving against a ground-truth source. Publishing without checking ships a factual error, deleting one answer without confirming which figure is correct doesn't resolve the discrepancy, and trusting Claude's self-report repeats the same unverified-confidence mistake seen with hallucinated citations.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A9",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "Claude is asked to summarize anonymous employee engagement survey comments across five departments. The summary devotes most of its detail to complaints from one department and barely mentions the others, even though all five submitted similar comment volumes. What should the reviewer suspect and do?",
+   "options": [
+    "Conclude that department is clearly the biggest problem and escalate immediately.",
+    "Publish the summary as-is since Claude does not have opinions.",
+    "Recognize a possible skew in the summary, check the underlying comment volume and content per department, and ask Claude to re-summarize with balanced representation.",
+    "Delete the survey data entirely to avoid the issue."
+   ],
+   "answerIndex": 2,
+   "rationale": "Uneven emphasis despite similar input volume across sources suggests a summarization skew that should be checked against the underlying data and corrected. Treating the skew as settled fact and escalating on it, assuming a model-generated summary is automatically neutral, or discarding the source data entirely are all disproportionate or unverified responses.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A10",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "An HR coordinator uses Claude to draft a termination letter for an employee. Before sending, what is the most appropriate step?",
+   "options": [
+    "Route the draft through HR and legal review before it is sent, given the employment and legal risk involved.",
+    "Send the letter directly since Claude follows standard HR language conventions.",
+    "Ask Claude to confirm it is legally sound and rely on that confirmation.",
+    "Shorten the letter to reduce risk, then send it."
+   ],
+   "answerIndex": 0,
+   "rationale": "High-stakes, legally sensitive documents call for human expert review regardless of how polished a draft reads. Sending such a document unreviewed, treating the model's own self-certification as sufficient, or making only a cosmetic edit all fail to address the underlying legal and employment risk.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A11",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "Claude produces a detailed, jargon-heavy write-up of a new software rollout for the IT team. The project manager now needs a version for the executive steering committee. What is the best next step?",
+   "options": [
+    "Send the same document to executives; the facts are unchanged so the audience doesn't matter.",
+    "Delete technical terms randomly until the document looks shorter.",
+    "Ask executives to read the IT version and figure out what matters to them.",
+    "Ask Claude to revise the write-up into a short, plain-language summary focused on business impact, timeline, and risk, appropriate for a non-technical executive audience."
+   ],
+   "answerIndex": 3,
+   "rationale": "Adapting tone, length, and framing for a new audience while preserving accuracy is the core of tailoring output for its intended reader. Sending unchanged technical content to a non-technical audience, cutting text without guidance, or pushing the adaptation burden onto the reader all fail to actually adapt the message.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A12",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "An associate generates two versions of a client-facing project update from Claude — one emphasizing milestones met, one emphasizing risks ahead. What is the most defensible way to decide which to send?",
+   "options": [
+    "Send both and let the client pick.",
+    "Compare both against the actual project status and the communication goal (e.g., reassurance vs. early risk flagging), and choose or blend the version that most accurately and appropriately serves that goal.",
+    "Flip a coin, since either version is defensible.",
+    "Always choose the longer of the two."
+   ],
+   "answerIndex": 1,
+   "rationale": "Comparing both drafts against the actual project status and the specific communication goal is the deliberate evaluation step needed before picking one. Letting the client sort it out, choosing arbitrarily, or defaulting to whichever is longer all skip the judgment the associate is responsible for.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A13",
+   "domain": 2,
+   "domainName": "Output Evaluation and Validation",
+   "domainKey": "assoc-evaluation",
+   "text": "A Claude conversation produces a set of twenty product SKUs with prices and stock levels that a category manager needs to sort, filter, and share with a spreadsheet-based team. Which output format is most appropriate to request?",
+   "options": [
+    "A long narrative paragraph describing each SKU in prose.",
+    "A single-sentence summary of the SKU count only.",
+    "A structured table or downloadable data format the manager can sort and filter, rather than prose.",
+    "An image of the data."
+   ],
+   "answerIndex": 2,
+   "rationale": "Matching the output format to how the information will actually be used — sortable, structured data for a spreadsheet-based workflow — is the relevant selection skill. Prose, an oversimplified single-line summary, or a non-editable image would all work against the manager's actual task of sorting and filtering the data.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A14",
+   "domain": 3,
+   "domainName": "Product and Model Selection",
+   "domainKey": "assoc-selection",
+   "text": "A support team needs to auto-tag roughly 40,000 inbound tickets a week into a small set of routing labels. The task is simple and repetitive, and per-ticket cost and throughput matter far more than nuanced reasoning. Which choice best fits?",
+   "options": [
+    "Select a faster, lower-cost model appropriate to straightforward high-volume classification.",
+    "Select the most capable available model to maximize tagging accuracy on every ticket.",
+    "Route each ticket through several models and take the majority label.",
+    "Keep the tagging manual, since automated classification cannot be trusted at this volume."
+   ],
+   "answerIndex": 0,
+   "rationale": "Matching model capability to task difficulty is the core selection skill: simple, high-volume classification is where a smaller, faster, cheaper model is the right tool. Reaching for the most capable model on a trivial task pays a large premium for accuracy the task does not need. Ensemble voting multiplies cost several times over for marginal benefit here. Refusing to automate ignores that this is a well-suited use case.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A15",
+   "domain": 3,
+   "domainName": "Product and Model Selection",
+   "domainKey": "assoc-selection",
+   "text": "A five-person content team repeatedly asks Claude to write blog drafts following the same 12-page brand style guide, and currently pastes the guide into the chat every single time. What is the most appropriate change?",
+   "options": [
+    "Set up a Project with the style guide uploaded as a persistent knowledge source, so the team doesn't have to re-paste it each session.",
+    "Continue pasting the guide into every new chat.",
+    "Ask each team member to memorize the style guide instead.",
+    "Switch to a different AI tool that doesn't need instructions."
+   ],
+   "answerIndex": 0,
+   "rationale": "Projects are built to hold persistent instructions and knowledge sources so repeated context doesn't need re-entry, which is the right product feature for this recurring need. Continuing to re-paste the guide wastes time and invites inconsistency, and relying on memory or switching tools doesn't use the available product capability at all.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A16",
+   "domain": 3,
+   "domainName": "Product and Model Selection",
+   "domainKey": "assoc-selection",
+   "text": "A strategy analyst needs a broad, multi-source comparison of five competitors' recent pricing changes, pulling from many current external references. Which approach best fits the task?",
+   "options": [
+    "A single quick chat message asking Claude to \"list competitor prices\" from memory.",
+    "Generating an artifact with no research step first.",
+    "Asking a different team member to do it manually instead.",
+    "A capability built for broader, multi-step research and source-gathering across many references, rather than a single-turn chat reply."
+   ],
+   "answerIndex": 3,
+   "rationale": "Broad, current, multi-source comparison work is what a research-oriented capability is designed for. A single quick reply from memory risks stale or incomplete information, skipping a research step entirely undermines the comparison, and delegating the task to a person bypasses the tool being evaluated.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A17",
+   "domain": 3,
+   "domainName": "Product and Model Selection",
+   "domainKey": "assoc-selection",
+   "text": "An associate has been running one long Claude conversation for two weeks, pasting in new documents daily, and starts noticing Claude referencing outdated details from early in the thread and missing recent instructions. What is the best next step?",
+   "options": [
+    "Keep adding documents to the same conversation indefinitely.",
+    "Start a fresh conversation (or summarize and carry forward only the current, relevant context), rather than continuing to build on an overloaded thread.",
+    "Repeat the same instruction ten times in a row within the same thread.",
+    "Assume Claude will automatically prioritize the newest information with no action needed."
+   ],
+   "answerIndex": 1,
+   "rationale": "Recognizing when accumulated context is degrading output quality and proactively starting fresh or summarizing addresses a known context-limitation issue. Continuing to add material to an overloaded thread worsens the problem, repeating an instruction doesn't fix stale context, and assuming automatic prioritization of new information ignores the limitation altogether.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A18",
+   "domain": 4,
+   "domainName": "Workflow Integration and Solution Design",
+   "domainKey": "assoc-workflow",
+   "text": "A department head tells a project manager \"make our intake process better\" with no further detail. Before using Claude to design a solution, what is the most useful first step?",
+   "options": [
+    "Have Claude generate a full new intake process immediately based on the one-line request.",
+    "Skip clarification and copy a generic intake process from elsewhere.",
+    "Use Claude to help draft clarifying questions (current volume, pain points, stakeholders, constraints) to take back to the department head, then design once requirements are clearer.",
+    "Ask Claude to guess what \"better\" means and proceed silently."
+   ],
+   "answerIndex": 2,
+   "rationale": "Clarifying vague requirements before designing a solution prevents building the wrong thing. Jumping straight to a full design from a one-line request, copying a generic template that ignores the specific use case, or guessing silently at what 'better' means all skip the requirements-analysis step.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A19",
+   "domain": 4,
+   "domainName": "Workflow Integration and Solution Design",
+   "domainKey": "assoc-workflow",
+   "text": "An operations lead wants to find where a five-step manual invoice approval process is causing delays. How can Claude best support this?",
+   "options": [
+    "Walk Claude through the current step-by-step process and available cycle-time data, and ask it to help identify likely bottlenecks and suggest process changes to test.",
+    "Ask Claude to approve invoices directly going forward.",
+    "Ask Claude to write a company policy banning invoices over a certain amount.",
+    "Have Claude generate a motivational message for the approvals team."
+   ],
+   "answerIndex": 0,
+   "rationale": "Walking Claude through the current process and available data to surface likely bottlenecks is a direct application of using Claude for process optimization. Handing over actual approval authority, writing an unrelated policy, or producing a motivational message all fail to address the stated problem of finding delays.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A20",
+   "domain": 4,
+   "domainName": "Workflow Integration and Solution Design",
+   "domainKey": "assoc-workflow",
+   "text": "A team is designing a new customer feedback intake workflow and has a rough first draft from Claude. What is the best way to use Claude to move the design forward?",
+   "options": [
+    "Treat the first draft as final and implement it without review.",
+    "Ask Claude to design a completely unrelated workflow instead.",
+    "Discard Claude's input and start over manually with no reuse of the draft.",
+    "Share the draft with a few frontline staff, gather their objections, and ask Claude to revise the workflow to address those specific points, repeating as needed."
+   ],
+   "answerIndex": 3,
+   "rationale": "Solution design is iterative — feeding real stakeholder feedback back into Claude to refine the draft is how design work actually progresses. Treating a first pass as final skips validation, and designing something unrelated or discarding useful groundwork both waste the progress already made.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A21",
+   "domain": 4,
+   "domainName": "Workflow Integration and Solution Design",
+   "domainKey": "assoc-workflow",
+   "text": "A team currently spends an hour every Monday manually compiling a status report from five source documents. Which use of Claude best integrates it into this existing workflow?",
+   "options": [
+    "Replace the entire reporting process with an unrelated new tool.",
+    "Feed Claude the five source documents each week and have it draft the compiled report for a human editor to review and finalize, cutting the manual compilation time.",
+    "Have someone continue compiling the report exactly as before, and only mention Claude exists.",
+    "Ask Claude to decide which reports the team no longer needs."
+   ],
+   "answerIndex": 1,
+   "rationale": "Using Claude to draft the compiled report from existing source documents, with a human still reviewing and finalizing it, augments an existing workflow without removing necessary oversight. Replacing the whole process with an unrelated tool, changing nothing but mentioning the tool exists, or letting Claude unilaterally decide which reports to keep all miss the actual integration opportunity or remove needed human judgment.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A22",
+   "domain": 4,
+   "domainName": "Workflow Integration and Solution Design",
+   "domainKey": "assoc-workflow",
+   "text": "A manager is proposing that the team adopt Claude for first-draft client correspondence. When presenting this to leadership, what should the manager be sure to include?",
+   "options": [
+    "Only the potential time savings, to keep the pitch simple.",
+    "A guarantee that Claude will never make a mistake.",
+    "A balanced picture: where Claude speeds up drafting, and its limitations (e.g., need for human review of facts and tone) so leadership can set expectations.",
+    "No mention of review steps, to avoid slowing down adoption."
+   ],
+   "answerIndex": 2,
+   "rationale": "Presenting both where Claude helps and where it has limitations lets leadership set realistic expectations, which is necessary for communicating value and limitations honestly. Emphasizing only the upside, promising error-free performance, or omitting review steps altogether all misrepresent the trade-offs leadership needs to weigh.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A23",
+   "domain": 4,
+   "domainName": "Workflow Integration and Solution Design",
+   "domainKey": "assoc-workflow",
+   "text": "A regional manager wants to compare three possible staffing schedules before a busy season. How can Claude best support this planning task?",
+   "options": [
+    "Provide Claude the constraints (budget, staff availability, peak hours) for each option and ask it to lay out the trade-offs of each schedule to inform the manager's decision.",
+    "Ask Claude to pick the schedule and implement it without manager input.",
+    "Ask Claude to write a schedule with no information about constraints.",
+    "Skip planning and choose a schedule at random."
+   ],
+   "answerIndex": 0,
+   "rationale": "Providing Claude the real constraints and asking it to lay out trade-offs supports planning while leaving the final decision with the manager. Letting Claude implement a schedule unilaterally hands over a business decision inappropriately, and providing no constraints or skipping planning altogether would not produce a useful comparison.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A24",
+   "domain": 5,
+   "domainName": "Configuration and Knowledge Management",
+   "domainKey": "assoc-config",
+   "text": "A customer support lead wants every Claude response drafted for the team to follow the same tone guidelines and reference the current product FAQ. What is the best way to set this up?",
+   "options": [
+    "Ask each agent to remember the tone rules and FAQ from memory.",
+    "Paste the FAQ into the chat once and assume it applies to all future chats.",
+    "Avoid any configuration and let each response vary.",
+    "Create a Project with the tone guidelines written into the project instructions and the current FAQ uploaded as a knowledge source."
+   ],
+   "answerIndex": 3,
+   "rationale": "A Project with tone guidelines in its instructions and the current FAQ as an uploaded knowledge source is exactly what persistent, shared configuration is designed for. Relying on memory, a one-time paste that doesn't carry forward, or no configuration at all would all produce inconsistent results across the team.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A25",
+   "domain": 5,
+   "domainName": "Configuration and Knowledge Management",
+   "domainKey": "assoc-config",
+   "text": "A team connects Claude to a shared Google Drive folder so it can reference current sales collateral. Three months later, the folder still contains a pricing sheet that was replaced last month. What is the appropriate action?",
+   "options": [
+    "Leave the outdated file in place; Claude will know to ignore it.",
+    "Remove or update the outdated pricing sheet in the connected folder (or knowledge source) so Claude references only current information.",
+    "Disconnect Google Drive entirely and go back to manual work.",
+    "Ask Claude to guess which version is more recent each time."
+   ],
+   "answerIndex": 1,
+   "rationale": "Managing a connector well means keeping the connected source current; removing or updating the outdated file ensures Claude references accurate information. Leaving a stale file in place assumes an inference the model isn't reliably able to make, disconnecting the source abandons a useful capability instead of maintaining it, and guessing at recency doesn't solve the underlying data problem.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A26",
+   "domain": 5,
+   "domainName": "Configuration and Knowledge Management",
+   "domainKey": "assoc-config",
+   "text": "A team wants Claude to consistently respond in a specific format (bullet-point summary, then recommended action) across every conversation in their Project, without having to repeat that instruction each time. What is the best way to achieve this?",
+   "options": [
+    "Type the formatting instructions into every single prompt.",
+    "Hope Claude infers the preferred format from context.",
+    "Write the formatting requirement once into the Project's custom/system-level instructions so it applies automatically to conversations in that Project.",
+    "Ask a different team member to reformat every response manually afterward."
+   ],
+   "answerIndex": 2,
+   "rationale": "Writing the formatting requirement once into the Project's standing instructions makes it apply automatically going forward, which is the purpose of system-level instructions. Retyping the instruction every time is inefficient, hoping the format is inferred relies on chance, and manually reformatting afterward doesn't fix the root cause.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A27",
+   "domain": 5,
+   "domainName": "Configuration and Knowledge Management",
+   "domainKey": "assoc-config",
+   "text": "A Project's instructions were written six months ago and reference a pricing tier structure the company has since changed twice. Team members have started noticing Claude's answers cite the old tiers. What should be done?",
+   "options": [
+    "Review and update the Project's instructions and knowledge sources to reflect the current pricing structure, and note this as a periodic maintenance task going forward.",
+    "Nothing; team members should mentally correct any outdated answers.",
+    "Delete the Project entirely and never configure one again.",
+    "Tell Claude verbally, once, in a single chat, that pricing changed."
+   ],
+   "answerIndex": 0,
+   "rationale": "Configurations need periodic review and updates as underlying facts change; treating this as ongoing maintenance rather than a one-time setup keeps the Project accurate. Leaving the error uncorrected, deleting the Project entirely, or mentioning the change once in a single chat that doesn't persist all fail to actually fix the configuration.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A28",
+   "domain": 6,
+   "domainName": "Governance, Risk, and Responsible Use",
+   "domainKey": "assoc-governance",
+   "text": "An HR analyst wants to upload a spreadsheet of employee records including names, home addresses, and salary bands so Claude can summarize attrition patterns. Company policy restricts the handling of regulated personal data. What is the most appropriate action?",
+   "options": [
+    "Strip or pseudonymize the identifying fields before uploading, keeping only what the analysis actually requires.",
+    "Upload the file as is, since the analysis is internal and the output will not be shared externally.",
+    "Upload the file but instruct Claude in the prompt not to reference any personal details in its response.",
+    "Abandon the analysis, since any file containing personal data is out of scope for AI tooling."
+   ],
+   "answerIndex": 0,
+   "rationale": "Minimizing the data before it leaves your control satisfies the policy while preserving the analysis, since attrition patterns do not require names or addresses. Internal use does not exempt regulated data from handling rules. A prompt instruction governs what the model writes back, not what was already transmitted. Abandoning the work overcorrects when a compliant path plainly exists.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A29",
+   "domain": 6,
+   "domainName": "Governance, Risk, and Responsible Use",
+   "domainKey": "assoc-governance",
+   "text": "A hiring manager wants to have Claude review resumes and automatically send rejection emails without any human involved in the final decision. What is the most appropriate approach?",
+   "options": [
+    "Fully automate the process as requested, since it saves time.",
+    "Let Claude make the decision but have a human resend the same rejection email.",
+    "Skip Claude and do everything manually with no automation at all.",
+    "Use Claude to help summarize or organize resume information for human reviewers, while keeping the actual hiring decision and communication under human review, consistent with responsible-use practice for consequential decisions about people."
+   ],
+   "answerIndex": 3,
+   "rationale": "Keeping the actual hiring decision and communication under human review, while letting Claude assist with lower-risk organizing work, reflects appropriate use for a consequential decision about a person. Fully automating the decision or rubber-stamping an AI-made call both remove necessary human judgment, and abandoning any use of the tool over-corrects rather than finding the appropriate boundary.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A30",
+   "domain": 6,
+   "domainName": "Governance, Risk, and Responsible Use",
+   "domainKey": "assoc-governance",
+   "text": "A healthcare operations coordinator wants to ask Claude to help summarize patient case notes containing protected health information, using a general-purpose chat with no data protections confirmed. What is the most appropriate action?",
+   "options": [
+    "Proceed as planned since the goal is operational efficiency.",
+    "Pause and confirm the tool, configuration, and data-handling approach meet applicable regulatory requirements (e.g., relevant privacy regulations) before uploading any patient data, or use de-identified data if approval can't be confirmed.",
+    "Upload the notes but ask Claude not to remember them.",
+    "Convert the notes to a PDF first, then upload."
+   ],
+   "answerIndex": 1,
+   "rationale": "Confirming that the tool and data-handling approach meet applicable regulatory requirements — or using de-identified data if that can't be confirmed — applies the necessary data-sensitivity and regulatory safeguard before sharing protected health information. Proceeding by default ignores compliance risk, and asking the model not to retain data or merely changing the file format do not address the actual regulatory requirement.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A31",
+   "domain": 6,
+   "domainName": "Governance, Risk, and Responsible Use",
+   "domainKey": "assoc-governance",
+   "text": "An employee wants to start using Claude for a new use case involving customer data, but their organization has a documented AI governance process requiring review before new use cases go live. What should the employee do?",
+   "options": [
+    "Start using Claude for the new use case immediately since it seems low-risk.",
+    "Ask a colleague informally if it seems fine.",
+    "Submit the use case through the organization's AI governance review process before implementing it.",
+    "Use a personal, non-work Claude account to bypass the review."
+   ],
+   "answerIndex": 2,
+   "rationale": "Submitting a new use case involving customer data through the organization's defined AI governance review process is what following organizational AI policy requires. Proceeding without review, getting an informal opinion from a colleague, or using a personal account to sidestep the process all bypass the oversight the governance process exists to provide.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A32",
+   "domain": 6,
+   "domainName": "Governance, Risk, and Responsible Use",
+   "domainKey": "assoc-governance",
+   "text": "A team plans to publish a set of customer testimonials that were significantly rewritten by Claude for polish, without disclosing that AI was used to edit them, and without customers reviewing the final wording attributed to them. What is the most significant ethical concern?",
+   "options": [
+    "Attributing AI-rewritten wording to real customers without their review misrepresents their words, which is an authenticity and consent concern regardless of how good the writing sounds.",
+    "There is no concern, since the underlying sentiment is unchanged.",
+    "The only issue is that the writing might sound too polished.",
+    "The concern only applies if the testimonials are negative."
+   ],
+   "answerIndex": 0,
+   "rationale": "Attributing AI-rewritten wording to real people without their review is an authenticity and consent problem independent of how the final text reads. Assuming no concern because sentiment is preserved, framing the issue as merely about tone, or assuming it only matters for negative testimonials all understate the actual ethical issue of misrepresenting someone's own words.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A33",
+   "domain": 7,
+   "domainName": "Troubleshooting and Optimization",
+   "domainKey": "assoc-troubleshoot",
+   "text": "An associate keeps getting generic, unusable answers from Claude when asking it to \"write a training summary.\" What is the most likely root cause and fix?",
+   "options": [
+    "Claude is malfunctioning and nothing can be done.",
+    "The associate should give up on using Claude for this task entirely.",
+    "The associate should submit the same prompt multiple times until a better version appears by chance.",
+    "The prompt lacks essential context (what training, for whom, what should be covered, desired length); adding that specificity is likely to resolve the generic output."
+   ],
+   "answerIndex": 3,
+   "rationale": "Generic prompts most often fail because they omit essential context — audience, scope, and desired length — and adding that specificity is the direct fix. Assuming the tool is broken, giving up on the task, or resubmitting the same prompt hoping for a different result by chance all skip the actual diagnostic step.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A34",
+   "domain": 7,
+   "domainName": "Troubleshooting and Optimization",
+   "domainKey": "assoc-troubleshoot",
+   "text": "A manager has rejected an associate's Claude-drafted client summary twice for being \"too salesy.\" The associate resent the same prompt both times with minor wording tweaks and got similar results. What should the associate do differently?",
+   "options": [
+    "Keep resending small wording variations of the same prompt.",
+    "Analyze what specifically reads as \"too salesy\" (e.g., adjective density, exaggerated claims), give Claude that specific diagnosis and an example of the desired tone, and revise the prompt accordingly.",
+    "Stop using Claude for client summaries permanently.",
+    "Ask the manager to lower their standards instead."
+   ],
+   "answerIndex": 1,
+   "rationale": "Diagnosing the specific quality gap (what reads as 'salesy') and giving Claude that diagnosis plus a concrete tone example is how feedback should change the prompt. Resending minor wording variations repeats an approach that has already failed twice, and abandoning the tool or asking the manager to lower standards both avoid the actual troubleshooting work.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A35",
+   "domain": 7,
+   "domainName": "Troubleshooting and Optimization",
+   "domainKey": "assoc-troubleshoot",
+   "text": "A team spends significant time each week re-typing similar instructions to Claude for recurring weekly status updates. What is the most effective optimization?",
+   "options": [
+    "Continue re-typing the full instructions from scratch every week.",
+    "Assign the task to a different team member without changing the process.",
+    "Save a reusable prompt template (or Project with standing instructions) covering the recurring structure and requirements, so only the week's new data needs to be added each time.",
+    "Stop producing the weekly update altogether."
+   ],
+   "answerIndex": 2,
+   "rationale": "Saving a reusable template or standing Project instructions for a recurring task removes repeated, avoidable manual effort, which is the point of workflow optimization. Continuing to retype instructions every week keeps the inefficiency, reassigning the same manual process to someone else doesn't change it, and dropping the deliverable eliminates value instead of optimizing how it's produced.",
+   "source": "intent-solutions-authored"
+  },
+  {
+   "id": "A36",
+   "domain": 7,
+   "domainName": "Troubleshooting and Optimization",
+   "domainKey": "assoc-troubleshoot",
+   "text": "A team consistently gets shallow, low-quality answers from Claude for a task that actually requires multi-step reasoning across a large set of source documents, but they've been using a single short prompt with no supporting documents attached. What is the most likely fix?",
+   "options": [
+    "Diagnose that the prompt is under-supplying necessary source material and structure; provide the relevant documents and break the request into the needed sub-steps, then re-test.",
+    "Conclude Claude is not capable of this type of task at all.",
+    "Switch to writing the analysis entirely without any AI assistance.",
+    "Repeat the identical short prompt at a later time of day."
+   ],
+   "answerIndex": 0,
+   "rationale": "Checking whether the task was given adequate source material and a broken-down structure before concluding the tool is unsuitable is the correct diagnostic step for underperforming prompts on complex tasks. Concluding the tool is incapable, abandoning AI assistance altogether, or simply retrying at a different time all skip diagnosing the actual, fixable input problem.",
+   "source": "intent-solutions-authored"
+  }
+ ]
+}
