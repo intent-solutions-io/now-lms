@@ -4,8 +4,10 @@ Once you're logged in, here's how to get into a course and work through it.
 
 ## Find a course
 
-Browse the catalog at **`/course/explore`**. Open a course to see its
-description, level, and sections. The prep courses you're looking for are:
+Your courses live in **your dashboard** — sign in and they are listed there.
+Courses are not browsable publicly: `/course/explore` shows the practice tracks,
+not a course catalog. Open a course from your dashboard to see its description,
+level, and sections. The prep courses you're enrolled in are:
 
 - **Getting Started on Intent Solutions Learn** — you're in it now.
 - **Claude Foundations (Associate onramp)**.
