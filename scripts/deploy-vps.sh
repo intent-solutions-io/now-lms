@@ -89,7 +89,7 @@ if [ "${AHEAD}" -ne 0 ] || [ "${BEHIND}" -ne 0 ]; then
         fi
         if [ "${BEHIND}" -ne 0 ]; then
             echo "  Deploying now would ship code ${BEHIND} commit(s) stale. Run:"
-            echo "      git -C \"${REPO_ROOT}\" fetch origin && git -C \"${REPO_ROOT}\" reset --hard ${REMOTE_REF}"
+            echo "      git -C \"${REPO_ROOT}\" fetch origin && git -C \"${REPO_ROOT}\" reset --hard \"${REMOTE_REF}\""
         fi
         echo
         echo "  Override with --allow-divergent only if you accept shipping unreproducible code."

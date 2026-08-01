@@ -80,7 +80,10 @@ if [ "${AHEAD}" -ne 0 ]; then
     echo "    If any of that matters, push it to a branch before continuing." >&2
     # Single-quoted on purpose: the operator should run date(1) when they run the
     # command, not inherit a timestamp from when this warning was printed.
-    echo '        git push origin HEAD:refs/heads/rescue/$(date +%Y%m%d-%H%M%S)' >&2
+    # -C so the line works pasted from anywhere, matching deploy-vps.sh's remedy.
+    # Single-quoted tail on purpose: date(1) must run when the operator runs the
+    # command, not when this warning was printed.
+    echo "        git -C \"$(pwd)\" push origin "'HEAD:refs/heads/rescue/$(date +%Y%m%d-%H%M%S)' >&2
     echo >&2
 fi
 
