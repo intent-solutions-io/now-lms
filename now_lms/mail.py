@@ -9,6 +9,7 @@ from __future__ import annotations
 # Standard library
 # ---------------------------------------------------------------------------------------
 import json
+import re
 import threading
 import urllib.request
 from os import environ
@@ -209,6 +210,21 @@ _alert_last_sent: dict[str, float] = {}
 _alert_lock = threading.Lock()
 
 
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+
+
+def _redact_addresses(text: str) -> str:
+    """Replace any email address in free text with its domain.
+
+    The recipient list is redacted before it goes into the payload, but the
+    EXCEPTION TEXT is free-form and routinely carries the address anyway --
+    smtplib raises SMTPRecipientsRefused with a dict keyed by the rejected
+    recipient, and providers echo the address in the 5xx string. Sending that
+    through unredacted would defeat the redaction entirely (Greptile P1, PR #60).
+    """
+    return _EMAIL_RE.sub(r"<redacted>@\1", text)
+
+
 def _redact_recipients(recipients) -> str:
     """Domains only. An alert says which mail is failing, not who the members are.
 
@@ -228,6 +244,12 @@ def _should_alert(key: str) -> bool:
 
     Without this, a provider rate-limit turns every queued send into a Slack POST
     and the alert channel becomes the second outage.
+
+    PER PROCESS, deliberately. Under gunicorn with N workers an outage yields up
+    to N alerts per window rather than one. That is accepted: N is small, the
+    failure is worth over-reporting rather than under-reporting, and a shared
+    backend would make the alert path depend on Redis being up -- precisely the
+    kind of infrastructure whose absence it needs to survive.
     """
     now = monotonic()
     with _alert_lock:
@@ -254,7 +276,7 @@ def notify_mail_failure(msg: Message, error: BaseException) -> None:
         # Scheme allow-list before urlopen, mirroring request_access._notify_slack:
         # the nosec below suppresses exactly the check that would otherwise catch a
         # misconfigured file:// or ftp:// value.
-        if not webhook.startswith("https://"):
+        if not webhook.lower().startswith("https://"):
             logger.warning("SLACK_WEBHOOK_LEADS_CONTACT is not an https URL; mail-failure alert not sent.")
             return
         if not _should_alert(error_kind):
@@ -276,7 +298,11 @@ def notify_mail_failure(msg: Message, error: BaseException) -> None:
                 },
                 {
                     "type": "section",
-                    "text": {"type": "plain_text", "text": f"{error_kind}: {str(error)[:400]}", "emoji": False},
+                    "text": {
+                        "type": "plain_text",
+                        "text": f"{error_kind}: {_redact_addresses(str(error))[:400]}",
+                        "emoji": False,
+                    },
                 },
                 {
                     "type": "context",

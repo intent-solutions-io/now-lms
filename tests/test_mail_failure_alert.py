@@ -24,7 +24,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from now_lms.mail import _redact_recipients, _should_alert, notify_mail_failure
+from now_lms.mail import _redact_addresses, _redact_recipients, _should_alert, notify_mail_failure
 
 # Reach the module object through sys.modules, NOT `from now_lms import mail`:
 # now_lms/__init__.py binds `mail = Mail()` and shadows the submodule, so that
@@ -109,6 +109,33 @@ def test_redaction_deduplicates_and_caps_domains():
 
 def test_redaction_survives_a_recipient_without_an_at_sign():
     assert _redact_recipients(["not-an-address"]) == "1 recipient(s)"
+
+
+def test_the_exception_text_is_redacted_too(captured_posts):
+    """Greptile P1 on PR #60: redacting the recipient list is not enough.
+
+    smtplib raises SMTPRecipientsRefused with a dict KEYED BY the rejected
+    address, and providers echo the address back in the 5xx string. Sending the
+    exception through unredacted would defeat the recipient redaction entirely.
+    """
+    error = RuntimeError("SMTPRecipientsRefused: {'member@example.invalid': (550, b'User unknown')}")
+    notify_mail_failure(_msg(), error)
+    body = captured_posts[0]["body"]
+    assert "member@example.invalid" not in body
+    assert "example.invalid" in body          # the domain still survives, for diagnosis
+    assert "550" in body                      # and so does the actual failure reason
+
+
+def test_redact_addresses_keeps_the_domain_and_drops_the_local_part():
+    out = _redact_addresses("rejected a@b.invalid and c.d+tag@e.f.invalid")
+    assert "a@b.invalid" not in out
+    assert "c.d+tag@e.f.invalid" not in out
+    assert "b.invalid" in out
+    assert "e.f.invalid" in out
+
+
+def test_redact_addresses_leaves_ordinary_text_alone():
+    assert _redact_addresses("connection timed out after 30s") == "connection timed out after 30s"
 
 
 def test_alert_reports_the_error_and_subject(captured_posts):
