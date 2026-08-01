@@ -30,7 +30,7 @@ from flask_login import current_user
 # ---------------------------------------------------------------------------------------
 # Local resources
 # ---------------------------------------------------------------------------------------
-from now_lms.db import Configuracion, MailConfig, Usuario, database
+from now_lms.db import Configuracion, Usuario, database
 from now_lms.i18n import _
 from now_lms.logs import log
 
@@ -275,17 +275,20 @@ def send_confirmation_email(user) -> None:
     """Send confirmation email to user."""
     from flask_mail import Message
 
-    from now_lms.mail import send_mail
+    from now_lms.mail import resolve_sender, send_mail
 
-    row = database.session.execute(database.select(MailConfig)).first()
-    if row is None:
+    # Resolve the sender the same way send_mail resolves the server: environment
+    # first, database second. Reading the MailConfig row directly here asked a
+    # different question than the one that decides whether mail works, so an
+    # env-configured deployment with an empty row returned silently.
+    sender = resolve_sender()
+    if sender is None:
         return
-    config = row[0]
 
     msg = Message(
         subject="Email verification",
         recipients=[user.correo_electronico],
-        sender=((config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS"), config.MAIL_DEFAULT_SENDER),
+        sender=sender,
     )
     token = generate_confirmation_token(user.correo_electronico)
     url = url_for("user.check_mail", token=token, _external=True)
@@ -359,17 +362,18 @@ def send_password_reset_email(user) -> bool:
     """Send password reset email to user."""
     from flask_mail import Message
 
-    from now_lms.mail import send_mail
+    from now_lms.mail import resolve_sender, send_mail
 
-    row = database.session.execute(database.select(MailConfig)).first()
-    if row is None:
+    # See send_confirmation_email: the row read this replaced is what made
+    # password reset send nothing on an env-configured deployment.
+    sender = resolve_sender()
+    if sender is None:
         return False
-    config = row[0]
 
     msg = Message(
         subject=_("Recuperación de Contraseña - NOW LMS"),
         recipients=[user.correo_electronico],
-        sender=((config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS"), config.MAIL_DEFAULT_SENDER),
+        sender=sender,
     )
     token = generate_password_reset_token(user.correo_electronico)
     url = url_for("user.reset_password", token=token, _external=True)

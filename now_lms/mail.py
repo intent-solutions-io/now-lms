@@ -61,8 +61,13 @@ def _load_mail_config_from_env() -> SimpleNamespace:
     # TLS/SSL settings
     mail_use_tls = environ.get("MAIL_USE_TLS", "False").capitalize()
     mail_use_ssl = environ.get("MAIL_USE_SSL", "False").capitalize()
-    # Default sender
+    # Default sender. MAIL_DEFAULT_SENDER_NAME is read here as well as in the
+    # database loader: every caller that builds a Message reads BOTH attributes
+    # off whatever _config() returned, so omitting it from this branch made an
+    # env-configured deployment raise AttributeError at send time (paypal.py's
+    # receipt mail did exactly that). The two loaders must return the same shape.
     mail_default_sender = environ.get("MAIL_DEFAULT_SENDER")
+    mail_default_sender_name = environ.get("MAIL_DEFAULT_SENDER_NAME")
 
     # String to boolean conversion using pattern matching.
     # str.capitalize() yields "True"/"False", so the arms must match that exact
@@ -95,6 +100,7 @@ def _load_mail_config_from_env() -> SimpleNamespace:
         MAIL_USE_TLS=mail_use_tls,
         MAIL_USE_SSL=mail_use_ssl,
         MAIL_DEFAULT_SENDER=mail_default_sender,
+        MAIL_DEFAULT_SENDER_NAME=mail_default_sender_name,
     )
 
 
@@ -115,6 +121,7 @@ def _load_mail_config_from_db() -> SimpleNamespace:
         mail_username = mail_config.MAIL_USERNAME
         mail_password = descifrar_secreto(mail_config.MAIL_PASSWORD)
         mail_default_sender = mail_config.MAIL_DEFAULT_SENDER
+        mail_default_sender_name = mail_config.MAIL_DEFAULT_SENDER_NAME
         is_mail_configured = mail_config.email_verificado
 
         return SimpleNamespace(
@@ -126,16 +133,55 @@ def _load_mail_config_from_db() -> SimpleNamespace:
             MAIL_USE_TLS=mail_use_tls,
             MAIL_USE_SSL=mail_use_ssl,
             MAIL_DEFAULT_SENDER=mail_default_sender,
+            MAIL_DEFAULT_SENDER_NAME=mail_default_sender_name,
         )
 
 
 def _config() -> SimpleNamespace:
-
+    """Resolve the effective mail configuration: environment first, database second."""
     config_from_env = _load_mail_config_from_env()
 
     if config_from_env.mail_configured:
         return config_from_env
-    return _load_mail_config_from_db()
+    try:
+        return _load_mail_config_from_db()
+    except ValueError:
+        # Neither source is configured. Return the (unconfigured) env shape rather
+        # than propagating, so callers branch on `mail_configured` like every other
+        # not-set-up path instead of having to catch an exception that only one of
+        # the two loaders can raise.
+        logger.trace("No mail configuration in environment or database.")
+        return config_from_env
+
+
+def resolve_sender() -> tuple[str, str] | None:
+    """Return the (name, address) sender pair, or None when mail is not configured.
+
+    WHY THIS EXISTS
+    Mail configuration has two sources — environment (preferred) and the MailConfig
+    database row — and `_config()` is the only place that knows the precedence.
+    Callers that read the database row directly to obtain a sender therefore ask a
+    DIFFERENT question than the one that decides whether mail works at all.
+
+    On 2026-07-31 that divergence was live on learn.intentsolutions.io: the
+    environment was fully configured and `mail_configured` reported True, while the
+    MailConfig row was entirely NULL. Password-reset and confirmation mail returned
+    early at the row check and sent nothing — silently, with every indicator green.
+
+    Use this instead of `select(MailConfig)` in any code path whose job is to SEND.
+    Reading the row directly is still correct in the admin settings views, which
+    exist to edit that row.
+    """
+    config = _config()
+    if not config.mail_configured:
+        return None
+    # An SMTP account is a usable envelope sender, and MAIL_DEFAULT_SENDER is
+    # optional in both sources — falling back keeps a working configuration from
+    # producing a None sender that flask_mail would reject at send time.
+    address = config.MAIL_DEFAULT_SENDER or config.MAIL_USERNAME
+    if not address:
+        return None
+    return (config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS", address)
 
 
 def send_threaded_email(app: Flask, mail: Mail, msg: Message, _log: str = "", _flush: str = ""):
