@@ -126,7 +126,7 @@ noted — when upstream accepts it, we drop the fork-local copy and let `main` c
 
 ## Known collisions to defuse at the next upstream sync
 
-Not bugs — two places where the fork line and the upstream line both changed the same thing
+Not bugs — three places where the fork line and the upstream line both changed the same thing
 correctly. Recorded here so they are **defused deliberately rather than discovered mid-merge**,
 where the tempting resolution is the wrong one. Bead `now-lms-4um`.
 
@@ -140,18 +140,38 @@ where the tempting resolution is the wrong one. Bead `now-lms-4um`.
 They conflict **textually only**. Both are correct and both are load-bearing. **Keep both.** A
 resolution that takes one side silently re-arms the other bug.
 
-### 2. Migration heads diverge — needs a merge revision, not a rewired `down_revision`
+### 2. Migration heads diverge — the merge produces two heads, and rewiring is the fix
+
+Both migrations hang off the **same** parent:
 
 ```
-deploy line:  20260726_000000  ->  20260731_120500   (#54, prior credentials)
-upstream:     20260730_000000                        (unique enrollment constraint)
+                          ┌─ 20260731_120500   (deploy, #54, prior credentials)
+20260726_000000 ──────────┤
+                          └─ 20260730_000000   (upstream, unique enrollment constraint)
 ```
 
-Naively editing `down_revision` to point at upstream's head **branches alembic** and produces a
-multiple-heads error at boot. The correct move is a real `alembic merge` revision.
+Verified 2026-07-31 — both files declare `down_revision = "20260726_000000"`:
 
-Verified 2026-07-31: `#54`'s `down_revision` is correct *for this branch as it stands* — the
-problem is only the eventual merge.
+```
+$ grep -h '^down_revision' now_lms/migrations/20260731_120500_*.py
+down_revision = "20260726_000000"
+$ git show upstream/unique-enrollment-constraint:now_lms/migrations/20260730_000000_*.py | grep '^down_revision'
+down_revision = "20260726_000000"
+```
+
+So **merging the two branches without touching anything is what yields two heads**, and alembic
+errors at boot. Setting `20260731_120500.down_revision = "20260730_000000"` linearises it:
+`20260726 → 20260730 → 20260731`. That is the fix, not the trap.
+
+Rewiring is safe here specifically because the two migrations are independent (a new
+`prior_credentials` table versus a constraint on enrollments) **and** `20260731_120500` has not been
+applied to any database yet — production is still behind #54. If that stops being true, prefer a
+real `alembic merge` revision so no deployed database has to re-derive its history.
+
+Either way, confirm with `alembic heads` that exactly one head remains before shipping.
+
+> An earlier revision of this section claimed rewiring *caused* the branch. That was backwards, and
+> Greptile caught it on PR #62 — recorded here because the wrong version is the intuitive one.
 
 ### 3. `now_lms/forms/__init__.py` — the deploy line is missing our own lazy-label fix
 
