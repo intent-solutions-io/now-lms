@@ -102,9 +102,19 @@ schema as it stands and is simply never produced today, because
 | `answer` | `graded_at` | DateTime | Null until graded |
 | `answer` | `graded_by` | FK `usuario` | Who graded it |
 | `question` | `rubric` | Text | The criteria the answer is scored against |
-| `question` | `max_points` | Float | Defaults to 1.0, preserving current per-question weighting |
+| `question` | `max_points` | Float, **`NOT NULL`, `server_default=1.0`** | Preserves current per-question weighting. The default must be a **server** default with a non-null constraint, and the migration must **backfill existing rows to 1.0**, not merely declare a Python-side default |
 
 `question.type` needs no migration. It is `String(20)` and unconstrained.
+
+> **Why `max_points` is the one non-nullable addition (Greptile P2, 2026-07-28).**
+> Every other column here is genuinely optional, because an ungraded answer has
+> no score, no feedback, no grader and no grading timestamp. `max_points` is
+> different: it is the *denominator*. If it is nullable and only defaulted in
+> Python, every row that already exists and every creation path that does not
+> set it leaves `awarded_points / max_points` undefined, which silently breaks
+> scoring for the two question types that work today. The constraint plus the
+> backfill is what makes this change preserve existing behaviour rather than
+> merely intend to.
 
 ### Code
 
@@ -116,6 +126,15 @@ schema as it stands and is simply never produced today, because
 - `_save_question_answers` writes `text_response` for the new type.
 - `take_evaluation` leaves `passed` as `None` when the attempt holds an
   ungraded answer, rather than stamping pass or fail.
+- **Grading the last pending answer finalises the attempt (Greptile P2, 2026-07-28).**
+  Today `score`, `passed` and certificate eligibility are all computed once, at
+  submission. This change makes submission no longer the moment the result is
+  known, so the grading action must re-run the same finalisation: recompute
+  `score`, resolve `passed` against the passing threshold, and re-run the
+  certificate check. Without it a fully graded attempt stays pending forever and
+  its certificate is withheld — a failure the learner sees and the instructor
+  has no way to clear. The finalisation path is shared with submission rather
+  than duplicated, so the two cannot drift.
 - `forms/__init__.py:129` gains the third choice.
 
 ### Templates
