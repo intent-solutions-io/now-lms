@@ -180,9 +180,25 @@ def resolve_sender() -> tuple[str, str | None]:
     send" — `send_mail` owns that, via `config.mail_configured or no_config`.
     Every current caller passes `no_config=True`, meaning "send regardless of
     whether the config has been verified", so a `mail_configured` check in here
-    would silently overrule them. Hence a pair is always returned, and the address
-    may be None: flask_mail then falls back to the app's MAIL_DEFAULT_SENDER,
-    which is exactly what happened before this function existed.
+    would silently overrule them.
+
+    ALWAYS RETURNS A PAIR, and the address may be None on a completely
+    unconfigured deployment. That is deliberately UNCHANGED from the code this
+    replaced, which built the same shape straight off the MailConfig row.
+
+    Kilo flagged on PR #60 that flask_mail formats any tuple as
+    `f"{sender[0]} <{sender[1]}>"` before validating it, so a None address
+    becomes the literal envelope sender "NOW LMS <None>". That is true, and it is
+    a real pre-existing wart — but returning None instead is a BEHAVIOUR CHANGE,
+    not a cleanup: the resulting string is truthy, which is what currently
+    satisfies flask_mail's "no sender configured" assertion. Returning None makes
+    that assertion fire and turns "mail with a broken sender" into "no mail at
+    all", which fails tests/test_auth_helpers.py and tests/test_public_api.py
+    against real PostgreSQL. Verified by trying it.
+
+    Fixing it properly means giving an unconfigured deployment a real fallback
+    sender, which is its own change with its own tests. Tracked separately; out
+    of scope for a PR about which SOURCE the sender comes from.
     """
     config = _config()
     # An SMTP account is a usable envelope sender, and MAIL_DEFAULT_SENDER is
@@ -213,15 +229,27 @@ _alert_lock = threading.Lock()
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 
 
-def _redact_addresses(text: str) -> str:
-    """Replace any email address in free text with its domain.
+def _redact_addresses(text: str, known=()) -> str:
+    """Strip email addresses out of free text, keeping their domains.
 
-    The recipient list is redacted before it goes into the payload, but the
+    The recipient list is redacted before it reaches the payload, but the
     EXCEPTION TEXT is free-form and routinely carries the address anyway --
     smtplib raises SMTPRecipientsRefused with a dict keyed by the rejected
-    recipient, and providers echo the address in the 5xx string. Sending that
-    through unredacted would defeat the redaction entirely (Greptile P1, PR #60).
+    recipient, and providers echo the address back in the 5xx string. Sending
+    that through unredacted would defeat the redaction (Greptile P1, PR #60).
+
+    TWO PASSES, because a regex alone is not enough. Greptile's follow-up was
+    right that no ASCII dotted-domain pattern covers every address form --
+    quoted local parts, IP-literal domains, internationalised domains. But we do
+    not have to guess: the recipients are already in hand, so they are removed by
+    exact match first, whatever shape they take. The pattern is the backstop for
+    addresses that were never in the recipient list (a Bcc, a relay's own
+    postmaster address) and is deliberately allowed to be imperfect.
     """
+    for address in known:
+        address = str(address)
+        if "@" in address:
+            text = text.replace(address, f"<redacted>@{address.rpartition('@')[2]}")
     return _EMAIL_RE.sub(r"<redacted>@\1", text)
 
 
@@ -300,7 +328,7 @@ def notify_mail_failure(msg: Message, error: BaseException) -> None:
                     "type": "section",
                     "text": {
                         "type": "plain_text",
-                        "text": f"{error_kind}: {_redact_addresses(str(error))[:400]}",
+                        "text": f"{error_kind}: {_redact_addresses(str(error), msg.recipients or [])[:400]}",
                         "emoji": False,
                     },
                 },

@@ -165,8 +165,14 @@ def test_resolve_sender_is_not_a_gate(clean_env, monkeypatch):
     whether the config has been verified". A mail_configured check in here would
     silently overrule them -- which is exactly the regression the first version of
     this change shipped, caught by test_auth_helpers and test_public_api against
-    real PostgreSQL. So a pair always comes back, and the address may be None;
-    flask_mail then falls back to the app's MAIL_DEFAULT_SENDER, as before.
+    real PostgreSQL.
+
+    A pair always comes back, and the address may be None — unchanged from the
+    code this replaced. Returning None instead was tried and reverted: the
+    "NOW LMS <None>" string flask_mail builds is truthy, and that truthiness is
+    what satisfies its "no sender configured" assertion today, so returning None
+    turns "mail with a broken sender" into "no mail at all". See resolve_sender's
+    docstring and the bead for the real fix.
     """
     _db_unconfigured(monkeypatch)
     name, address = resolve_sender()

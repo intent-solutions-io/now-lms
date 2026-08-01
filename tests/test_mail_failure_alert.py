@@ -126,6 +126,21 @@ def test_the_exception_text_is_redacted_too(captured_posts):
     assert "550" in body                      # and so does the actual failure reason
 
 
+def test_known_recipients_are_redacted_whatever_shape_they_take(captured_posts):
+    """Greptile's follow-up: no ASCII pattern covers every address form.
+
+    Quoted local parts, IP-literal domains and internationalised domains all slip
+    past the regex. We do not have to guess though -- the recipients are already
+    in hand, so they are removed by exact match before the pattern runs.
+    """
+    exotic = '"john doe"@example.invalid'
+    error = RuntimeError(f"SMTPRecipientsRefused: {{{exotic!r}: (550, b'nope')}}")
+    notify_mail_failure(_msg([exotic]), error)
+    body = captured_posts[0]["body"]
+    assert "john doe" not in body
+    assert "example.invalid" in body
+
+
 def test_redact_addresses_keeps_the_domain_and_drops_the_local_part():
     out = _redact_addresses("rejected a@b.invalid and c.d+tag@e.f.invalid")
     assert "a@b.invalid" not in out
