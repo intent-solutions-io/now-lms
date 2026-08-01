@@ -71,12 +71,16 @@ if [ "${BEFORE}" = "${AFTER}" ]; then
     exit 0
 fi
 
+# Three dots: "A...B" is the symmetric difference, so --left-right --count prints
+# "<only in A> <only in B>" — ahead and behind from one call.
 read -r AHEAD BEHIND <<<"$(git rev-list --left-right --count "HEAD...${REMOTE_REF}")"
 if [ "${AHEAD}" -ne 0 ]; then
     echo "==> WARNING: ${AHEAD} commit(s) exist only on this box and are about to be DESTROYED:" >&2
     git log --oneline "${REMOTE_REF}..HEAD" >&2
-    echo "    If any of that matters, push it to a branch before continuing:" >&2
-    echo "        git -C \"$(pwd)\" push origin HEAD:refs/heads/rescue/\$(date +%Y%m%d-%H%M%S)" >&2
+    echo "    If any of that matters, push it to a branch before continuing." >&2
+    # Single-quoted on purpose: the operator should run date(1) when they run the
+    # command, not inherit a timestamp from when this warning was printed.
+    echo '        git push origin HEAD:refs/heads/rescue/$(date +%Y%m%d-%H%M%S)' >&2
     echo >&2
 fi
 

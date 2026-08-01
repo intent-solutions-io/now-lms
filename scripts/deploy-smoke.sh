@@ -93,7 +93,7 @@ if [ "${branch}" != "HEAD" ] && git rev-parse --verify --quiet "origin/${branch}
         repo_state="in sync with origin/${branch}"
     else
         read -r ahead behind <<<"$(git rev-list --left-right --count "HEAD...origin/${branch}")"
-        repo_state="DIVERGENT from origin/${branch} at ${origin_sha} (+${ahead}/-${behind}) as of the last fetch"
+        repo_state="DIVERGENT from origin/${branch} at ${origin_sha} (+${ahead}/-${behind}) as of the last fetch by deploy-vps.sh — this check does not fetch"
     fi
 fi
 

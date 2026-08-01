@@ -61,12 +61,18 @@ fi
 # The production box has no beads workspace, so core.hooksPath is unset and
 # .git/hooks is live. If that ever changes, honour the configured path instead of
 # writing a hook git will ignore.
-HOOKS_DIR="$(git config core.hooksPath || true)"
-if [ -z "${HOOKS_DIR}" ]; then
-    HOOKS_DIR="$(git rev-parse --git-path hooks)"
-elif [ "${HOOKS_DIR#/}" = "${HOOKS_DIR}" ]; then
-    HOOKS_DIR="${ROOT}/${HOOKS_DIR}"
-fi
+#
+# `git rev-parse --git-path hooks` already accounts for core.hooksPath, including
+# relative values, which git resolves against the current directory rather than
+# the repo root. Doing the arithmetic by hand here got it wrong for values like
+# `../hooks` (Kilo, PR #59) — so let git answer, and only fall back to manual
+# construction if it somehow returns nothing.
+HOOKS_DIR="$(git rev-parse --git-path hooks 2>/dev/null || true)"
+[ -n "${HOOKS_DIR}" ] || HOOKS_DIR="${ROOT}/.git/hooks"
+case "${HOOKS_DIR}" in
+    /*) ;;
+    *) HOOKS_DIR="${ROOT}/${HOOKS_DIR}" ;;
+esac
 HOOK="${HOOKS_DIR}/pre-commit"
 
 if [ "${REMOVE}" -eq 1 ]; then

@@ -68,7 +68,11 @@ fi
 
 BUILD_SHA="$(git rev-parse HEAD)"
 ORIGIN_SHA="$(git rev-parse "${REMOTE_REF}")"
-# "A...B" with --left-right --count prints "<in A only> <in B only>".
+REPO_ROOT="$(pwd)"
+# Three dots, not two: "A...B" is the SYMMETRIC difference, so --left-right --count
+# prints "<commits only in A> <commits only in B>" -- i.e. ahead and behind in one
+# call. "A..B" would give only one side and could not tell divergence from being
+# merely behind.
 read -r AHEAD BEHIND <<<"$(git rev-list --left-right --count "HEAD...${REMOTE_REF}")"
 
 if [ "${AHEAD}" -ne 0 ] || [ "${BEHIND}" -ne 0 ]; then
@@ -85,7 +89,7 @@ if [ "${AHEAD}" -ne 0 ] || [ "${BEHIND}" -ne 0 ]; then
         fi
         if [ "${BEHIND}" -ne 0 ]; then
             echo "  Deploying now would ship code ${BEHIND} commit(s) stale. Run:"
-            echo "      git -C /srv/now-lms fetch origin && git -C /srv/now-lms reset --hard ${REMOTE_REF}"
+            echo "      git -C \"${REPO_ROOT}\" fetch origin && git -C \"${REPO_ROOT}\" reset --hard ${REMOTE_REF}"
         fi
         echo
         echo "  Override with --allow-divergent only if you accept shipping unreproducible code."
