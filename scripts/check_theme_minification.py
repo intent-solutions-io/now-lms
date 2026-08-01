@@ -78,10 +78,11 @@ def check_theme(directory: Path) -> tuple[str, str]:
         # Ungated themes may legitimately have none, so the caller decides.
         return ("no-stylesheet", "theme has no theme.css and no theme.min.css")
     if not minified.exists():
-        # A gated theme losing its .min is a FAILURE, not a skip: local_style.j2
-        # still requests theme.min.css, so the deployed page 404s that request and
-        # renders unstyled. Skipping here let that pass green (Greptile P1, PR #61).
-        # Ungated themes still only report, per SCOPE.
+        # A gated theme losing its .min is a FAILURE: local_style.j2 still
+        # requests theme.min.css, so the deployed page 404s that request and
+        # renders unstyled. This branch USED to return "skip", which let exactly
+        # that pass green (Greptile P1, PR #61). Ungated themes still only report,
+        # per SCOPE — the distinct status is what lets the caller decide.
         return ("missing-min", "theme.min.css is gone but local_style.j2 still requests it")
     if not source.exists():
         return ("fail", "theme.min.css exists with no theme.css to derive it from")
