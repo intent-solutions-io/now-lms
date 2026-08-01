@@ -145,7 +145,7 @@ def test_sender_resolves_from_env_when_the_database_row_is_absent(clean_env, mon
 
 
 def test_sender_falls_back_to_the_smtp_username_when_no_default_sender_is_set(clean_env, monkeypatch):
-    """MAIL_DEFAULT_SENDER is optional in both sources; a None address is not a sender."""
+    """MAIL_DEFAULT_SENDER is optional in both sources; the SMTP account is a real sender."""
     _configure_env(clean_env)
     _db_unconfigured(monkeypatch)
     assert resolve_sender() == ("NOW LMS", "postmaster@example.invalid")
@@ -158,10 +158,40 @@ def test_sender_name_defaults_when_unset(clean_env, monkeypatch):
     assert name == "NOW LMS"
 
 
-def test_no_sender_when_neither_source_is_configured(clean_env, monkeypatch):
-    """Unconfigured mail must still be a clean None, not a crash and not a fake sender."""
+def test_resolve_sender_is_not_a_gate(clean_env, monkeypatch):
+    """It answers "who is the sender", never "should we send".
+
+    Every caller passes no_config=True to send_mail, i.e. "send regardless of
+    whether the config has been verified". A mail_configured check in here would
+    silently overrule them -- which is exactly the regression the first version of
+    this change shipped, caught by test_auth_helpers and test_public_api against
+    real PostgreSQL. So a pair always comes back, and the address may be None;
+    flask_mail then falls back to the app's MAIL_DEFAULT_SENDER, as before.
+    """
     _db_unconfigured(monkeypatch)
-    assert resolve_sender() is None
+    name, address = resolve_sender()
+    assert name == "NOW LMS"
+    assert address is None
+
+
+def test_unverified_config_still_yields_a_sender(clean_env, monkeypatch):
+    """email_verificado False must not silently suppress a no_config=True send."""
+    monkeypatch.setattr(
+        mail_module,
+        "_load_mail_config_from_db",
+        lambda: SimpleNamespace(
+            mail_configured=False,
+            MAIL_SERVER="smtp.db.invalid",
+            MAIL_PORT="465",
+            MAIL_USERNAME="db-user@example.invalid",
+            MAIL_PASSWORD="db-secret",
+            MAIL_USE_TLS=False,
+            MAIL_USE_SSL=True,
+            MAIL_DEFAULT_SENDER="from-db@example.invalid",
+            MAIL_DEFAULT_SENDER_NAME="From DB",
+        ),
+    )
+    assert resolve_sender() == ("From DB", "from-db@example.invalid")
 
 
 def test_config_returns_unconfigured_instead_of_raising_when_nothing_is_set(clean_env, monkeypatch):
@@ -193,24 +223,7 @@ def test_database_row_is_used_when_the_environment_is_not_configured(clean_env, 
     assert resolve_sender() == ("From DB", "from-db@example.invalid")
 
 
-def test_unverified_database_row_yields_no_sender(clean_env, monkeypatch):
-    """email_verificado False is how the DB source says 'not configured'. Honour it."""
-    monkeypatch.setattr(
-        mail_module,
-        "_load_mail_config_from_db",
-        lambda: SimpleNamespace(
-            mail_configured=False,
-            MAIL_SERVER="smtp.db.invalid",
-            MAIL_PORT="465",
-            MAIL_USERNAME="db-user@example.invalid",
-            MAIL_PASSWORD="db-secret",
-            MAIL_USE_TLS=False,
-            MAIL_USE_SSL=True,
-            MAIL_DEFAULT_SENDER="from-db@example.invalid",
-            MAIL_DEFAULT_SENDER_NAME="From DB",
-        ),
-    )
-    assert resolve_sender() is None
+
 
 
 # ---------------------------------------------------------------------------------------

@@ -15,7 +15,7 @@ from flask_mail import Message
 from now_lms.auth import proteger_passwd, generate_confirmation_token
 from now_lms.db import ExternalApiKey, Curso, RemoteEnrollmentRequest, Usuario, EstudianteCurso, database
 from now_lms.i18n import _
-from now_lms.mail import resolve_sender, send_mail
+from now_lms.mail import _config, resolve_sender, send_mail
 from now_lms.version import VERSION
 
 public_api = Blueprint("public_api", __name__, url_prefix="/api/v1/public")
@@ -252,8 +252,11 @@ def send_enrollment_email(user, course, is_new_user, sync=False):
     # Environment first, database second — same resolution send_mail uses. The
     # direct MailConfig read this replaced made enrollment mail silently no-op on
     # an env-configured deployment whose database row was never populated.
-    sender = resolve_sender()
-    if sender is None:
+    #
+    # The verified-config gate is PRESERVED, not introduced: this path used to
+    # require `mail_config.email_verificado`, and `_config().mail_configured` is
+    # that same flag once the environment source is honoured too.
+    if not _config().mail_configured:
         return
 
     subject = _("Has sido inscrito en {}").format(course.nombre)
@@ -288,7 +291,7 @@ def send_enrollment_email(user, course, is_new_user, sync=False):
     msg = Message(
         subject=subject,
         recipients=[user.correo_electronico],
-        sender=sender,
+        sender=resolve_sender(),
         body=body_text,
     )
 

@@ -157,8 +157,8 @@ def _config() -> SimpleNamespace:
         return config_from_env
 
 
-def resolve_sender() -> tuple[str, str] | None:
-    """Return the (name, address) sender pair, or None when mail is not configured.
+def resolve_sender() -> tuple[str, str | None]:
+    """Return the (name, address) sender pair for an outgoing Message.
 
     WHY THIS EXISTS
     Mail configuration has two sources — environment (preferred) and the MailConfig
@@ -174,16 +174,20 @@ def resolve_sender() -> tuple[str, str] | None:
     Use this instead of `select(MailConfig)` in any code path whose job is to SEND.
     Reading the row directly is still correct in the admin settings views, which
     exist to edit that row.
+
+    DELIBERATELY NOT A GATE. This answers "who is the sender", never "should we
+    send" — `send_mail` owns that, via `config.mail_configured or no_config`.
+    Every current caller passes `no_config=True`, meaning "send regardless of
+    whether the config has been verified", so a `mail_configured` check in here
+    would silently overrule them. Hence a pair is always returned, and the address
+    may be None: flask_mail then falls back to the app's MAIL_DEFAULT_SENDER,
+    which is exactly what happened before this function existed.
     """
     config = _config()
-    if not config.mail_configured:
-        return None
     # An SMTP account is a usable envelope sender, and MAIL_DEFAULT_SENDER is
-    # optional in both sources — falling back keeps a working configuration from
-    # producing a None sender that flask_mail would reject at send time.
+    # optional in both sources — falling back gives a working configuration a real
+    # address instead of leaning on the flask_mail fallback.
     address = config.MAIL_DEFAULT_SENDER or config.MAIL_USERNAME
-    if not address:
-        return None
     return (config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS", address)
 
 

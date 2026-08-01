@@ -280,15 +280,12 @@ def send_confirmation_email(user) -> None:
     # Resolve the sender the same way send_mail resolves the server: environment
     # first, database second. Reading the MailConfig row directly here asked a
     # different question than the one that decides whether mail works, so an
-    # env-configured deployment with an empty row returned silently.
-    sender = resolve_sender()
-    if sender is None:
-        return
-
+    # env-configured deployment with an empty row returned silently. No gate here:
+    # the send_mail call below passes no_config=True and owns that decision.
     msg = Message(
         subject="Email verification",
         recipients=[user.correo_electronico],
-        sender=sender,
+        sender=resolve_sender(),
     )
     token = generate_confirmation_token(user.correo_electronico)
     url = url_for("user.check_mail", token=token, _external=True)
@@ -366,14 +363,10 @@ def send_password_reset_email(user) -> bool:
 
     # See send_confirmation_email: the row read this replaced is what made
     # password reset send nothing on an env-configured deployment.
-    sender = resolve_sender()
-    if sender is None:
-        return False
-
     msg = Message(
         subject=_("Recuperación de Contraseña - NOW LMS"),
         recipients=[user.correo_electronico],
-        sender=sender,
+        sender=resolve_sender(),
     )
     token = generate_password_reset_token(user.correo_electronico)
     url = url_for("user.reset_password", token=token, _external=True)
