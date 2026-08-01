@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2025 - 2026 BMO Soluciones, S.A.
+# SPDX-FileCopyrightText: 2026 Intent Solutions
 """Check that each theme's ``theme.min.css`` really is its ``theme.css``, minified.
 
 WHY THIS EXISTS (bead now-lms-7g4)
@@ -46,6 +46,10 @@ from pathlib import Path
 
 # Themes whose two copies are known to agree and must stay that way. Everything
 # else is reported but not gated -- see SCOPE above.
+# One entry today, deliberately: intent_learn is the only theme this fork owns,
+# and the only one whose two copies currently agree. The other seven are
+# upstream's and have already drifted -- see SCOPE. Add to this tuple only after
+# `--all` passes for that theme, never to make a red run green.
 GATED = ("intent_learn",)
 
 THEMES_DIR = Path(__file__).resolve().parent.parent / "now_lms" / "static" / "themes"
@@ -55,6 +59,11 @@ def normalise(css: str) -> str:
     """Reduce a stylesheet to a formatting-insensitive token stream."""
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)  # comments
     css = re.sub(r"\s+", " ", css)  # runs of whitespace
+    # Known limitation: `=` inside attribute selectors is not in this set, so
+    # `[attr = v]` and `[attr=v]` normalise differently. Harmless — both files go
+    # through the same function, so the comparison stays symmetric and this can
+    # only ever cause a false ALARM on a real formatting difference, never a
+    # missed drift. Left narrow rather than growing into a CSS parser.
     css = re.sub(r"\s*([{};:,>~+])\s*", r"\1", css)  # space around punctuation
     css = re.sub(r";}", "}", css)  # optional trailing semicolon
     return css.strip()
@@ -66,7 +75,11 @@ def check_theme(directory: Path) -> tuple[str, str]:
     if not source.exists() and not minified.exists():
         return ("skip", "no stylesheet")
     if not minified.exists():
-        return ("skip", "no theme.min.css (theme.css is served directly)")
+        # A gated theme losing its .min is a FAILURE, not a skip: local_style.j2
+        # still requests theme.min.css, so the deployed page 404s that request and
+        # renders unstyled. Skipping here let that pass green (Greptile P1, PR #61).
+        # Ungated themes still only report, per SCOPE.
+        return ("missing-min", "theme.min.css is gone but local_style.j2 still requests it")
     if not source.exists():
         return ("fail", "theme.min.css exists with no theme.css to derive it from")
 
@@ -89,8 +102,16 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="report only; always exit 0")
     args = parser.parse_args()
 
+    # THEMES_DIR is derived from __file__, so moving this script silently points
+    # it elsewhere. Fail loudly instead of reporting "gated themes OK" over an
+    # empty or wrong directory (Kilo, PR #61).
     if not THEMES_DIR.is_dir():
         print(f"no themes directory at {THEMES_DIR}", file=sys.stderr)
+        return 1
+    missing_gated = [name for name in GATED if not (THEMES_DIR / name).is_dir()]
+    if missing_gated:
+        print(f"gated theme(s) not found under {THEMES_DIR}: {', '.join(missing_gated)}", file=sys.stderr)
+        print("Either the theme was removed or this script has moved; refusing to report a pass.", file=sys.stderr)
         return 1
 
     blocking_failures = []
@@ -103,6 +124,8 @@ def main() -> int:
             print(f"  ok      {directory.name:14} {detail}")
         elif status == "skip":
             print(f"  skip    {directory.name:14} {detail}")
+        elif status == "missing-min" and not gated:
+            print(f"  note    {directory.name:14} {detail}  (not gated)")
         elif gated:
             print(f"  FAIL    {directory.name:14} {detail}")
             blocking_failures.append(directory.name)
