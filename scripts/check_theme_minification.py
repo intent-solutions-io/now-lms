@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 Intent Solutions
+# SPDX-FileCopyrightText: 2025 - 2026 BMO Soluciones, S.A.
 """Check that each theme's ``theme.min.css`` really is its ``theme.css``, minified.
 
 WHY THIS EXISTS (bead now-lms-7g4)
@@ -73,7 +73,10 @@ def check_theme(directory: Path) -> tuple[str, str]:
     """Return (status, detail) for one theme directory."""
     source, minified = directory / "theme.css", directory / "theme.min.css"
     if not source.exists() and not minified.exists():
-        return ("skip", "no stylesheet")
+        # For a GATED theme this is not "nothing to check" — it means the theme
+        # ships no stylesheet at all while local_style.j2 still references one.
+        # Ungated themes may legitimately have none, so the caller decides.
+        return ("no-stylesheet", "theme has no theme.css and no theme.min.css")
     if not minified.exists():
         # A gated theme losing its .min is a FAILURE, not a skip: local_style.j2
         # still requests theme.min.css, so the deployed page 404s that request and
@@ -102,6 +105,12 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="report only; always exit 0")
     args = parser.parse_args()
 
+    # argparse accepts both, and --list would silently win — so someone asking for
+    # the strictest check (--all) alongside --list gets a guaranteed pass. Refuse
+    # instead of picking one, because either guess makes the exit code a lie.
+    if args.all and args.list:
+        parser.error("--all and --list are mutually exclusive: one gates, the other never fails")
+
     # THEMES_DIR is derived from __file__, so moving this script silently points
     # it elsewhere. Fail loudly instead of reporting "gated themes OK" over an
     # empty or wrong directory (Kilo, PR #61).
@@ -124,6 +133,8 @@ def main() -> int:
             print(f"  ok      {directory.name:14} {detail}")
         elif status == "skip":
             print(f"  skip    {directory.name:14} {detail}")
+        elif status == "no-stylesheet" and not gated:
+            print(f"  skip    {directory.name:14} {detail}  (not gated)")
         elif status == "missing-min" and not gated:
             print(f"  note    {directory.name:14} {detail}  (not gated)")
         elif gated:
