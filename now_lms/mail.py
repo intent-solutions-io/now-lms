@@ -8,8 +8,11 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------------------
 # Standard library
 # ---------------------------------------------------------------------------------------
+import json
 import threading
+import urllib.request
 from os import environ
+from time import monotonic
 from types import SimpleNamespace
 
 # ---------------------------------------------------------------------------------------
@@ -184,6 +187,119 @@ def resolve_sender() -> tuple[str, str] | None:
     return (config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS", address)
 
 
+# ---------------------------------------------------------------------------------------
+# Failure notification
+# ---------------------------------------------------------------------------------------
+# WHY THIS EXISTS
+# send_mail(background=True) runs in a thread and turns every failure into a log
+# line. Mail was switched on for the first time in this deployment's life on
+# 2026-07-31; without this, the first signal that SMTP auth expired or the
+# provider started rate-limiting would be a member saying "I never got the
+# email" -- a detector that only fires for the people who bother to complain.
+#
+# Deliberately reuses SLACK_WEBHOOK_LEADS_CONTACT (already set on the box) rather
+# than introducing a second secret: a channel that already carries "someone wants
+# in" is the right place for "and we could not email them".
+_ALERT_THROTTLE_SECONDS = 300
+_alert_last_sent: dict[str, float] = {}
+_alert_lock = threading.Lock()
+
+
+def _redact_recipients(recipients) -> str:
+    """Domains only. An alert says which mail is failing, not who the members are.
+
+    Matches the disclosure posture of the /request-access Slack ping, which
+    deliberately never sends an applicant's address off-platform. The domain is
+    what distinguishes "our relay is broken" from "one member's provider is
+    bouncing us", which is the question an alert has to answer.
+    """
+    domains = sorted({str(r).rpartition("@")[2].lower() for r in (recipients or []) if "@" in str(r)})
+    if not domains:
+        return f"{len(recipients or [])} recipient(s)"
+    return ", ".join(domains[:3]) + (" (+more)" if len(domains) > 3 else "")
+
+
+def _should_alert(key: str) -> bool:
+    """Throttle per failure kind, so an SMTP outage cannot flood the channel.
+
+    Without this, a provider rate-limit turns every queued send into a Slack POST
+    and the alert channel becomes the second outage.
+    """
+    now = monotonic()
+    with _alert_lock:
+        last = _alert_last_sent.get(key)
+        if last is not None and (now - last) < _ALERT_THROTTLE_SECONDS:
+            return False
+        _alert_last_sent[key] = now
+        return True
+
+
+def notify_mail_failure(msg: Message, error: BaseException) -> None:
+    """Best-effort alert that a message could not be delivered. Never raises.
+
+    Called from the background sender's except arm, which runs OUTSIDE the Flask
+    application context -- so this must not touch current_app, url_for, or the
+    database.
+    """
+    error_kind = type(error).__name__
+    try:
+        webhook = environ.get("SLACK_WEBHOOK_LEADS_CONTACT")
+        if not webhook:
+            logger.warning("Mail delivery failed and SLACK_WEBHOOK_LEADS_CONTACT is unset; alert not sent.")
+            return
+        # Scheme allow-list before urlopen, mirroring request_access._notify_slack:
+        # the nosec below suppresses exactly the check that would otherwise catch a
+        # misconfigured file:// or ftp:// value.
+        if not webhook.startswith("https://"):
+            logger.warning("SLACK_WEBHOOK_LEADS_CONTACT is not an https URL; mail-failure alert not sent.")
+            return
+        if not _should_alert(error_kind):
+            logger.debug(f"Mail-failure alert for {error_kind} throttled.")
+            return
+
+        payload = {
+            "text": f"Mail delivery failed: {error_kind}",
+            "unfurl_links": False,
+            "unfurl_media": False,
+            "blocks": [
+                {"type": "header", "text": {"type": "plain_text", "text": "Mail delivery failed", "emoji": False}},
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "plain_text", "text": f"Subject: {str(msg.subject)[:150]}", "emoji": False},
+                        {"type": "plain_text", "text": f"To: {_redact_recipients(msg.recipients)}", "emoji": False},
+                    ],
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "plain_text", "text": f"{error_kind}: {str(error)[:400]}", "emoji": False},
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "plain_text",
+                            "text": f"Further {error_kind} alerts muted for {_ALERT_THROTTLE_SECONDS}s.",
+                            "emoji": False,
+                        }
+                    ],
+                },
+            ],
+        }
+        request = urllib.request.Request(
+            webhook,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5):  # nosec B310 - env-provided https webhook
+            pass
+    except Exception as alert_error:  # pylint: disable=broad-exception-caught
+        # An alert that raises would replace a delivery failure with a thread
+        # crash, losing the log line that is currently the only record.
+        logger.warning(f"Could not send the mail-failure alert for {error_kind}: {alert_error}")
+
+
 def send_threaded_email(app: Flask, mail: Mail, msg: Message, _log: str = "", _flush: str = ""):
     """
     Función interna que se ejecuta en un hilo para enviar el email.
@@ -210,6 +326,8 @@ def send_threaded_email(app: Flask, mail: Mail, msg: Message, _log: str = "", _f
                 "error": e,
             }
         )
+        # A log line inside a background thread is not a signal anyone receives.
+        notify_mail_failure(msg, e)
 
 
 def send_mail(msg: Message, background: bool = True, no_config: bool = False, _log: str = "", _flush: str = ""):
