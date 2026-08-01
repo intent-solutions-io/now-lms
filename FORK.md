@@ -124,6 +124,51 @@ noted — when upstream accepts it, we drop the fork-local copy and let `main` c
 | Learner-reported prior credentials — `prior_credentials` model + guarded Alembic revision, `now_lms/vistas/prior_credentials.py` (`/my-credentials`, `/admin/prior-credentials`), two themed pages | **Core source** (new model + new blueprint), plus the theme layer | ADR-7 (`000-docs/014-AT-ADEC`). Genuinely generic (recognition of prior learning) and offerable upstream once the credential catalog stops being a module constant and becomes admin-configurable. Retire from the fork when upstream accepts. |
 | Testing enforcement layer — vendored `@intentsolutions/audit-harness` (`.audit-harness/` + `scripts/audit-harness` + `.harness-hash`), L1 pre-commit lint gate (`scripts/pre-commit-lint.sh` chained into the beads hook by `scripts/install-git-hooks.sh`), acceptance specs (`features/*.feature`), traceability (`tests/{TESTING,RTM,PERSONAS,JOURNEYS}.md`), coverage visibility in `deploy-line-ci.yml` | Fork tooling + fork CI, **zero core edits** | **Permanent fork-local, deliberately.** This is Intent Solutions' engineering standard, not a platform bug — it has NO upstream path. At the v2.0.0 sync these files carry over on purpose; do not treat them as drift. |
 
+## Known collisions to defuse at the next upstream sync
+
+Not bugs — two places where the fork line and the upstream line both changed the same thing
+correctly. Recorded here so they are **defused deliberately rather than discovered mid-merge**,
+where the tempting resolution is the wrong one. Bead `now-lms-4um`.
+
+### 1. `dev/lang.sh` — keep both edits
+
+| Line | Change | Why it exists |
+|---|---|---|
+| Fork (#57) | added `-k _l` to `pybabel extract` | Without it, `_l()` literals are never written to the catalogue, so 63 of 83 profile/currency strings had no msgid to translate (fork issue #44) |
+| Upstream (#235) | added the catalogue-freshness gate | A stale `.mo` makes Babel fall back to the Spanish msgid on any deploy that skipped an image rebuild |
+
+They conflict **textually only**. Both are correct and both are load-bearing. **Keep both.** A
+resolution that takes one side silently re-arms the other bug.
+
+### 2. Migration heads diverge — needs a merge revision, not a rewired `down_revision`
+
+```
+deploy line:  20260726_000000  ->  20260731_120500   (#54, prior credentials)
+upstream:     20260730_000000                        (unique enrollment constraint)
+```
+
+Naively editing `down_revision` to point at upstream's head **branches alembic** and produces a
+multiple-heads error at boot. The correct move is a real `alembic merge` revision.
+
+Verified 2026-07-31: `#54`'s `down_revision` is correct *for this branch as it stands* — the
+problem is only the eventual merge.
+
+### 3. `now_lms/forms/__init__.py` — the deploy line is missing our own lazy-label fix
+
+`aa582f5` (upstream PR #231) takes this file to 217 `_l()` / 2 bare `_()`. It is **not** an ancestor
+of `deploy/now-lms-fixed`, which still has 87 `_l()` / **131 bare `_()`** — labels frozen to the
+locale active at import.
+
+```
+$ git merge-base --is-ancestor aa582f5 origin/deploy/now-lms-fixed ; echo $?
+1
+$ git branch -a --contains aa582f5
+  upstream/fix-lazy-form-labels
+```
+
+Merging it will conflict with #57, which rewrote the same catalogues. **#57 recovered the msgids;
+`aa582f5` makes the labels lazy — complementary halves, both needed.** Bead `now-lms-9e0`.
+
 ## Fork changelog
 
 Fork-relevant, most recent first. (Upstream feature history lives in the root `CHANGELOG.md`; this
