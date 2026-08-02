@@ -169,9 +169,18 @@ def test_invalidation_deletes_exactly_the_members_keys(monkeypatch, app):
     SimpleCache, the helper must delete exactly the member's take/view keys —
     in the ``view/<path>/user:<usuario>`` format ``cache_key_with_auth_state``
     writes — and leave every other member's entries alone."""
+    import sys
+
     from flask_caching import Cache
 
-    import now_lms.cache as cache_mod
+    # `import now_lms.cache as cache_mod` would bind the package ATTRIBUTE
+    # `cache` (the Cache instance re-exported by now_lms/__init__), not the
+    # submodule — and Cache.cache is a read-only property. Resolve the real
+    # module through sys.modules so the monkeypatch lands on the module global
+    # the helper actually reads.
+    import now_lms.cache  # noqa: F401  (ensures the submodule is loaded)
+
+    cache_mod = sys.modules["now_lms.cache"]
 
     simple = Cache(config={"CACHE_TYPE": "SimpleCache"})
     simple.init_app(app)
