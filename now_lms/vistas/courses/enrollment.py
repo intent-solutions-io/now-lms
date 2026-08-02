@@ -366,7 +366,10 @@ def moderar_curso(course_code: str) -> str | Response:
             get_course_take_template(),
             # Moderators/admins always see the full resource list (same
             # template gate as the student take view — see tomar_curso).
+            # user_has_paid=True keeps the evaluation gate open for them if
+            # this view ever gains `evaluaciones`; they moderate, not buy.
             permitir_estudiante=True,
+            user_has_paid=True,
             curso=database.session.execute(select(Curso).filter_by(codigo=course_code)).scalars().first(),
             secciones=database.session.execute(select(CursoSeccion).filter_by(curso=course_code).order_by(CursoSeccion.indice))
             .scalars()

@@ -193,15 +193,19 @@
                       Required resources are the same set the platform uses to decide
                       whether a course is finished.
                     #}
+                    {# The moderator view (moderar_curso) renders this template without
+                       user_progress: hide the bar there instead of showing a false 0%. #}
                     {% set required_resources = recursos | selectattr('requerido', 'equalto', 'required') | list %}
                     {% set required_total = required_resources | length %}
-                    {% if required_total %}
-                    {% set progress_map = user_progress | default({}) %}
+                    {% if required_total and user_progress is defined %}
                     {% set done = namespace(count=0) %}
-                    {% for r in required_resources %}{% if progress_map.get(r.id, {}).get('completado') %}{% set done.count = done.count + 1 %}{% endif %}{% endfor %}
+                    {% for r in required_resources %}
+                        {% if user_progress.get(r.id, {}).get('completado') %}{% set done.count = done.count + 1 %}{% endif %}
+                    {% endfor %}
                     {% set pct = ((done.count / required_total) * 100) | round | int %}
                     <div class="isl-prog">
-                        <div class="isl-prog-bar" role="progressbar" aria-valuemin="0" aria-valuemax="{{ required_total }}" aria-valuenow="{{ done.count }}"
+                        <div class="isl-prog-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ pct }}"
+                             aria-valuetext="{{ done.count }} / {{ required_total }} {{ _('required lessons completed') }}"
                              aria-label="{{ _('Course progress') }}">
                             <span style="width: {{ pct }}%"></span>
                         </div>
