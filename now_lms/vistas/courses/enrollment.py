@@ -35,7 +35,7 @@ from now_lms.i18n import _
 from now_lms.misc import CURSO_NIVEL, TIPOS_RECURSOS
 from now_lms.themes import get_course_take_template
 from .base import VISTA_CURSOS, course, markdown2html
-from .helpers import _crear_indice_avance_curso
+from .helpers import _crear_indice_avance_curso, _get_user_resource_progress
 from .coupons import _validate_coupon_for_enrollment
 
 
@@ -349,6 +349,7 @@ def tomar_curso(course_code: str) -> str | Response:
             reopen_requests=reopen_requests,
             user_has_paid=user_has_paid,
             user_certificate=user_certificate,
+            user_progress=_get_user_resource_progress(course_code, current_user.usuario),
             markdown2html=markdown2html,
         )
     return redirect(url_for(VISTA_CURSOS, course_code=course_code))
