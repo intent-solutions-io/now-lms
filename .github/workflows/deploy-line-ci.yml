@@ -200,6 +200,14 @@ jobs:
         #
         # Build only: no push, no registry, no secrets. BUILD_SHA is required by
         # the Dockerfile on purpose (see fork issue #14), so it is passed here too.
+        #
+        # The build IS the assertion: the Dockerfile's own `RUN pybabel compile
+        # && python3.12 -m now_lms.i18n_autocompile --check` executes during it,
+        # so a green build proves the catalog gate resolved its interpreter and
+        # passed inside the image. A separate `docker run` of that command would
+        # be redundant AND wrong -- this image has an ENTRYPOINT (tini ->
+        # docker-entry-point.sh), so the command arrives as entrypoint arguments
+        # and boots the whole app against a database that does not exist here.
         name: Container image builds
         runs-on: ubuntu-latest
         timeout-minutes: 20
@@ -209,9 +217,6 @@ jobs:
 
             - name: Build the image exactly as the deploy does
               run: docker build --build-arg BUILD_SHA="${GITHUB_SHA}" -t now-lms:ci-check .
-
-            - name: Prove the shipped image can run its own catalog gate
-              run: docker run --rm now-lms:ci-check /usr/bin/python3.12 -m now_lms.i18n_autocompile --check
 
     e2e:
         # Browser-level L6: the member journey (login -> course -> lesson) that
