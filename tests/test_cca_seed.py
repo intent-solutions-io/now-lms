@@ -111,6 +111,10 @@ def test_correct_positions_refuses_an_unanswerable_item():
     # "outside its 0 options" (raised in review of PR #76).
     with pytest.raises(ValueError, match="no options"):
         seed._correct_positions({"id": "q", "options": [], "answerIndex": 0})
+    # A bare int instead of a list must name the offending bank item, not die on
+    # Python's native "'int' object is not iterable" (raised in review of PR #76).
+    with pytest.raises(TypeError, match="must be a list"):
+        seed._correct_positions({"id": "q", "options": opts, "answerIndexes": 1})
 
 
 def test_create_course_validates_answers_before_writing_any_row(cca_db):

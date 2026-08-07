@@ -115,6 +115,11 @@ def _correct_positions(item: dict) -> set[int]:
     if raw is None:
         single = item.get("answerIndex")
         raw = [] if single is None else [single]
+    elif not isinstance(raw, (list, tuple)):
+        # `answerIndexes: 1` instead of `[1]` would otherwise die on Python's native
+        # "'int' object is not iterable", which tells the operator nothing about which
+        # bank item is malformed (raised in review of PR #76).
+        raise TypeError(f"question {item.get('id', '<no id>')!r}: answerIndexes must be a list, got {type(raw).__name__}")
 
     positions = set()
     for value in raw:
@@ -284,9 +289,16 @@ def _add_evaluation(db, models, section_id: str, title: str, description: str, i
                     passing_score: float, questions: list[dict]) -> int:
     """Create an evaluation on a section and import its questions.
 
-    ``answerIndex`` -> the matching option's ``is_correct``; ``rationale`` +
+    The correct positions -> the matching options' ``is_correct``; ``rationale`` +
     appended ``source`` attribution -> ``explanation``. Returns the number of
     questions imported.
+
+    NOT all-or-nothing across the batch. Each question is committed individually, so a
+    malformed item at position 7 of 10 leaves items 1-6 persisted and the course
+    half-imported. That is deliberate — a reseed should keep the progress it made — and
+    the seeder is idempotent, so a corrected re-run completes it. What IS guaranteed is
+    that the failing item leaves no partial row of its own: answers are resolved before
+    the question is written (raised in review of PR #76).
     """
     evaluation = models["Evaluation"](
         section_id=section_id,
