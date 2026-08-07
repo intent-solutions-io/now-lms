@@ -107,6 +107,37 @@ def test_correct_positions_refuses_an_unanswerable_item():
     # bool is an int subclass, so `answerIndexes: [true]` would otherwise mean position 1.
     with pytest.raises(TypeError):
         seed._correct_positions({"id": "q", "options": opts, "answerIndexes": [True]})
+    # An item with no options at all reports THAT, rather than a confusing
+    # "outside its 0 options" (raised in review of PR #76).
+    with pytest.raises(ValueError, match="no options"):
+        seed._correct_positions({"id": "q", "options": [], "answerIndex": 0})
+
+
+def test_create_course_validates_answers_before_writing_any_row(cca_db):
+    """A malformed item must not leave a half-imported course behind.
+
+    ``_correct_positions`` raises, and the Question row is committed to obtain its id, so
+    the resolve has to happen FIRST. Otherwise a bad bank aborts partway and leaves an
+    orphan Question with no options attached. Raised in review of PR #76.
+    """
+    broken = [
+        {
+            "text": "This item has no resolvable answer.",
+            "options": ["alpha", "beta", "gamma", "delta"],
+            "answerIndex": None,
+            "rationale": "n/a",
+            "source": "Synthetic fixture D",
+        }
+    ]
+    with pytest.raises(ValueError, match="no correct answer"):
+        seed._create_course(database, MODELS, _spec_for("CCA-TBROKEN", broken))
+
+    # The evaluation may exist (it is created before the question loop), but no orphan
+    # Question row may have been written for the item that failed validation.
+    orphans = database.session.execute(
+        database.select(Question).filter(Question.text == broken[0]["text"])
+    ).scalars().all()
+    assert orphans == [], "a question row was written for an item that failed validation"
 
 
 def test_group_by_domain_orders_and_buckets():

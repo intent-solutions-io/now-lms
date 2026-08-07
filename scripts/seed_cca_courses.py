@@ -105,7 +105,12 @@ def _correct_positions(item: dict) -> set[int]:
     honest outcome: a certification-prep exam with an unanswerable question is
     worse than one that refused to import.
     """
+    # Messages here are operator-facing CLI output for someone running a reseed from a
+    # terminal; intentionally not gettext-wrapped (raised in review of PR #76).
     options = item.get("options") or []
+    if not options:
+        raise ValueError(f"question {item.get('id', '<no id>')!r}: has no options to mark correct")
+
     raw = item.get("answerIndexes")
     if raw is None:
         single = item.get("answerIndex")
@@ -296,6 +301,12 @@ def _add_evaluation(db, models, section_id: str, title: str, description: str, i
 
     imported = 0
     for order, item in enumerate(questions, start=1):
+        # VALIDATE BEFORE WRITING. _correct_positions raises on a malformed item, and the
+        # question row is committed a few lines down to obtain its id — so resolving the
+        # answers first is what keeps a bad bank from leaving a half-imported course behind
+        # (an orphan Question with no options). Raised in review of PR #76.
+        correct_positions = _correct_positions(item)
+
         rationale = (item.get("rationale") or "").strip()
         source = (item.get("source") or "").strip()
         explanation = rationale + (f"\n\nSource: {source}" if source else "")
@@ -309,7 +320,6 @@ def _add_evaluation(db, models, section_id: str, title: str, description: str, i
         db.session.add(question)
         db.session.commit()  # flush so question.id is available for options
 
-        correct_positions = _correct_positions(item)
         for position, option_text in enumerate(item.get("options", [])):
             db.session.add(
                 models["QuestionOption"](
