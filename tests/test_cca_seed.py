@@ -72,6 +72,43 @@ def test_truncate_clips_and_marks():
     assert seed._truncate(None, 5) == ""
 
 
+def test_correct_positions_reads_single_and_multi_answer_items():
+    """Both bank encodings resolve, and ``answerIndexes`` wins when both are present."""
+    opts = ["a", "b", "c", "d", "e"]
+    assert seed._correct_positions({"id": "q", "options": opts, "answerIndex": 1}) == {1}
+    # position 0 must survive: an `if not answer_index` style check would drop it.
+    assert seed._correct_positions({"id": "q", "options": opts, "answerIndex": 0}) == {0}
+    assert seed._correct_positions({"id": "q", "options": opts, "answerIndexes": [1, 3]}) == {1, 3}
+    assert seed._correct_positions({"id": "q", "options": opts, "answerIndexes": [1, 3], "answerIndex": None}) == {1, 3}
+
+
+def test_correct_positions_refuses_an_unanswerable_item():
+    """The regression this helper exists for.
+
+    The importer previously computed ``is_correct=(position == item.get("answerIndex"))``.
+    A multi-correct item encodes ``answerIndex: null``, so ``position == None`` was False
+    for EVERY option: the question imported with no correct answer at all, looked normal
+    in the UI, and could not be answered correctly by anyone — silently. Refusing at seed
+    time is the only honest outcome for a certification-prep exam.
+    """
+    opts = ["a", "b", "c", "d"]
+    with pytest.raises(ValueError, match="no correct answer"):
+        seed._correct_positions({"id": "MP-1.7", "options": opts, "answerIndex": None})
+    with pytest.raises(ValueError, match="no correct answer"):
+        seed._correct_positions({"id": "q", "options": opts})
+    with pytest.raises(ValueError, match="no correct answer"):
+        seed._correct_positions({"id": "q", "options": opts, "answerIndexes": []})
+    with pytest.raises(ValueError, match="outside"):
+        seed._correct_positions({"id": "q", "options": opts, "answerIndex": 9})
+    with pytest.raises(ValueError, match="outside"):
+        seed._correct_positions({"id": "q", "options": opts, "answerIndex": -1})
+    with pytest.raises(TypeError):
+        seed._correct_positions({"id": "q", "options": opts, "answerIndexes": ["B"]})
+    # bool is an int subclass, so `answerIndexes: [true]` would otherwise mean position 1.
+    with pytest.raises(TypeError):
+        seed._correct_positions({"id": "q", "options": opts, "answerIndexes": [True]})
+
+
 def test_group_by_domain_orders_and_buckets():
     questions = [
         {"domain": 2, "domainName": "B", "domainKey": "b", "text": "q"},
@@ -257,6 +294,37 @@ def test_create_course_builds_full_graph(cca_db, sample_questions):
         correct_positions = [i for i, o in enumerate(opts) if o.is_correct]
         assert correct_positions == [src["answerIndex"]]
         assert "Source:" in (q.explanation or "")
+
+
+def test_create_course_marks_every_correct_option_for_a_multi_answer_item(cca_db):
+    """A "select TWO" item must land TWO correct options in the row graph.
+
+    This is the end of the chain the helper starts: the platform already grades
+    multi-correct (``_answer_is_correct`` compares ``set(selected_ids) == correct_ids``
+    for ``type="multiple"``, which is what every seeded question is), so proving the
+    IMPORTER marks both options is what makes such an item answerable at all.
+    """
+    multi = [
+        {
+            "text": "Which TWO options are correct?",
+            "options": ["alpha", "beta", "gamma", "delta", "epsilon"],
+            "answerIndexes": [1, 3],
+            "answerIndex": None,
+            "rationale": "beta and delta together.",
+            "source": "Synthetic fixture C",
+        }
+    ]
+    seed._create_course(database, MODELS, _spec_for("CCA-TMULTI", multi))
+
+    secs = database.session.execute(database.select(CursoSeccion).filter_by(curso="CCA-TMULTI")).scalars().all()
+    ev = database.session.execute(database.select(Evaluation).filter_by(section_id=secs[0].id)).scalar_one()
+    question = database.session.execute(database.select(Question).filter_by(evaluation_id=ev.id)).scalar_one()
+
+    # type="multiple" is what routes grading to the set-comparison branch.
+    assert question.type == "multiple"
+    opts = database.session.execute(database.select(QuestionOption).filter_by(question_id=question.id)).scalars().all()
+    correct_positions = sorted(i for i, o in enumerate(opts) if o.is_correct)
+    assert correct_positions == [1, 3], "a select-TWO item must have exactly two correct options"
 
 
 def test_create_course_is_idempotent(cca_db, sample_questions):
