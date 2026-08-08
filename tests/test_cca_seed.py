@@ -482,19 +482,20 @@ def test_main_refuses_reset_with_learner_data_and_no_ack_flag(monkeypatch, cca_d
 
 def test_main_proceeds_with_reset_when_the_exact_ack_flag_is_given(monkeypatch, cca_db, sample_questions):
     """The other half of the gate: the correctly-named flag lets a real
-    --reset through, and the course is actually rebuilt.
+    --reset through, the course is actually rebuilt, and both the enrollment
+    and the evaluation attempt are gone afterward (cascaded by the DB, not
+    left orphaned).
 
-    Uses evaluation-attempt data rather than an EstudianteCurso enrollment
-    row: deleting a Curso that still has EstudianteCurso rows hits a
-    pre-existing, unrelated defect (Curso.inscripciones has no cascade/
-    passive_deletes config, so the ORM tries to NULL EstudianteCurso.curso —
-    a NOT NULL column — before the delete, instead of letting the DB's own
-    ON DELETE CASCADE handle it). That is a real bug and is flagged
-    separately; it is not what this test or this fix is about, so this test
-    is built to not trip over it.
+    Covers both learner-data shapes in one course: an EstudianteCurso
+    enrollment AND an EvaluationAttempt. Deleting a Curso with an enrolled
+    student used to crash here (Curso.inscripciones had no passive_deletes,
+    so the ORM tried to NULL a NOT NULL FK instead of trusting the DB's own
+    ON DELETE CASCADE) — fixed in now_lms/db/__init__.py; this test is what
+    proves it rather than working around it.
     """
     seed._create_course(database, MODELS, _spec_for("CCA-RESET4", sample_questions))
     _make_learner("acking-learner")
+    database.session.add(EstudianteCurso(usuario="acking-learner", curso="CCA-RESET4", vigente=True))
     ev = database.session.execute(
         database.select(Evaluation).join(CursoSeccion).filter(CursoSeccion.curso == "CCA-RESET4")
     ).scalar_one()
@@ -502,7 +503,7 @@ def test_main_proceeds_with_reset_when_the_exact_ack_flag_is_given(monkeypatch, 
     database.session.commit()
 
     enrollments, attempts = seed._count_learner_data(database, MODELS, "CCA-RESET4")
-    assert (enrollments, attempts) == (0, 1)
+    assert (enrollments, attempts) == (1, 1)
     ack_flag = seed._required_ack_flag(enrollments, attempts)
 
     # _build_specs() reads the private curriculum content this test env does
@@ -517,3 +518,7 @@ def test_main_proceeds_with_reset_when_the_exact_ack_flag_is_given(monkeypatch, 
 
     curso = database.session.execute(database.select(Curso).filter_by(codigo="CCA-RESET4")).scalar_one_or_none()
     assert curso is None, "an acknowledged --reset must actually delete the course"
+    orphaned_enrollment = database.session.execute(
+        database.select(EstudianteCurso).filter_by(curso="CCA-RESET4")
+    ).scalar_one_or_none()
+    assert orphaned_enrollment is None, "the enrollment row must be cascade-deleted, not left orphaned"
