@@ -551,3 +551,27 @@ def test_feed_query_count_is_flat_in_posts(hub, client, app):
         for i in range(6):
             publicar("c_b", titulo=f"extra{i}")
     assert contar() == base
+
+
+def test_feed_shows_native_announcements_not_a_hub_post_type(hub, client, app):
+    """One channel: staff pin with the admin UI they already have; the Hub reads it.
+
+    Guards the decision that there is no `announcement` member post type — a
+    second announcement concept would be two channels for one message.
+    """
+    from now_lms.db import Announcement
+
+    with app.app_context():
+        database.session.add(
+            Announcement(
+                title="Cohort call moves to Thursday",
+                message="Same link, one hour later.",
+                course_id=None,
+                created_by_id="c_mod",
+                is_sticky=True,
+            )
+        )
+        database.session.commit()
+    entrar(client, "c_a")
+    assert "Cohort call moves to Thursday" in client.get("/community").get_data(as_text=True)
+    assert "announcement" not in vista.COMUNIDAD_TIPOS

@@ -54,6 +54,7 @@ from now_lms.auth import email_verificado_requerido
 from now_lms.config import DIRECTORIO_PLANTILLAS
 from now_lms.db import (
     COMUNIDAD_TIPOS,
+    Announcement,
     ComunidadEventoModeracion,
     ComunidadPublicacion,
     ComunidadReaccion,
@@ -374,6 +375,35 @@ def _anclados(usuario: str) -> list[dict]:
     return _decorar(filas, usuario)
 
 
+def anuncios_activos(limite: int = 3) -> list:
+    """Active sticky global announcements, for the top of the feed.
+
+    Read from the NATIVE ``Announcement`` model, not a Hub post type. Staff
+    already have working admin CRUD there with stickiness and expiry, and a
+    second announcement concept would be two channels for one message — which is
+    the whole reason ``/dashboard/announcements`` redirects rather than rendering
+    a second reader.
+
+    Naive UTC, matching ``Announcement.is_active()`` and how ``expires_at`` is
+    stored. The native view compared against ``datetime.now()``, which is local
+    time, so on a non-UTC host it retired announcements early or late.
+    """
+    ahora = utc_now().replace(tzinfo=None)
+    return list(
+        database.session.execute(
+            select(Announcement)
+            .filter(
+                Announcement.course_id.is_(None),
+                database.or_(Announcement.expires_at.is_(None), Announcement.expires_at >= ahora),
+            )
+            .order_by(Announcement.is_sticky.desc(), Announcement.timestamp.desc())
+            .limit(limite)
+        )
+        .scalars()
+        .all()
+    )
+
+
 def posts_recientes(usuario: str, limite: int = 5) -> list[dict]:
     """The newest visible Hub posts, for the member dashboard.
 
@@ -433,6 +463,7 @@ def feed() -> str:
         FEED_TEMPLATE,
         publicaciones=publicaciones,
         anclados=_anclados(usuario) if not consulta and not tipo else [],
+        anuncios=anuncios_activos() if not consulta and not tipo else [],
         vista=vista,
         degradado=degradado,
         tipo=tipo,

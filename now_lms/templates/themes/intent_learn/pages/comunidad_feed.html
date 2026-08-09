@@ -29,6 +29,25 @@
                     </div>
                 </div>
 
+                {% if anuncios %}
+                {# Native Announcement rows, not a Hub post type. Staff pin these with the
+                   admin UI they already have; the Hub only reads them. #}
+                {% for anuncio in anuncios %}
+                <div class="card mb-2 border-primary">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="bi bi-megaphone-fill text-primary mt-1" aria-hidden="true"></i>
+                            <span class="visually-hidden">{{ _('Announcement') }}</span>
+                            <div>
+                                <h2 class="h6 mb-1">{{ anuncio.title }}</h2>
+                                <div class="small">{{ mkdown2html(anuncio.message) | safe }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% endif %}
+
                 {% if anclados %}
                 {% for item in anclados %}
                 <div class="card mb-2 border-primary">
