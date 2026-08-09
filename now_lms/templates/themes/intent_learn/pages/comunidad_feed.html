@@ -1,0 +1,153 @@
+{# Community Hub feed. Pattern A themed page: no {% extends %}, chrome from
+   current_theme() macros, colour from theme.css's Bootstrap token remap.
+   Mobile first — every row is col-12 and only widens at lg. #}
+<!doctype html>
+<html lang="{{ current_locale() }}" class="h-100">
+    {% set current_theme = current_theme() %}
+    <head>
+        {{ current_theme.headertags() }}
+        <title>{{ _('Community') }}</title>
+        <meta name="robots" content="noindex, nofollow" />
+        {{ current_theme.local_style() }}
+    </head>
+    <body>
+        {{ current_theme.navbar() }}
+        <main>
+            {{ current_theme.notify() }}
+            <div class="container px-3 py-4">
+                <div class="row mb-3">
+                    <div class="col-12 col-lg-8">
+                        <h1 class="h3 mb-1">{{ _('Community') }}</h1>
+                        <p class="text-muted mb-0">
+                            {{ _('Ask, show what you built, and share a win. Answers here stay findable.') }}
+                        </p>
+                    </div>
+                    <div class="col-12 col-lg-4 mt-3 mt-lg-0 text-lg-end">
+                        <a href="{{ url_for('comunidad.nueva_publicacion') }}" class="btn btn-primary">
+                            <i class="bi bi-pencil" aria-hidden="true"></i> {{ _('New post') }}
+                        </a>
+                    </div>
+                </div>
+
+                {% if anclados %}
+                {% for item in anclados %}
+                <div class="card mb-2 border-primary">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="bi bi-pin-angle-fill text-primary mt-1" aria-hidden="true"></i>
+                            <span class="visually-hidden">{{ _('Pinned') }}</span>
+                            <div>
+                                <a href="{{ url_for('comunidad.ver_publicacion', mensaje_id=item.pub.mensaje_id) }}"
+                                   class="fw-semibold text-decoration-none">{{ item.pub.titulo }}</a>
+                                <div class="small text-muted">{{ item.autor.nombre }} {{ item.autor.apellido }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% endif %}
+
+                {# ---- Controls: tabs, type chips, search ---- #}
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-2 mb-3" role="tablist" aria-label="{{ _('Sort') }}">
+                            <a role="tab" aria-selected="{{ 'true' if vista == 'latest' else 'false' }}"
+                               href="{{ url_for('comunidad.feed', view='latest', tipo=tipo, q=consulta or None) }}"
+                               class="btn btn-sm {{ 'btn-primary' if vista == 'latest' else 'btn-outline-secondary' }}">{{ _('Latest') }}</a>
+                            <a role="tab" aria-selected="{{ 'true' if vista == 'trending' else 'false' }}"
+                               href="{{ url_for('comunidad.feed', view='trending') }}"
+                               class="btn btn-sm {{ 'btn-primary' if vista == 'trending' else 'btn-outline-secondary' }}">{{ _('Trending') }}</a>
+                        </div>
+
+                        {# Chips scroll inside their own container so the page body never scrolls sideways. #}
+                        <div class="d-flex gap-2 mb-3" style="overflow-x: auto;">
+                            <a href="{{ url_for('comunidad.feed', view=vista, q=consulta or None) }}"
+                               class="btn btn-sm flex-shrink-0 {{ 'btn-primary' if not tipo else 'btn-outline-secondary' }}">{{ _('All') }}</a>
+                            {% for valor, etiqueta in tipos %}
+                            <a href="{{ url_for('comunidad.feed', view=vista, tipo=valor, q=consulta or None) }}"
+                               class="btn btn-sm flex-shrink-0 {{ 'btn-primary' if tipo == valor else 'btn-outline-secondary' }}">{{ etiqueta }}</a>
+                            {% endfor %}
+                        </div>
+
+                        <form method="get" action="{{ url_for('comunidad.feed') }}" class="d-flex gap-2" role="search">
+                            <input type="hidden" name="view" value="{{ vista }}" />
+                            {% if tipo %}<input type="hidden" name="tipo" value="{{ tipo }}" />{% endif %}
+                            <label class="visually-hidden" for="q">{{ _('Search the community') }}</label>
+                            <input class="form-control" id="q" name="q" value="{{ consulta }}"
+                                   placeholder="{{ _('Search before you ask') }}" />
+                            <button class="btn btn-outline-secondary flex-shrink-0" type="submit">{{ _('Search') }}</button>
+                        </form>
+                    </div>
+                </div>
+
+                {% if degradado %}
+                {# Honest fallback: Trending refuses to exist on thin data rather than
+                   crowning a post with three likes. #}
+                <div class="alert alert-secondary" role="status">
+                    {{ _('Not enough activity yet to rank. Showing the latest posts.') }}
+                </div>
+                {% endif %}
+
+                {# ---- The feed ---- #}
+                {% if publicaciones %}
+                <div class="card">
+                    <ul class="list-group list-group-flush">
+                        {% for item in publicaciones %}
+                        <li class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start gap-3">
+                                <div class="flex-grow-1">
+                                    <span class="badge bg-secondary mb-1">{{ item.etiqueta }}</span>
+                                    <div>
+                                        <a href="{{ url_for('comunidad.ver_publicacion', mensaje_id=item.pub.mensaje_id) }}"
+                                           class="fw-semibold text-decoration-none">{{ item.pub.titulo }}</a>
+                                    </div>
+                                    <div class="small text-muted">
+                                        {{ item.autor.nombre }} {{ item.autor.apellido }}
+                                        &middot; {{ item.respuestas }} {{ _('replies') }}
+                                        &middot; {{ item.likes }} {{ _('likes') }}
+                                    </div>
+                                </div>
+                                {% if not item.es_propio %}
+                                <form method="post" class="flex-shrink-0"
+                                      action="{{ url_for('comunidad.quitar_like' if item.me_gusta else 'comunidad.dar_like', mensaje_id=item.pub.mensaje_id) }}">
+                                    {{ accion_form.csrf_token }}
+                                    <button type="submit"
+                                            class="btn btn-sm {{ 'btn-primary' if item.me_gusta else 'btn-outline-secondary' }}"
+                                            aria-pressed="{{ 'true' if item.me_gusta else 'false' }}"
+                                            aria-label="{{ _('Like this post') }} ({{ item.likes }})">
+                                        <i class="bi bi-hand-thumbs-up{{ '-fill' if item.me_gusta else '' }}" aria-hidden="true"></i>
+                                        <span class="ms-1">{{ item.likes }}</span>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% else %}
+                <div class="card">
+                    <div class="card-body text-muted">
+                        {% if consulta %}
+                        {{ _('Nothing matched') }} &ldquo;{{ consulta }}&rdquo;.
+                        <a href="{{ url_for('comunidad.feed') }}" class="ms-1">{{ _('Clear search') }}</a>
+                        {% elif tipo %}
+                        {{ _('Nothing of this kind yet.') }}
+                        <a href="{{ url_for('comunidad.feed', view=vista) }}" class="ms-1">{{ _('Show everything') }}</a>
+                        {% else %}
+                        {{ _('No posts yet. Be the first — ask a question, or show what you built.') }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if es_staff %}
+                <p class="mt-3 mb-0">
+                    <a href="{{ url_for('comunidad.moderacion') }}" class="small text-decoration-none">{{ _('Moderation queue') }}</a>
+                </p>
+                {% endif %}
+            </div>
+        </main>
+        {{ current_theme.footer() }}
+    </body>
+</html>

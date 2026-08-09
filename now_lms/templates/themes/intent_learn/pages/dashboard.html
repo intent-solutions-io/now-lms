@@ -93,6 +93,40 @@
 
                         <div class="card mb-4">
                             <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>{{ _('From the community') }}</span>
+                                <a href="{{ url_for('comunidad.feed') }}" class="small text-decoration-none">{{ _('Open Community') }}</a>
+                            </div>
+                            {% if comunidad %}
+                            <ul class="list-group list-group-flush">
+                                {% for item in comunidad %}
+                                <li class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-start gap-2">
+                                        <div>
+                                            <span class="badge bg-secondary mb-1">{{ item.etiqueta }}</span>
+                                            <div>
+                                                <a href="{{ url_for('comunidad.ver_publicacion', mensaje_id=item.pub.mensaje_id) }}"
+                                                   class="text-decoration-none">{{ item.pub.titulo }}</a>
+                                            </div>
+                                            <div class="small text-muted">
+                                                {{ item.autor.nombre }} {{ item.autor.apellido }}
+                                                &middot; {{ item.respuestas }} {{ _('replies') }}
+                                                &middot; {{ item.likes }} {{ _('likes') }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <div class="card-body text-muted">
+                                {{ _('Nothing in the community yet.') }}
+                                <a href="{{ url_for('comunidad.nueva_publicacion') }}">{{ _('Start the first conversation.') }}</a>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="card mb-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
                                 <span>{{ _('My courses') }}</span>
                                 {% if cursos %}
                                 <a href="{{ url_for('course.my_courses') }}"
