@@ -30,28 +30,23 @@ public_announcements = Blueprint("public_announcements", __name__, template_fold
 
 @public_announcements.route("/dashboard/announcements", methods=["GET"])
 @login_required
-@cache.cached(timeout=60, key_prefix=lambda: f"global_announcements_{current_user.id}")  # type: ignore[arg-type]
-def global_announcements() -> str:
-    """Ver anuncios globales para todos los usuarios autenticados."""
-    # Filtrar anuncios globales activos (no expirados)
-    now = datetime.now()
+def global_announcements() -> Response:
+    """Redirect to the member dashboard, which now carries global announcements.
 
-    consulta = database.paginate(
-        database.select(Announcement)
-        .filter(
-            Announcement.course_id.is_(None),  # Solo anuncios globales
-            database.or_(
-                Announcement.expires_at.is_(None),
-                Announcement.expires_at >= now,  # Sin fecha de expiración  # No expirados
-            ),
-        )
-        .order_by(Announcement.is_sticky.desc(), Announcement.timestamp.desc()),  # Destacados primero  # Más recientes primero
-        page=request.args.get("page", default=1, type=int),
-        max_per_page=MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA,
-        count=True,
-    )
+    FORK-LOCAL. One channel for community communication is a product decision:
+    members should have one place to look, and two readers for the same
+    announcements is two channels no matter how identical their content.
 
-    return render_template("announcements/global.html", consulta=consulta)
+    The native model, the admin and instructor CRUD surfaces, and the per-course
+    announcements page are all untouched — only this second global reader is
+    retired. It redirects rather than 404s so any link already in circulation
+    still lands somewhere useful.
+
+    Upstream path: none. This is a product decision for this deployment, not a
+    bug, in the same category as the anonymous-gated-course 302. Re-apply at
+    sync.
+    """
+    return redirect(url_for("member_dashboard.panel"))
 
 
 @public_announcements.route("/course/<course_id>/announcements", methods=["GET"])
