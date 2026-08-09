@@ -665,3 +665,51 @@ def test_relative_age_is_compact(hub):
     assert vista.hace(ahora - _td(hours=3)) == "3h"
     assert vista.hace(ahora - _td(days=2)) == "2d"
     assert vista.hace(ahora - _td(seconds=10)) == "just now"
+
+
+# ---------------------------------------------------------------------------------------
+# The staff view of the Hub
+# ---------------------------------------------------------------------------------------
+def test_members_cannot_reach_the_staff_view(hub, client):
+    entrar(client, "c_a")
+    assert client.get("/community/staff").status_code == 403
+
+
+def test_staff_view_leads_with_unanswered_questions(hub, client, app):
+    """The Hub's promise is that a question gets answered; an unanswered one is
+    the only thing on this page that is actively failing it."""
+    with app.app_context():
+        sin = publicar("c_a", titulo="Nobody answered this", tipo="question", edad_horas=48)
+        con = publicar("c_b", titulo="This one got a reply", tipo="question", edad_horas=10)
+        responder(con, "c_c")
+        publicar("c_c", titulo="A build post", tipo="build")
+    entrar(client, "c_mod")
+    cuerpo = client.get("/community/staff").get_data(as_text=True)
+    assert "Nobody answered this" in cuerpo
+    assert "This one got a reply" not in cuerpo, "an answered question is not waiting on staff"
+    assert "A build post" not in cuerpo, "only questions can be unanswered"
+    assert sin  # silence lint
+
+
+def test_staff_view_shows_reports_and_hidden_posts(hub, client, app):
+    with app.app_context():
+        reportado = publicar("c_a", titulo="Reported Post")
+        oculto = publicar("c_b", titulo="Hidden Post")
+    entrar(client, "c_c")
+    client.post(f"/community/post/{reportado}/report", data={"motivo": "spam"})
+    entrar(client, "c_mod")
+    client.post(f"/community/post/{oculto}/hide", data={"motivo": "off topic"})
+
+    cuerpo = client.get("/community/staff").get_data(as_text=True)
+    assert "Reported Post" in cuerpo
+    assert "Hidden Post" in cuerpo, "a hidden post must stay visible to staff or it is forgotten"
+
+
+def test_staff_view_counts_are_real(hub, client, app):
+    with app.app_context():
+        publicar("c_a", titulo="Q one", tipo="question")
+        publicar("c_b", titulo="Q two", tipo="question")
+    entrar(client, "c_mod")
+    cuerpo = client.get("/community/staff").get_data(as_text=True)
+    assert "Unanswered questions" in cuerpo
+    assert "Posts this week" in cuerpo

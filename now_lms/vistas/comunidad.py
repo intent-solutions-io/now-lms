@@ -70,7 +70,7 @@ comunidad = Blueprint("comunidad", __name__, template_folder=DIRECTORIO_PLANTILL
 
 FEED_TEMPLATE = "themes/intent_learn/pages/comunidad_feed.html"
 POST_TEMPLATE = "themes/intent_learn/pages/comunidad_post.html"
-MODERATION_TEMPLATE = "themes/intent_learn/pages/comunidad_moderacion.html"
+STAFF_TEMPLATE = "themes/intent_learn/pages/comunidad_staff.html"
 
 TITULO_MAX = 160
 CUERPO_MAX = 8000
@@ -816,23 +816,97 @@ def fijar(publicacion_id: str) -> Response:
     return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/moderation", methods=["GET"])
+@comunidad.route("/community/staff", methods=["GET"])
 @login_required
-def moderacion() -> str:
-    """Open reports and the recent moderation trail."""
+def staff() -> str:
+    """The Hub as staff need it: what needs answering, what needs a decision.
+
+    Deliberately NOT a mirror of the member feed. A member's question is "what is
+    the cohort talking about"; a moderator's is "what is waiting on me". So this
+    leads with unanswered questions — the Hub exists so a question gets answered
+    once and stays findable, and a question with no reply is the only thing here
+    that is actively failing that promise.
+
+    Query budget is flat in the number of posts, like the feed: one query per
+    panel plus the shared aggregates, never one per row.
+    """
     _exigir_staff()
+    usuario = current_user.usuario
+    ahora = utc_now().replace(tzinfo=None)
+    semana = ahora - timedelta(days=7)
+
+    respuesta = database.aliased(ComunidadPublicacion)
+    conteo_respuestas = (
+        select(respuesta.parent_id, func.count(respuesta.id).label("n"))
+        .filter(respuesta.parent_id.isnot(None))
+        .group_by(respuesta.parent_id)
+        .subquery()
+    )
+
+    # Unanswered questions, oldest first: the longest-waiting member is the most
+    # overdue, so this is not sorted newest-first like everything else.
+    sin_responder = database.session.execute(
+        _publicaciones_base()
+        .outerjoin(conteo_respuestas, conteo_respuestas.c.parent_id == ComunidadPublicacion.id)
+        .filter(
+            ComunidadPublicacion.tipo == "question",
+            database.or_(conteo_respuestas.c.n.is_(None), conteo_respuestas.c.n == 0),
+        )
+        .order_by(ComunidadPublicacion.fecha_creacion)
+    ).all()
+
     reportados = database.session.execute(
         select(ComunidadPublicacion, Usuario)
         .join(Usuario, Usuario.usuario == ComunidadPublicacion.usuario)
         .filter(ComunidadPublicacion.reportes_abiertos > 0)
         .order_by(ComunidadPublicacion.reportes_abiertos.desc())
     ).all()
-    eventos = database.session.execute(
-        select(ComunidadEventoModeracion).order_by(ComunidadEventoModeracion.ocurrido_en.desc()).limit(50)
-    ).scalars().all()
+
+    ocultos = database.session.execute(
+        select(ComunidadPublicacion, Usuario)
+        .join(Usuario, Usuario.usuario == ComunidadPublicacion.usuario)
+        .filter(
+            ComunidadPublicacion.estado_moderacion == "oculto",
+            ComunidadPublicacion.parent_id.is_(None),
+        )
+        .order_by(ComunidadPublicacion.fecha_creacion.desc())
+    ).all()
+
+    eventos = (
+        database.session.execute(
+            select(ComunidadEventoModeracion, Usuario)
+            .join(Usuario, Usuario.usuario == ComunidadEventoModeracion.actor)
+            .order_by(ComunidadEventoModeracion.ocurrido_en.desc())
+            .limit(25)
+        )
+        .all()
+    )
+
+    publicaciones_semana = database.session.execute(
+        select(func.count(ComunidadPublicacion.id)).filter(
+            ComunidadPublicacion.parent_id.is_(None),
+            ComunidadPublicacion.fecha_creacion >= semana,
+        )
+    ).scalar()
+    miembros_semana = database.session.execute(
+        select(func.count(func.distinct(ComunidadPublicacion.usuario))).filter(
+            ComunidadPublicacion.fecha_creacion >= semana
+        )
+    ).scalar()
+
     return render_template(
-        MODERATION_TEMPLATE,
-        reportados=_decorar(reportados, current_user.usuario),
-        eventos=eventos,
+        STAFF_TEMPLATE,
+        sin_responder=_decorar(sin_responder, usuario),
+        reportados=_decorar(reportados, usuario),
+        ocultos=_decorar(ocultos, usuario),
+        eventos=[{"evento": e, "actor": a, "hace": hace(e.ocurrido_en)} for e, a in eventos],
+        resumen={
+            "sin_responder": len(sin_responder),
+            "reportes": len(reportados),
+            "ocultos": len(ocultos),
+            "publicaciones_semana": publicaciones_semana or 0,
+            "miembros_semana": miembros_semana or 0,
+        },
         accion_form=AccionForm(),
+        moderacion_form=ModeracionForm(),
     )
