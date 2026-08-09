@@ -119,10 +119,11 @@ CERTS=$(psql_ro "
 # Unsubmitted (in-progress) attempts and the excluded system accounts are out.
 MISSED=$(psql_ro "
   WITH att AS (
-    SELECT ea.id, ea.evaluation_id
+    SELECT DISTINCT ON (ea.user_id, ea.evaluation_id) ea.id, ea.evaluation_id
     FROM evaluation_attempt ea
     WHERE ea.submitted_at IS NOT NULL
       AND ea.user_id NOT IN ($EXCLUDE_SQL)
+    ORDER BY ea.user_id, ea.evaluation_id, ea.submitted_at, ea.id
   ),
   tally AS (
     SELECT evaluation_id, COUNT(*)::int AS n_attempts FROM att GROUP BY evaluation_id

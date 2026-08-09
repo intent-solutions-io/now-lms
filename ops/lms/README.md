@@ -51,6 +51,17 @@ than guesswork. What the number means, precisely:
   which is a different problem from being failed.
 - **In-progress attempts are excluded** (`submitted_at IS NULL`), otherwise an
   abandoned attempt with no answers would push every question toward 100%.
+- **Only each member's FIRST submitted attempt at an evaluation counts**
+  (`DISTINCT ON (user_id, evaluation_id)`, ordered by `submitted_at` then `id`
+  so ties resolve deterministically). Attempts are unlimited on the practice
+  exams, so counting every one lets a single member who retakes an exam five
+  times contribute five times the weight, and a question people deliberately
+  drill looks harder than one they meet once and fail. First-attempt share is
+  also the number that answers the question the digest exists to answer: what
+  did people not know *before* the material taught it to them. The consequence
+  worth naming: a question that is missed first time and mastered on the retake
+  still ranks high here, which is correct for prioritising teaching and wrong
+  for measuring mastery. This table is not a mastery report.
 - **System accounts are excluded** via the same `LMS_DIGEST_EXCLUDE` list the
   member table uses, so staff test runs do not move the cohort's numbers.
 - **The table is capped at 25 rows and says so**, printing "Top 25 of N" with
