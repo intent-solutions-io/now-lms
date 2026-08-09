@@ -104,7 +104,7 @@
                                         <div>
                                             <span class="badge bg-secondary mb-1">{{ item.etiqueta }}</span>
                                             <div>
-                                                <a href="{{ url_for('comunidad.ver_publicacion', mensaje_id=item.pub.mensaje_id) }}"
+                                                <a href="{{ url_for('comunidad.ver_publicacion', publicacion_id=item.pub.id) }}"
                                                    class="text-decoration-none">{{ item.pub.titulo }}</a>
                                             </div>
                                             <div class="small text-muted">

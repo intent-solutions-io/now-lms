@@ -1,25 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2025 - 2026 BMO Soluciones, S.A.
 
-"""Community Hub — ADR-8 (000-docs/015-AT-ADEC-community-hub-storage.md).
+"""Community Hub — ADR-10 (000-docs/017-AT-ADEC), which supersedes ADR-8.
 
 A private feed where cohort members publish Questions, Builds and Success
-Stories, reply to each other, and like a post once. Post bodies and the reply
-tree live in the native ``ForoMensaje``; three sidecar tables carry the metadata,
-the reactions and the moderation trail that the platform has no representation
-for. ``ForoMensaje`` is not modified.
+Stories, reply to each other, and like a post once.
+
+The Hub owns its own content: ``ComunidadPublicacion`` holds the body, the
+author and the reply relationship, so there is no dependency on the native
+forum and no container course. ADR-8 stored bodies in ``ForoMensaje`` behind a
+metadata sidecar; that needed a fake course row to satisfy a NOT NULL column,
+and since ``ForoMensaje.curso_id`` cascades, deleting that one row would have
+silently deleted every post in the Hub. The table count was identical either
+way, so the container bought nothing.
 
 Membership: every active, verified Intent Solutions member is in the Hub. There
-is no per-member provisioning, and because there is exactly one Hub with everyone
-in it, cross-cohort disclosure is prevented structurally rather than by
-filtering — every query is scoped to one course code at the query level, never
-hidden in a template.
-
-The canonical Community course is only a container (``ForoMensaje.curso_id`` is
-NOT NULL). It is kept at ``foro_habilitado = False`` deliberately: that shuts the
-native forum route on it, so nobody can reach Hub posts through
-``/course/<code>/forum`` and bypass the moderation filter, and it never trips the
-validator forbidding ``foro_habilitado`` on a ``self_paced`` course.
+is no per-member provisioning, and because there is exactly one Hub with
+everyone in it, cross-cohort disclosure is prevented structurally rather than by
+filtering. Moderation state is applied at the query level, never hidden in a
+template.
 """
 
 from __future__ import annotations
@@ -58,7 +57,6 @@ from now_lms.db import (
     ComunidadEventoModeracion,
     ComunidadPublicacion,
     ComunidadReaccion,
-    ForoMensaje,
     Usuario,
     database,
     select,
@@ -67,9 +65,6 @@ from now_lms.db import (
 from now_lms.i18n import _, _l
 
 comunidad = Blueprint("comunidad", __name__, template_folder=DIRECTORIO_PLANTILLAS)
-
-# The canonical container course. Created by scripts/seed_community_course.py.
-COMMUNITY_COURSE_CODE = "COMMUNITY"
 
 FEED_TEMPLATE = "themes/intent_learn/pages/comunidad_feed.html"
 POST_TEMPLATE = "themes/intent_learn/pages/comunidad_post.html"
@@ -235,42 +230,40 @@ def _exigir_staff() -> None:
 # Queries
 # ---------------------------------------------------------------------------------------
 def _publicaciones_base():
-    """Visible Hub root posts, scoped at the query level. Never filtered in a template."""
+    """Visible root posts with their author. Moderation is applied here, never in a template."""
     return (
-        select(ComunidadPublicacion, ForoMensaje, Usuario)
-        .join(ForoMensaje, ForoMensaje.id == ComunidadPublicacion.mensaje_id)
-        .join(Usuario, Usuario.usuario == ForoMensaje.usuario_id)
+        select(ComunidadPublicacion, Usuario)
+        .join(Usuario, Usuario.usuario == ComunidadPublicacion.usuario)
         .filter(
-            ForoMensaje.curso_id == COMMUNITY_COURSE_CODE,
-            ForoMensaje.parent_id.is_(None),
+            ComunidadPublicacion.parent_id.is_(None),
             ComunidadPublicacion.estado_moderacion == "visible",
         )
     )
 
 
-def _agregados(mensaje_ids: list[str], usuario: str) -> tuple[dict, dict, set]:
+def _agregados(ids: list[str], usuario: str) -> tuple[dict, dict, set]:
     """Like counts, reply counts and this member's likes — three queries, flat in post count."""
-    if not mensaje_ids:
+    if not ids:
         return {}, {}, set()
 
     likes = dict(
         database.session.execute(
-            select(ComunidadReaccion.mensaje_id, func.count(ComunidadReaccion.id))
-            .filter(ComunidadReaccion.mensaje_id.in_(mensaje_ids))
-            .group_by(ComunidadReaccion.mensaje_id)
+            select(ComunidadReaccion.publicacion_id, func.count(ComunidadReaccion.id))
+            .filter(ComunidadReaccion.publicacion_id.in_(ids))
+            .group_by(ComunidadReaccion.publicacion_id)
         ).all()
     )
     respuestas = dict(
         database.session.execute(
-            select(ForoMensaje.parent_id, func.count(ForoMensaje.id))
-            .filter(ForoMensaje.parent_id.in_(mensaje_ids))
-            .group_by(ForoMensaje.parent_id)
+            select(ComunidadPublicacion.parent_id, func.count(ComunidadPublicacion.id))
+            .filter(ComunidadPublicacion.parent_id.in_(ids))
+            .group_by(ComunidadPublicacion.parent_id)
         ).all()
     )
     mios = set(
         database.session.execute(
-            select(ComunidadReaccion.mensaje_id).filter(
-                ComunidadReaccion.mensaje_id.in_(mensaje_ids), ComunidadReaccion.usuario == usuario
+            select(ComunidadReaccion.publicacion_id).filter(
+                ComunidadReaccion.publicacion_id.in_(ids), ComunidadReaccion.usuario == usuario
             )
         )
         .scalars()
@@ -281,20 +274,19 @@ def _agregados(mensaje_ids: list[str], usuario: str) -> tuple[dict, dict, set]:
 
 def _decorar(filas, usuario: str) -> list[dict]:
     """Attach counts to a page of posts without a query per row."""
-    ids = [pub.mensaje_id for pub, _, _ in filas]
+    ids = [pub.id for pub, _ in filas]
     likes, respuestas, mios = _agregados(ids, usuario)
     return [
         {
             "pub": pub,
-            "mensaje": msg,
             "autor": autor,
-            "likes": likes.get(pub.mensaje_id, 0),
-            "respuestas": respuestas.get(pub.mensaje_id, 0),
-            "me_gusta": pub.mensaje_id in mios,
-            "es_propio": msg.usuario_id == usuario,
+            "likes": likes.get(pub.id, 0),
+            "respuestas": respuestas.get(pub.id, 0),
+            "me_gusta": pub.id in mios,
+            "es_propio": pub.usuario == usuario,
             "etiqueta": TIPO_ETIQUETAS.get(pub.tipo, pub.tipo),
         }
-        for pub, msg, autor in filas
+        for pub, autor in filas
     ]
 
 
@@ -316,38 +308,39 @@ def calcular_trending(usuario: str) -> tuple[list[dict], bool]:
     filas = database.session.execute(
         _publicaciones_base().filter(
             ComunidadPublicacion.fijado.is_(False),
-            ForoMensaje.fecha_creacion >= corte_post,
+            ComunidadPublicacion.fecha_creacion >= corte_post,
             Usuario.activo.is_(True),
         )
     ).all()
     if not filas:
         return [], False
 
-    ids = [pub.mensaje_id for pub, _, _ in filas]
-    autores = {pub.mensaje_id: msg.usuario_id for pub, msg, _ in filas}
+    ids = [pub.id for pub, _ in filas]
+    autores = {pub.id: pub.usuario for pub, _ in filas}
 
     # Distinct likers in the window, excluding the author and inactive accounts.
     likers: dict[str, set] = {i: set() for i in ids}
-    for mensaje_id, quien in database.session.execute(
-        select(ComunidadReaccion.mensaje_id, ComunidadReaccion.usuario)
+    for publicacion_id, quien in database.session.execute(
+        select(ComunidadReaccion.publicacion_id, ComunidadReaccion.usuario)
         .join(Usuario, Usuario.usuario == ComunidadReaccion.usuario)
         .filter(
-            ComunidadReaccion.mensaje_id.in_(ids),
+            ComunidadReaccion.publicacion_id.in_(ids),
             ComunidadReaccion.timestamp >= corte_engagement,
             Usuario.activo.is_(True),
         )
     ).all():
-        if quien != autores.get(mensaje_id):
-            likers[mensaje_id].add(quien)
+        if quien != autores.get(publicacion_id):
+            likers[publicacion_id].add(quien)
 
     # Distinct non-author repliers in the window.
     repliers: dict[str, set] = {i: set() for i in ids}
+    respuesta = database.aliased(ComunidadPublicacion)
     for parent_id, quien in database.session.execute(
-        select(ForoMensaje.parent_id, ForoMensaje.usuario_id)
-        .join(Usuario, Usuario.usuario == ForoMensaje.usuario_id)
+        select(respuesta.parent_id, respuesta.usuario)
+        .join(Usuario, Usuario.usuario == respuesta.usuario)
         .filter(
-            ForoMensaje.parent_id.in_(ids),
-            ForoMensaje.fecha_creacion >= corte_engagement,
+            respuesta.parent_id.in_(ids),
+            respuesta.fecha_creacion >= corte_engagement,
             Usuario.activo.is_(True),
         )
     ).all():
@@ -355,16 +348,16 @@ def calcular_trending(usuario: str) -> tuple[list[dict], bool]:
             repliers[parent_id].add(quien)
 
     puntuados = []
-    for pub, msg, _autor in filas:
-        r, lk = repliers[pub.mensaje_id], likers[pub.mensaje_id]
+    for pub, _autor in filas:
+        r, lk = repliers[pub.id], likers[pub.id]
         comprometidos = r | lk
         if len(comprometidos) < MINIMO_MIEMBROS:
             continue
         # Per-member weight, counted once. Replying outranks liking; doing both is not additive.
         bruto = sum(PESO_RESPUESTA if m in r else PESO_LIKE for m in comprometidos)
-        horas = max(0.0, (ahora - msg.fecha_creacion).total_seconds() / 3600.0)
+        horas = max(0.0, (ahora - pub.fecha_creacion).total_seconds() / 3600.0)
         puntaje = bruto / ((horas + DESPLAZAMIENTO_HORAS) ** GRAVEDAD)
-        puntuados.append(((puntaje, len(comprometidos), msg.fecha_creacion, msg.id), (pub, msg, _autor)))
+        puntuados.append(((puntaje, len(comprometidos), pub.fecha_creacion, pub.id), (pub, _autor)))
 
     if len(puntuados) < MINIMO_PARA_RANKEAR:
         return [], False
@@ -376,7 +369,7 @@ def calcular_trending(usuario: str) -> tuple[list[dict], bool]:
 
 def _anclados(usuario: str) -> list[dict]:
     filas = database.session.execute(
-        _publicaciones_base().filter(ComunidadPublicacion.fijado.is_(True)).order_by(ForoMensaje.fecha_creacion.desc())
+        _publicaciones_base().filter(ComunidadPublicacion.fijado.is_(True)).order_by(ComunidadPublicacion.fecha_creacion.desc())
     ).all()
     return _decorar(filas, usuario)
 
@@ -390,7 +383,7 @@ def posts_recientes(usuario: str, limite: int = 5) -> list[dict]:
     filas = database.session.execute(
         _publicaciones_base()
         .filter(ComunidadPublicacion.fijado.is_(False))
-        .order_by(ForoMensaje.fecha_creacion.desc())
+        .order_by(ComunidadPublicacion.fecha_creacion.desc())
         .limit(limite)
     ).all()
     return _decorar(filas, usuario)
@@ -429,10 +422,10 @@ def feed() -> str:
         if consulta:
             patron = f"%{consulta}%"
             seleccion = seleccion.filter(
-                database.or_(ComunidadPublicacion.titulo.ilike(patron), ForoMensaje.contenido.ilike(patron))
+                database.or_(ComunidadPublicacion.titulo.ilike(patron), ComunidadPublicacion.contenido.ilike(patron))
             )
         filas = database.session.execute(
-            seleccion.order_by(ForoMensaje.fecha_creacion.desc()).limit(POR_PAGINA)
+            seleccion.order_by(ComunidadPublicacion.fecha_creacion.desc()).limit(POR_PAGINA)
         ).all()
         publicaciones = _decorar(filas, usuario)
 
@@ -450,48 +443,47 @@ def feed() -> str:
     )
 
 
-@comunidad.route("/community/post/<mensaje_id>", methods=["GET"])
+@comunidad.route("/community/post/<publicacion_id>", methods=["GET"])
 @login_required
-def ver_publicacion(mensaje_id: str) -> str:
+def ver_publicacion(publicacion_id: str) -> str:
     """One post and its replies."""
     _exigir_miembro()
     usuario = current_user.usuario
 
     fila = database.session.execute(
-        select(ComunidadPublicacion, ForoMensaje, Usuario)
-        .join(ForoMensaje, ForoMensaje.id == ComunidadPublicacion.mensaje_id)
-        .join(Usuario, Usuario.usuario == ForoMensaje.usuario_id)
-        .filter(ComunidadPublicacion.mensaje_id == mensaje_id, ForoMensaje.curso_id == COMMUNITY_COURSE_CODE)
+        select(ComunidadPublicacion, Usuario)
+        .join(Usuario, Usuario.usuario == ComunidadPublicacion.usuario)
+        .filter(ComunidadPublicacion.id == publicacion_id, ComunidadPublicacion.parent_id.is_(None))
     ).first()
     # 404 rather than 403 on a hidden post: a 403 confirms it exists.
     if not fila:
         abort(404)
-    pub, msg, _autor = fila
-    if pub.estado_moderacion != "visible" and not (es_staff() or msg.usuario_id == usuario):
+    pub, _autor = fila
+    if pub.estado_moderacion != "visible" and not (es_staff() or pub.usuario == usuario):
         abort(404)
 
+    respuesta = database.aliased(ComunidadPublicacion)
     respuestas = database.session.execute(
-        select(ForoMensaje, Usuario)
-        .join(Usuario, Usuario.usuario == ForoMensaje.usuario_id)
-        .filter(ForoMensaje.parent_id == mensaje_id)
-        .order_by(ForoMensaje.fecha_creacion)
+        select(respuesta, Usuario)
+        .join(Usuario, Usuario.usuario == respuesta.usuario)
+        .filter(respuesta.parent_id == publicacion_id, respuesta.estado_moderacion == "visible")
+        .order_by(respuesta.fecha_creacion)
     ).all()
 
     decorado = _decorar([fila], usuario)[0]
     return render_template(
         POST_TEMPLATE,
         item=decorado,
-        cuerpo=markdown_seguro(msg.contenido),
+        cuerpo=markdown_seguro(pub.contenido),
         respuestas=[
             {
-                "mensaje": r,
                 "autor": a,
                 "cuerpo": markdown_seguro(r.contenido),
                 "es_staff": a.tipo in ROLES_STAFF,
             }
             for r, a in respuestas
         ],
-        cerrado=msg.estado == "cerrado",
+        cerrado=pub.estado == "cerrado",
         oculto=pub.estado_moderacion != "visible",
         respuesta_form=RespuestaForm(),
         reporte_form=ReporteForm(),
@@ -519,44 +511,37 @@ def nueva_publicacion() -> str | Response:
             flash(_("That link does not look like a web address."), "warning")
             return render_template(FEED_TEMPLATE + "#", form=form) if False else redirect(url_for("comunidad.nueva_publicacion"))
 
-        mensaje = ForoMensaje(
-            curso_id=COMMUNITY_COURSE_CODE,
-            usuario_id=current_user.usuario,
+        publicacion = ComunidadPublicacion(
             parent_id=None,
+            usuario=current_user.usuario,
             contenido=form.contenido.data,
+            titulo=form.titulo.data,
+            tipo=form.tipo.data,
+            enlace_build=(form.enlace_build.data or None),
+            fijado=False,
+            estado_moderacion="visible",
             estado="abierto",
+            reportes_abiertos=0,
         )
-        database.session.add(mensaje)
-        database.session.flush()
-        database.session.add(
-            ComunidadPublicacion(
-                mensaje_id=mensaje.id,
-                titulo=form.titulo.data,
-                tipo=form.tipo.data,
-                estado_moderacion="visible",
-                fijado=False,
-                enlace_build=(form.enlace_build.data or None),
-                reportes_abiertos=0,
-            )
-        )
+        database.session.add(publicacion)
         database.session.commit()
-        return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje.id))
+        return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion.id))
 
     return render_template(
         "themes/intent_learn/pages/comunidad_nuevo.html", form=form, tipos=[(t, TIPO_ETIQUETAS[t]) for t in COMUNIDAD_TIPOS]
     )
 
 
-@comunidad.route("/community/post/<mensaje_id>/reply", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/reply", methods=["POST"])
 @login_required
 @email_verificado_requerido
-def responder(mensaje_id: str) -> Response:
+def responder(publicacion_id: str) -> Response:
     """Reply to a post."""
     _exigir_miembro()
-    _pub, raiz = _cargar_visible(mensaje_id)
+    raiz = _cargar(publicacion_id)
     if raiz.estado == "cerrado":
         flash(_("Replies are closed on this thread."), "warning")
-        return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+        return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
     form = RespuestaForm()
     if form.validate_on_submit():
@@ -564,22 +549,24 @@ def responder(mensaje_id: str) -> Response:
             flash(_("You have replied a lot in a short time. Try again shortly."), "warning")
         else:
             database.session.add(
-                ForoMensaje(
-                    curso_id=COMMUNITY_COURSE_CODE,
-                    usuario_id=current_user.usuario,
-                    parent_id=mensaje_id,
+                ComunidadPublicacion(
+                    parent_id=publicacion_id,
+                    usuario=current_user.usuario,
                     contenido=form.contenido.data,
+                    estado_moderacion="visible",
                     estado="abierto",
+                    fijado=False,
+                    reportes_abiertos=0,
                 )
             )
             database.session.commit()
-    return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/post/<mensaje_id>/like", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/like", methods=["POST"])
 @login_required
 @email_verificado_requerido
-def dar_like(mensaje_id: str) -> Response:
+def dar_like(publicacion_id: str) -> Response:
     """Idempotent like. Never a toggle.
 
     Two endpoints rather than one toggle because a toggle under a double-click
@@ -588,8 +575,8 @@ def dar_like(mensaje_id: str) -> Response:
     unique constraint is the arbiter — there is no read-then-write window.
     """
     _exigir_miembro()
-    _pub, raiz = _cargar_visible(mensaje_id)
-    if raiz.usuario_id == current_user.usuario:
+    raiz = _cargar(publicacion_id)
+    if raiz.usuario == current_user.usuario:
         abort(403)  # a member cannot like their own post
     if not AccionForm().validate_on_submit():
         abort(400)
@@ -598,141 +585,143 @@ def dar_like(mensaje_id: str) -> Response:
 
     try:
         with database.session.begin_nested():
-            database.session.add(ComunidadReaccion(mensaje_id=mensaje_id, usuario=current_user.usuario))
+            database.session.add(ComunidadReaccion(publicacion_id=publicacion_id, usuario=current_user.usuario))
     except IntegrityError:
         # Already liked. The constraint absorbed a concurrent duplicate; this is success.
         pass
     database.session.commit()
-    return redirect(request.referrer or url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(request.referrer or url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/post/<mensaje_id>/unlike", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/unlike", methods=["POST"])
 @login_required
 @email_verificado_requerido
-def quitar_like(mensaje_id: str) -> Response:
+def quitar_like(publicacion_id: str) -> Response:
     """Idempotent unlike. Deleting zero rows is success."""
     _exigir_miembro()
     if not AccionForm().validate_on_submit():
         abort(400)
     database.session.execute(
         database.delete(ComunidadReaccion).where(
-            ComunidadReaccion.mensaje_id == mensaje_id, ComunidadReaccion.usuario == current_user.usuario
+            ComunidadReaccion.publicacion_id == publicacion_id, ComunidadReaccion.usuario == current_user.usuario
         )
     )
     database.session.commit()
-    return redirect(request.referrer or url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(request.referrer or url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/post/<mensaje_id>/report", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/report", methods=["POST"])
 @login_required
 @email_verificado_requerido
-def reportar(mensaje_id: str) -> Response:
+def reportar(publicacion_id: str) -> Response:
     """Report a post. Reporting never hides anything — only a staff action does."""
     _exigir_miembro()
-    pub, _raiz = _cargar_visible(mensaje_id)
+    pub = _cargar(publicacion_id)
     form = ReporteForm()
     if form.validate_on_submit() and not _limitado("report", current_user.usuario):
         database.session.add(
             ComunidadEventoModeracion(
-                mensaje_id=mensaje_id, tipo="report", actor=current_user.usuario, motivo=form.motivo.data
+                publicacion_id=publicacion_id, tipo="report", actor=current_user.usuario, motivo=form.motivo.data
             )
         )
         pub.reportes_abiertos = (pub.reportes_abiertos or 0) + 1
         database.session.commit()
         flash(_("Thank you. A moderator will look at this."), "info")
-    return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
 # ---------------------------------------------------------------------------------------
 # Moderation
 # ---------------------------------------------------------------------------------------
-def _cargar_visible(mensaje_id: str) -> tuple[ComunidadPublicacion, ForoMensaje]:
-    """Load a Hub post, 404 when it is not one."""
+def _cargar(publicacion_id: str) -> ComunidadPublicacion:
+    """Load a root post, 404 when it is not one."""
     fila = database.session.execute(
-        select(ComunidadPublicacion, ForoMensaje)
-        .join(ForoMensaje, ForoMensaje.id == ComunidadPublicacion.mensaje_id)
-        .filter(ComunidadPublicacion.mensaje_id == mensaje_id, ForoMensaje.curso_id == COMMUNITY_COURSE_CODE)
-    ).first()
+        select(ComunidadPublicacion).filter(
+            ComunidadPublicacion.id == publicacion_id, ComunidadPublicacion.parent_id.is_(None)
+        )
+    ).scalars().first()
     if not fila:
         abort(404)
-    return fila[0], fila[1]
+    return fila
 
 
-def _registrar(mensaje_id: str, tipo: str, motivo: str | None = None) -> None:
+def _registrar(publicacion_id: str, tipo: str, motivo: str | None = None) -> None:
     database.session.add(
-        ComunidadEventoModeracion(mensaje_id=mensaje_id, tipo=tipo, actor=current_user.usuario, motivo=motivo)
+        ComunidadEventoModeracion(
+            publicacion_id=publicacion_id, tipo=tipo, actor=current_user.usuario, motivo=motivo
+        )
     )
 
 
-@comunidad.route("/community/post/<mensaje_id>/hide", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/hide", methods=["POST"])
 @login_required
-def ocultar(mensaje_id: str) -> Response:
+def ocultar(publicacion_id: str) -> Response:
     """Hide a post. Reversible, reasoned, and recorded. Nothing is deleted."""
     _exigir_staff()
-    pub, _raiz = _cargar_visible(mensaje_id)
+    pub = _cargar(publicacion_id)
     form = ModeracionForm()
     if form.validate_on_submit():
         pub.estado_moderacion = "oculto"
-        _registrar(mensaje_id, "hide", form.motivo.data)
+        _registrar(publicacion_id, "hide", form.motivo.data)
         database.session.commit()
         flash(_("Post hidden."), "info")
     else:
         flash(_("A reason is required to hide a post."), "warning")
-    return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/post/<mensaje_id>/restore", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/restore", methods=["POST"])
 @login_required
-def restaurar(mensaje_id: str) -> Response:
+def restaurar(publicacion_id: str) -> Response:
     """Reverse a hide and clear the report queue counter."""
     _exigir_staff()
-    pub, _raiz = _cargar_visible(mensaje_id)
+    pub = _cargar(publicacion_id)
     if AccionForm().validate_on_submit():
         pub.estado_moderacion = "visible"
         pub.reportes_abiertos = 0
-        _registrar(mensaje_id, "restore")
+        _registrar(publicacion_id, "restore")
         database.session.commit()
-    return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/post/<mensaje_id>/lock", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/lock", methods=["POST"])
 @login_required
-def cerrar(mensaje_id: str) -> Response:
-    """Close replies, reusing the platform's own ForoMensaje.estado rather than a new field."""
+def cerrar(publicacion_id: str) -> Response:
+    """Close replies. Same `abierto`/`cerrado` vocabulary the native forum uses."""
     _exigir_staff()
-    _pub, raiz = _cargar_visible(mensaje_id)
+    raiz = _cargar(publicacion_id)
     if AccionForm().validate_on_submit():
         raiz.estado = "cerrado"
-        _registrar(mensaje_id, "lock")
+        _registrar(publicacion_id, "lock")
         database.session.commit()
-    return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/post/<mensaje_id>/unlock", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/unlock", methods=["POST"])
 @login_required
-def abrir(mensaje_id: str) -> Response:
+def abrir(publicacion_id: str) -> Response:
     """Reopen replies."""
     _exigir_staff()
-    _pub, raiz = _cargar_visible(mensaje_id)
+    raiz = _cargar(publicacion_id)
     if AccionForm().validate_on_submit():
         raiz.estado = "abierto"
-        _registrar(mensaje_id, "unlock")
+        _registrar(publicacion_id, "unlock")
         database.session.commit()
-    return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
-@comunidad.route("/community/post/<mensaje_id>/pin", methods=["POST"])
+@comunidad.route("/community/post/<publicacion_id>/pin", methods=["POST"])
 @login_required
-def fijar(mensaje_id: str) -> Response:
+def fijar(publicacion_id: str) -> Response:
     """Pin a post above the feed. Admins only."""
     if not (current_user.is_authenticated and current_user.tipo == "admin"):
         abort(403)
-    pub, _raiz = _cargar_visible(mensaje_id)
+    pub = _cargar(publicacion_id)
     if AccionForm().validate_on_submit():
         pub.fijado = not pub.fijado
-        _registrar(mensaje_id, "pin" if pub.fijado else "unpin")
+        _registrar(publicacion_id, "pin" if pub.fijado else "unpin")
         database.session.commit()
-    return redirect(url_for("comunidad.ver_publicacion", mensaje_id=mensaje_id))
+    return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
 
 
 @comunidad.route("/community/moderation", methods=["GET"])
@@ -741,10 +730,9 @@ def moderacion() -> str:
     """Open reports and the recent moderation trail."""
     _exigir_staff()
     reportados = database.session.execute(
-        select(ComunidadPublicacion, ForoMensaje, Usuario)
-        .join(ForoMensaje, ForoMensaje.id == ComunidadPublicacion.mensaje_id)
-        .join(Usuario, Usuario.usuario == ForoMensaje.usuario_id)
-        .filter(ForoMensaje.curso_id == COMMUNITY_COURSE_CODE, ComunidadPublicacion.reportes_abiertos > 0)
+        select(ComunidadPublicacion, Usuario)
+        .join(Usuario, Usuario.usuario == ComunidadPublicacion.usuario)
+        .filter(ComunidadPublicacion.reportes_abiertos > 0)
         .order_by(ComunidadPublicacion.reportes_abiertos.desc())
     ).all()
     eventos = database.session.execute(

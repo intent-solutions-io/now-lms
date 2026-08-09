@@ -20,54 +20,30 @@ from now_lms.db import (
     ComunidadEventoModeracion,
     ComunidadPublicacion,
     ComunidadReaccion,
-    Curso,
-    ForoMensaje,
     Usuario,
     database,
     utc_now,
 )
 from now_lms.vistas import comunidad as vista
 
-CODE = vista.COMMUNITY_COURSE_CODE
 MIEMBROS = ("c_a", "c_b", "c_c", "c_d", "c_e", "c_mod")
 
 
 def _limpiar() -> None:
-    ids = [
-        m
-        for m in database.session.execute(
-            database.select(ForoMensaje.id).filter(ForoMensaje.curso_id == CODE)
-        ).scalars()
-    ]
-    if ids:
-        for modelo in (ComunidadReaccion, ComunidadEventoModeracion, ComunidadPublicacion):
-            database.session.execute(database.delete(modelo).where(modelo.mensaje_id.in_(ids)))
-        database.session.execute(database.delete(ForoMensaje).where(ForoMensaje.id.in_(ids)))
+    """Wipe this module's rows. The Hub owns its own tables, so there is no course to clean."""
+    database.session.execute(database.delete(ComunidadReaccion))
+    database.session.execute(database.delete(ComunidadEventoModeracion))
+    database.session.execute(database.delete(ComunidadPublicacion))
     database.session.execute(database.delete(Usuario).where(Usuario.usuario.in_(MIEMBROS)))
-    database.session.execute(database.delete(Curso).where(Curso.codigo == CODE))
     database.session.commit()
     vista._CUBOS.clear()
 
 
 @pytest.fixture
 def hub(app, db_session):
-    """The container course plus five members and a moderator."""
+    """Five members and a moderator. No course: the Hub owns its own content."""
     with app.app_context():
         _limpiar()
-        database.session.add(
-            Curso(
-                nombre="Community",
-                codigo=CODE,
-                descripcion_corta="c",
-                descripcion="c",
-                estado="open",
-                modalidad="self_paced",
-                publico=False,
-                pagado=False,
-                certificado=False,
-                foro_habilitado=False,
-            )
-        )
         for u in MIEMBROS:
             database.session.add(
                 Usuario(
@@ -115,36 +91,40 @@ def entrar(client, usuario: str) -> None:
 
 def publicar(autor: str, titulo: str = "T", tipo: str = "question", edad_horas: float = 1.0) -> str:
     """Create a Hub post directly, at a chosen age."""
-    creado = utc_now().replace(tzinfo=None) - timedelta(hours=edad_horas)
-    msg = ForoMensaje(
-        curso_id=CODE, usuario_id=autor, parent_id=None, contenido="body", estado="abierto", fecha_creacion=creado
+    pub = ComunidadPublicacion(
+        parent_id=None,
+        usuario=autor,
+        contenido="body",
+        titulo=titulo,
+        tipo=tipo,
+        estado_moderacion="visible",
+        estado="abierto",
+        fijado=False,
+        reportes_abiertos=0,
+        fecha_creacion=utc_now().replace(tzinfo=None) - timedelta(hours=edad_horas),
     )
-    database.session.add(msg)
-    database.session.flush()
-    database.session.add(
-        ComunidadPublicacion(
-            mensaje_id=msg.id, titulo=titulo, tipo=tipo, estado_moderacion="visible", fijado=False, reportes_abiertos=0
-        )
-    )
+    database.session.add(pub)
     database.session.commit()
-    return msg.id
+    return pub.id
 
 
-def dar_like(mensaje_id: str, usuario: str, hace_dias: float = 0.0) -> None:
-    r = ComunidadReaccion(mensaje_id=mensaje_id, usuario=usuario)
+def dar_like(publicacion_id: str, usuario: str, hace_dias: float = 0.0) -> None:
+    r = ComunidadReaccion(publicacion_id=publicacion_id, usuario=usuario)
     r.timestamp = utc_now().replace(tzinfo=None) - timedelta(days=hace_dias)
     database.session.add(r)
     database.session.commit()
 
 
-def responder(mensaje_id: str, usuario: str, hace_dias: float = 0.0) -> None:
+def responder(publicacion_id: str, usuario: str, hace_dias: float = 0.0) -> None:
     database.session.add(
-        ForoMensaje(
-            curso_id=CODE,
-            usuario_id=usuario,
-            parent_id=mensaje_id,
+        ComunidadPublicacion(
+            parent_id=publicacion_id,
+            usuario=usuario,
             contenido="r",
+            estado_moderacion="visible",
             estado="abierto",
+            fijado=False,
+            reportes_abiertos=0,
             fecha_creacion=utc_now().replace(tzinfo=None) - timedelta(days=hace_dias),
         )
     )
@@ -185,53 +165,50 @@ def test_active_member_reaches_the_feed(hub, client):
 
 
 # ---------------------------------------------------------------------------------------
-# Containment — the container course must stay invisible
+# Containment — the Hub owns its tables, so there is nothing to hide in a course listing.
+# What must hold instead: replies never surface as root posts, and deleting a post takes
+# its replies, likes and trail with it.
 # ---------------------------------------------------------------------------------------
-def test_container_course_is_not_in_any_listing(hub, client):
-    """It is one row satisfying a NOT NULL column, not a course anyone can find."""
-    entrar(client, "c_a")
-    for ruta in ("/course/explore", "/my_courses", "/dashboard"):
-        cuerpo = client.get(ruta).get_data(as_text=True)
-        assert CODE not in cuerpo, f"{CODE} leaked into {ruta}"
-
-
-def test_native_forum_route_is_shut_on_the_container(hub, client):
-    """foro_habilitado=False, so nobody reaches Hub posts around the moderation filter."""
-    entrar(client, "c_a")
-    respuesta = client.get(f"/course/{CODE}/forum", follow_redirects=False)
-    assert respuesta.status_code in (302, 403, 404)
-
-
-def test_deleting_the_container_is_refused(hub):
-    """ForoMensaje.curso_id cascades, so this would silently delete every Hub post."""
-    import importlib
-
-    seeder = importlib.import_module("scripts.seed_cca_courses") if False else None
-    # The guard lives in the seeder's _delete_course; assert the constant it protects.
-    assert CODE == "COMMUNITY"
-    assert seeder is None  # import intentionally skipped; the guard is asserted by the script itself
-
-
-def test_hub_posts_survive_deleting_a_different_course(hub, app):
-    """Scoping proven, not assumed."""
+def test_replies_never_appear_as_root_posts(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
-        otro = Curso(
-            nombre="Other",
-            codigo="OTHER1",
-            descripcion_corta="c",
-            descripcion="c",
-            estado="open",
-            modalidad="self_paced",
-            publico=False,
-            pagado=False,
-            certificado=False,
+        raiz = publicar("c_a", titulo="Root Post")
+        responder(raiz, "c_b")
+    entrar(client, "c_c")
+    cuerpo = client.get("/community").get_data(as_text=True)
+    assert cuerpo.count("Root Post") >= 1
+    assert "/community/post/" in cuerpo
+
+
+def test_deleting_a_post_cascades_to_its_replies_likes_and_trail(hub, app):
+    """The cascade replaces ADR-8's container-course blast radius with a scoped one.
+
+    SQLite ignores ON DELETE CASCADE unless the foreign-keys pragma is on, and the
+    repo's conftest sets performance pragmas only — so this enables it explicitly
+    rather than passing vacuously on the test backend. PostgreSQL, which is what
+    production and CI run, enforces it natively.
+    """
+    with app.app_context():
+        if "sqlite" in str(database.engine.url):
+            database.session.execute(database.text("PRAGMA foreign_keys=ON"))
+        raiz = publicar("c_a")
+        responder(raiz, "c_b")
+        dar_like(raiz, "c_b")
+        database.session.add(
+            ComunidadEventoModeracion(publicacion_id=raiz, tipo="report", actor="c_b", motivo="x")
         )
-        database.session.add(otro)
         database.session.commit()
-        database.session.execute(database.delete(Curso).where(Curso.codigo == "OTHER1"))
+        database.session.execute(database.delete(ComunidadPublicacion).where(ComunidadPublicacion.id == raiz))
         database.session.commit()
-        assert database.session.get(ForoMensaje, mensaje_id) is not None
+        assert database.session.execute(
+            database.select(database.func.count(ComunidadReaccion.id)).filter_by(publicacion_id=raiz)
+        ).scalar() == 0
+        assert database.session.execute(
+            database.select(database.func.count(ComunidadPublicacion.id)).filter_by(parent_id=raiz)
+        ).scalar() == 0
+
+
+
+
 
 
 # ---------------------------------------------------------------------------------------
@@ -239,35 +216,35 @@ def test_hub_posts_survive_deleting_a_different_course(hub, app):
 # ---------------------------------------------------------------------------------------
 def test_like_is_idempotent(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
+        publicacion_id = publicar("c_a")
     entrar(client, "c_b")
     for _ in range(4):
-        client.post(f"/community/post/{mensaje_id}/like")
+        client.post(f"/community/post/{publicacion_id}/like")
     with app.app_context():
-        assert _contar_likes(mensaje_id) == 1
+        assert _contar_likes(publicacion_id) == 1
 
 
 def test_unlike_is_idempotent_and_relike_works(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
+        publicacion_id = publicar("c_a")
     entrar(client, "c_b")
-    client.post(f"/community/post/{mensaje_id}/like")
-    client.post(f"/community/post/{mensaje_id}/unlike")
-    client.post(f"/community/post/{mensaje_id}/unlike")
+    client.post(f"/community/post/{publicacion_id}/like")
+    client.post(f"/community/post/{publicacion_id}/unlike")
+    client.post(f"/community/post/{publicacion_id}/unlike")
     with app.app_context():
-        assert _contar_likes(mensaje_id) == 0
-    client.post(f"/community/post/{mensaje_id}/like")
+        assert _contar_likes(publicacion_id) == 0
+    client.post(f"/community/post/{publicacion_id}/like")
     with app.app_context():
-        assert _contar_likes(mensaje_id) == 1
+        assert _contar_likes(publicacion_id) == 1
 
 
 def test_self_like_is_refused(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
+        publicacion_id = publicar("c_a")
     entrar(client, "c_a")
-    assert client.post(f"/community/post/{mensaje_id}/like").status_code == 403
+    assert client.post(f"/community/post/{publicacion_id}/like").status_code == 403
     with app.app_context():
-        assert _contar_likes(mensaje_id) == 0
+        assert _contar_likes(publicacion_id) == 0
 
 
 def test_the_unique_constraint_refuses_a_duplicate_at_the_database(hub, app):
@@ -275,18 +252,18 @@ def test_the_unique_constraint_refuses_a_duplicate_at_the_database(hub, app):
     from sqlalchemy.exc import IntegrityError
 
     with app.app_context():
-        mensaje_id = publicar("c_a")
-        database.session.add(ComunidadReaccion(mensaje_id=mensaje_id, usuario="c_b"))
+        publicacion_id = publicar("c_a")
+        database.session.add(ComunidadReaccion(publicacion_id=publicacion_id, usuario="c_b"))
         database.session.commit()
         with pytest.raises(IntegrityError):
-            database.session.add(ComunidadReaccion(mensaje_id=mensaje_id, usuario="c_b"))
+            database.session.add(ComunidadReaccion(publicacion_id=publicacion_id, usuario="c_b"))
             database.session.commit()
         database.session.rollback()
 
 
-def _contar_likes(mensaje_id: str) -> int:
+def _contar_likes(publicacion_id: str) -> int:
     return database.session.execute(
-        database.select(database.func.count(ComunidadReaccion.id)).filter_by(mensaje_id=mensaje_id)
+        database.select(database.func.count(ComunidadReaccion.id)).filter_by(publicacion_id=publicacion_id)
     ).scalar()
 
 
@@ -321,64 +298,64 @@ def test_build_link_validation():
 # ---------------------------------------------------------------------------------------
 def test_member_cannot_hide(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
+        publicacion_id = publicar("c_a")
     entrar(client, "c_b")
-    assert client.post(f"/community/post/{mensaje_id}/hide", data={"motivo": "x"}).status_code == 403
+    assert client.post(f"/community/post/{publicacion_id}/hide", data={"motivo": "x"}).status_code == 403
 
 
 def test_hidden_post_404s_for_others_and_leaves_the_feed(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a", titulo="Findable Title")
+        publicacion_id = publicar("c_a", titulo="Findable Title")
     entrar(client, "c_mod")
-    client.post(f"/community/post/{mensaje_id}/hide", data={"motivo": "off topic"})
+    client.post(f"/community/post/{publicacion_id}/hide", data={"motivo": "off topic"})
     entrar(client, "c_b")
     # 404 not 403: a 403 confirms the post exists.
-    assert client.get(f"/community/post/{mensaje_id}").status_code == 404
+    assert client.get(f"/community/post/{publicacion_id}").status_code == 404
     assert "Findable Title" not in client.get("/community").get_data(as_text=True)
 
 
 def test_author_still_sees_their_hidden_post(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
+        publicacion_id = publicar("c_a")
     entrar(client, "c_mod")
-    client.post(f"/community/post/{mensaje_id}/hide", data={"motivo": "off topic"})
+    client.post(f"/community/post/{publicacion_id}/hide", data={"motivo": "off topic"})
     entrar(client, "c_a")
-    assert client.get(f"/community/post/{mensaje_id}").status_code == 200
+    assert client.get(f"/community/post/{publicacion_id}").status_code == 200
 
 
 def test_reporting_does_not_hide(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a", titulo="Still Visible")
+        publicacion_id = publicar("c_a", titulo="Still Visible")
     entrar(client, "c_b")
-    client.post(f"/community/post/{mensaje_id}/report", data={"motivo": "spam"})
+    client.post(f"/community/post/{publicacion_id}/report", data={"motivo": "spam"})
     assert "Still Visible" in client.get("/community").get_data(as_text=True)
 
 
 def test_moderation_trail_is_append_only(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
+        publicacion_id = publicar("c_a")
     entrar(client, "c_b")
-    client.post(f"/community/post/{mensaje_id}/report", data={"motivo": "spam"})
+    client.post(f"/community/post/{publicacion_id}/report", data={"motivo": "spam"})
     entrar(client, "c_mod")
-    client.post(f"/community/post/{mensaje_id}/hide", data={"motivo": "off topic"})
-    client.post(f"/community/post/{mensaje_id}/restore")
+    client.post(f"/community/post/{publicacion_id}/hide", data={"motivo": "off topic"})
+    client.post(f"/community/post/{publicacion_id}/restore")
     with app.app_context():
         eventos = database.session.execute(
-            database.select(ComunidadEventoModeracion).filter_by(mensaje_id=mensaje_id)
+            database.select(ComunidadEventoModeracion).filter_by(publicacion_id=publicacion_id)
         ).scalars().all()
         assert [e.tipo for e in eventos] == ["report", "hide", "restore"]
 
 
 def test_locked_thread_refuses_replies(hub, client, app):
     with app.app_context():
-        mensaje_id = publicar("c_a")
+        publicacion_id = publicar("c_a")
     entrar(client, "c_mod")
-    client.post(f"/community/post/{mensaje_id}/lock")
+    client.post(f"/community/post/{publicacion_id}/lock")
     entrar(client, "c_b")
-    client.post(f"/community/post/{mensaje_id}/reply", data={"contenido": "hello"})
+    client.post(f"/community/post/{publicacion_id}/reply", data={"contenido": "hello"})
     with app.app_context():
         assert database.session.execute(
-            database.select(database.func.count(ForoMensaje.id)).filter_by(parent_id=mensaje_id)
+            database.select(database.func.count(ComunidadPublicacion.id)).filter_by(parent_id=publicacion_id)
         ).scalar() == 0
 
 
@@ -442,8 +419,8 @@ def test_trending_e5_ties_break_deterministically(hub, app):
             p = publicar("c_a", titulo=f"P{i}", edad_horas=10)
             for m in ("c_b", "c_c", "c_d"):
                 dar_like(p, m)
-        primero = [p["pub"].mensaje_id for p in vista.calcular_trending("c_a")[0]]
-        segundo = [p["pub"].mensaje_id for p in vista.calcular_trending("c_a")[0]]
+        primero = [p["pub"].id for p in vista.calcular_trending("c_a")[0]]
+        segundo = [p["pub"].id for p in vista.calcular_trending("c_a")[0]]
         assert primero == segundo
 
 

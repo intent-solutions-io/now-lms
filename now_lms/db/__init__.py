@@ -1632,11 +1632,14 @@ class PriorCredential(database.Model, BaseTabla):
 
 
 # ---------------------------------------------------------------------------------------
-# Community Hub — ADR-8 (000-docs/015-AT-ADEC-community-hub-storage.md)
+# Community Hub — ADR-10 (000-docs/017-AT-ADEC), which supersedes ADR-8.
 #
-# Post bodies and the reply tree live in the native `ForoMensaje`, which is NOT modified,
-# so course forums cannot regress. These three sidecars carry only what the platform has
-# no representation for: post metadata, reactions, and a moderation trail.
+# The Hub owns its own content. ADR-8 stored bodies in the native `ForoMensaje` and hung a
+# metadata sidecar off it; ADR-10 reversed that because the table count was identical either
+# way, and the container course it required brought a real blast radius: `ForoMensaje.curso_id`
+# is ondelete=CASCADE, so deleting one fake course row silently deleted every Hub post.
+#
+# `ForoMensaje` is untouched by either design, so course forums are unaffected.
 # ---------------------------------------------------------------------------------------
 
 # Member post types. `announcement` is deliberately absent: staff announcements stay in the
@@ -1652,45 +1655,57 @@ COMUNIDAD_EVENTOS: tuple[str, ...] = ("report", "hide", "restore", "lock", "unlo
 
 
 class ComunidadPublicacion(database.Model, BaseTabla):
-    """Metadata for one Community Hub root post.
+    """A Community Hub post, or a reply to one.
 
-    Exactly one row per Hub root post, joined to the native `ForoMensaje` that holds the
-    body. The Hub's feed INNER JOINs this table, so a `ForoMensaje` created some other way
-    (a course forum row, or a direct insert) simply does not appear in the Hub — which is
-    the containment property, not an accident.
+    Self-contained: this table owns the body, the author and the reply relationship, so the
+    Hub depends on no other model for its content. `parent_id` NULL means a root post;
+    non-NULL means a reply to that post.
 
-    `titulo` and `tipo` exist here rather than on `ForoMensaje` because that model is shared
-    with every course forum; adding columns to it would make "no course-forum regression"
-    something to prove by testing instead of something that cannot happen.
+    `titulo` and `tipo` are nullable because they belong to a root post — a reply has
+    neither. That is the one cost of collapsing the ADR-8 sidecar into this table, and it is
+    cheaper than the container course the sidecar required.
     """
 
     __tablename__ = "comunidad_publicacion"
     __table_args__ = (
-        database.UniqueConstraint("mensaje_id", name="uq_comunidad_publicacion_mensaje"),
         database.Index("ix_comunidad_publicacion_tipo_estado", "tipo", "estado_moderacion"),
+        database.Index("ix_comunidad_publicacion_parent_fecha", "parent_id", "fecha_creacion"),
     )
 
-    mensaje_id = database.Column(
+    parent_id = database.Column(
         database.String(26),
-        database.ForeignKey(LLAVE_FORANEA_FORO_MENSAJE, ondelete="CASCADE"),
-        nullable=False,
+        database.ForeignKey("comunidad_publicacion.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
-    titulo = database.Column(database.String(160), nullable=False)
-    tipo = database.Column(database.String(20), nullable=False, index=True)
-    estado_moderacion = database.Column(database.String(20), default="visible", nullable=False, index=True)
-    fijado = database.Column(database.Boolean(), default=False, nullable=False)
-    # Optional link to what the member built. Validated https-with-a-host at the form layer,
-    # so a `javascript:` value cannot reach a rendered anchor.
+    usuario = database.Column(
+        database.String(150), database.ForeignKey(LLAVE_FORANEA_USUARIO), nullable=False, index=True
+    )
+    contenido = database.Column(database.Text, nullable=False)
+    fecha_creacion = database.Column(database.DateTime, default=utc_now, nullable=False, index=True)
+
+    # Root-post fields. NULL on replies.
+    titulo = database.Column(database.String(160), nullable=True)
+    tipo = database.Column(database.String(20), nullable=True, index=True)
     enlace_build = database.Column(database.String(500), nullable=True)
-    # A queue hint for the moderation view. The append-only trail is the authority; this is
-    # only here so the queue does not need an aggregate on every page load.
+    fijado = database.Column(database.Boolean(), default=False, nullable=False)
+
+    estado_moderacion = database.Column(database.String(20), default="visible", nullable=False, index=True)
+    # Thread lock, same vocabulary the native forum uses so the concept reads the same.
+    estado = database.Column(database.String(20), default="abierto", nullable=False)
+    # A queue hint for the moderation view. The append-only trail is the authority.
     reportes_abiertos = database.Column(database.Integer, default=0, nullable=False)
 
-    mensaje = database.relationship("ForoMensaje", foreign_keys=[mensaje_id])
+    autor = database.relationship("Usuario", foreign_keys=[usuario])
+    parent = database.relationship("ComunidadPublicacion", remote_side="ComunidadPublicacion.id", back_populates="respuestas")
+    respuestas = database.relationship("ComunidadPublicacion", back_populates="parent")
+
+    def es_raiz(self) -> bool:
+        """True for a top-level post."""
+        return self.parent_id is None
 
     def es_visible(self) -> bool:
-        """True when the post is not hidden by a moderator."""
+        """True when not hidden by a moderator."""
         return self.estado_moderacion == "visible"
 
 
@@ -1698,29 +1713,24 @@ class ComunidadReaccion(database.Model, BaseTabla):
     """One member liked one root post.
 
     The unique constraint is the whole point of this table. One member, one like is a
-    property of a pair, and enforcing it needs a row the database can refuse — which is why
-    ADR-8 could not keep the 2026-08-02 recommendation's no-new-table clause once likes
-    became a requirement.
+    property of a pair, and enforcing it needs a row the database can refuse.
 
-    There is exactly one reaction and it is positive. No polarity column, no type: the
-    owner ruled there is no thumbs-down, so adding one is a schema change and a product
-    change together, not a config flag.
+    There is exactly one reaction and it is positive. No polarity column, no type: the owner
+    ruled there is no thumbs-down, so adding one is a schema change and a product change
+    together, not a config flag.
     """
 
     __tablename__ = "comunidad_reaccion"
     __table_args__ = (
-        database.UniqueConstraint("mensaje_id", "usuario", name="uq_comunidad_reaccion_una_por_miembro"),
+        database.UniqueConstraint("publicacion_id", "usuario", name="uq_comunidad_reaccion_una_por_miembro"),
     )
 
-    mensaje_id = database.Column(
+    publicacion_id = database.Column(
         database.String(26),
-        database.ForeignKey(LLAVE_FORANEA_FORO_MENSAJE, ondelete="CASCADE"),
+        database.ForeignKey("comunidad_publicacion.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    # ondelete CASCADE so removing an account cannot wedge on a leftover like. Note this
-    # differs from `ForoMensaje.usuario_id`, which declares no ondelete; deactivation
-    # (`Usuario.activo = False`) is the normal path here, not deletion.
     usuario = database.Column(
         database.String(150),
         database.ForeignKey(LLAVE_FORANEA_USUARIO, ondelete="CASCADE"),
@@ -1732,19 +1742,19 @@ class ComunidadReaccion(database.Model, BaseTabla):
 class ComunidadEventoModeracion(database.Model, BaseTabla):
     """Append-only record of everything that happened to a post's moderation state.
 
-    Holds member reports and staff actions together, chronologically, because they are one
-    concept: the history of how this post came to be in the state it is in. Nothing in the
-    Hub hard-deletes, so this trail is complete by construction.
+    Member reports and staff actions together, chronologically, because they are one
+    concept: how this post came to be in the state it is in. Nothing in the Hub
+    hard-deletes, so the trail is complete by construction.
     """
 
     __tablename__ = "comunidad_evento_moderacion"
     __table_args__ = (
-        database.Index("ix_comunidad_evento_mensaje_fecha", "mensaje_id", "ocurrido_en"),
+        database.Index("ix_comunidad_evento_publicacion_fecha", "publicacion_id", "ocurrido_en"),
     )
 
-    mensaje_id = database.Column(
+    publicacion_id = database.Column(
         database.String(26),
-        database.ForeignKey(LLAVE_FORANEA_FORO_MENSAJE, ondelete="CASCADE"),
+        database.ForeignKey("comunidad_publicacion.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -1752,8 +1762,6 @@ class ComunidadEventoModeracion(database.Model, BaseTabla):
     actor = database.Column(
         database.String(150), database.ForeignKey(LLAVE_FORANEA_USUARIO), nullable=False, index=True
     )
-    # Required on `report` and `hide`, enforced at the form layer: a moderator hiding a
-    # member's post owes a reason, and a report with no reason is not actionable.
     motivo = database.Column(database.String(500), nullable=True)
     ocurrido_en = database.Column(database.DateTime, default=utc_now, nullable=False)
 

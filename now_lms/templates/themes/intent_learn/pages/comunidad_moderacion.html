@@ -21,7 +21,7 @@
                             <ul class="list-group list-group-flush">
                                 {% for item in reportados %}
                                 <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
-                                    <a href="{{ url_for('comunidad.ver_publicacion', mensaje_id=item.pub.mensaje_id) }}"
+                                    <a href="{{ url_for('comunidad.ver_publicacion', publicacion_id=item.pub.id) }}"
                                        class="text-decoration-none">{{ item.pub.titulo }}</a>
                                     <span class="badge bg-secondary flex-shrink-0">{{ item.pub.reportes_abiertos }}</span>
                                 </li>

@@ -629,16 +629,6 @@ def _delete_course(db, models, code: str) -> bool:
     Used by ``--reset`` to allow re-seeding a course that has no learner data yet
     (deleting an Evaluation cascades to its questions + options).
     """
-    # The Community Hub container is never deletable from here. ForoMensaje.curso_id is
-    # ondelete=CASCADE, so removing that one row silently deletes every member post, reply
-    # and like in the Hub — and this function documents a "no learner data yet"
-    # precondition it does not enforce. Refuse loudly instead.
-    if code.upper() == "COMMUNITY":
-        raise SystemExit(
-            "Refusing to delete COMMUNITY: it is the Community Hub container, and "
-            "foro_mensaje.curso_id cascades, so this would delete every member post."
-        )
-
     Curso = models["Curso"]
     curso = db.session.execute(db.select(Curso).filter_by(codigo=code)).scalar_one_or_none()
     if curso is None:

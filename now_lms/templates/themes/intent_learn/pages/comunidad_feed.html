@@ -37,7 +37,7 @@
                             <i class="bi bi-pin-angle-fill text-primary mt-1" aria-hidden="true"></i>
                             <span class="visually-hidden">{{ _('Pinned') }}</span>
                             <div>
-                                <a href="{{ url_for('comunidad.ver_publicacion', mensaje_id=item.pub.mensaje_id) }}"
+                                <a href="{{ url_for('comunidad.ver_publicacion', publicacion_id=item.pub.id) }}"
                                    class="fw-semibold text-decoration-none">{{ item.pub.titulo }}</a>
                                 <div class="small text-muted">{{ item.autor.nombre }} {{ item.autor.apellido }}</div>
                             </div>
@@ -98,7 +98,7 @@
                                 <div class="flex-grow-1">
                                     <span class="badge bg-secondary mb-1">{{ item.etiqueta }}</span>
                                     <div>
-                                        <a href="{{ url_for('comunidad.ver_publicacion', mensaje_id=item.pub.mensaje_id) }}"
+                                        <a href="{{ url_for('comunidad.ver_publicacion', publicacion_id=item.pub.id) }}"
                                            class="fw-semibold text-decoration-none">{{ item.pub.titulo }}</a>
                                     </div>
                                     <div class="small text-muted">
@@ -109,7 +109,7 @@
                                 </div>
                                 {% if not item.es_propio %}
                                 <form method="post" class="flex-shrink-0"
-                                      action="{{ url_for('comunidad.quitar_like' if item.me_gusta else 'comunidad.dar_like', mensaje_id=item.pub.mensaje_id) }}">
+                                      action="{{ url_for('comunidad.quitar_like' if item.me_gusta else 'comunidad.dar_like', publicacion_id=item.pub.id) }}">
                                     {{ accion_form.csrf_token }}
                                     <button type="submit"
                                             class="btn btn-sm {{ 'btn-primary' if item.me_gusta else 'btn-outline-secondary' }}"
