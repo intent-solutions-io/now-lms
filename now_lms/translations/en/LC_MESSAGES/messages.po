@@ -7526,7 +7526,7 @@ msgstr "Code:"
 
 #: now_lms/templates/learning/curso/admin_enroll.html:112
 msgid "Tipo:"
-msgstr "Guy:"
+msgstr "Type:"
 
 #: now_lms/templates/learning/curso/admin_enroll.html:118
 msgid "Auditable"
