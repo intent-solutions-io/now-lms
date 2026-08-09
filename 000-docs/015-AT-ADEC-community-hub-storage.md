@@ -6,10 +6,10 @@
 |---|---|
 | **ADR Number** | ADR-8 |
 | **Title** | Build the Community Hub on native forum storage, with three sidecar tables for the metadata, reactions and moderation trail the platform cannot represent |
-| **Status** | Proposed |
+| **Status** | **Accepted** |
 | **Date** | 2026-08-08 |
+| **Ruled** | 2026-08-08 by Max Sheahan — Option §4.4 (native bodies and replies plus three sidecar tables). §4.2, the upstream-shaped alternative, remains the named V2 target under the §6 triggers. |
 | **Author** | Filed ahead of the implementation on `feat/community-hub` |
-| **Decision needed from** | Repo owner — accept, amend, or reject. **Schema work does not start until this is ruled on.** |
 | **Note on numbering** | ADR-6 (short-answer evaluations) is claimed by the open PR #37. ADR-7 is `014-AT-ADEC`. This decision takes ADR-8 and document number `015`, the next free slot on `deploy/now-lms-fixed`. |
 
 ## 1. Decision Summary

@@ -31,8 +31,7 @@ files with an 8+ doc cluster, and we are far under both thresholds.
 | [012-OD-AACR-founding-members-provisioned-on-prod-2026-07-28.md](012-OD-AACR-founding-members-provisioned-on-prod-2026-07-28.md) | After-action record (2026-07-28): the founding-member cohort provisioned on production from the intent-os estate session, plus the standing constraints for this repo's sessions. **Redacted** for the public repo — the unredacted evidence lives in the private intent-os record. |
 | [013-OD-AACR-v2-sync-landing-and-upstream-queue-2026-07-29.md](013-OD-AACR-v2-sync-landing-and-upstream-queue-2026-07-29.md) | After-action record (2026-07-29): the v2.0.0 sync landing on production, the cohort-wide access lockout and its fix, testing gates going from advisory to blocking, the eight upstream patches, the public-history rewrite, and what is still open. Read with 012 and 007. |
 | [014-AT-ADEC-prior-credential-tracking.md](014-AT-ADEC-prior-credential-tracking.md) | ADR-7 (2026-07-31, Proposed): learner-reported prior credentials get a dedicated `prior_credentials` table with a required issuer verification URL and an optional privately-served image — a deliberate ADR-1 deviation, carried fork-local with an upstream path. |
-| [015-AT-ADEC-community-hub-storage.md](015-AT-ADEC-community-hub-storage.md) | ADR-8 (2026-08-08, Proposed): the Community Hub stores post bodies and replies in the native `foro_mensaje` table and adds three sidecar tables for metadata, likes and the moderation trail. Strikes the no-new-table clause of the 2026-08-02 `/feed` recommendation, which predates the likes requirement; keeps the rest of it. `ForoMensaje` is not modified. |
-| [016-AT-ADEC-member-dashboard.md](016-AT-ADEC-member-dashboard.md) | ADR-9 (2026-08-08, Proposed): members get a fork-local dashboard at `/dashboard` instead of the upstream student panel, which cannot be themed and showed a fabricated counter while hiding the member's own stored progress. Instructors and moderators keep the upstream panel. |
+| [015-AT-ADEC-community-hub-storage.md](015-AT-ADEC-community-hub-storage.md) | ADR-8 (2026-08-08, Accepted): the Community Hub stores post bodies and replies in the native `foro_mensaje` table and adds three sidecar tables for metadata, likes and the moderation trail. Strikes the no-new-table clause of the 2026-08-02 `/feed` recommendation, which predates the likes requirement; keeps the rest of it. `ForoMensaje` is not modified. |
 
 ## Architecture Decisions (the ADR log)
 
@@ -52,8 +51,7 @@ table of contents, in decision order.
 | ADR-5 | [010](010-AT-ADEC-gate-courses-doctrine-teaser.md) | 2026-07-27 | Accepted | Gate the courses; the public catalog becomes a doctrine teaser |
 | ADR-6 | — (open PR #37) | — | Proposed | Short-answer question type with instructor grading. Not merged; the number is reserved by that branch |
 | ADR-7 | [014](014-AT-ADEC-prior-credential-tracking.md) | 2026-07-31 | Proposed | Dedicated `prior_credentials` table; verification URL required, image optional and privately served |
-| ADR-8 | [015](015-AT-ADEC-community-hub-storage.md) | 2026-08-08 | Proposed | Community Hub on native `foro_mensaje` bodies and replies, plus three sidecar tables for metadata, likes and the moderation trail |
-| ADR-9 | [016](016-AT-ADEC-member-dashboard.md) | 2026-08-08 | Proposed | Fork-local member dashboard at `/dashboard`; the upstream student panel stays for instructors and moderators |
+| ADR-8 | [015](015-AT-ADEC-community-hub-storage.md) | 2026-08-08 | Accepted | Community Hub on native `foro_mensaje` bodies and replies, plus three sidecar tables for metadata, likes and the moderation trail |
 
 ## Renames & moves (references in old commit messages resolve here)
 
