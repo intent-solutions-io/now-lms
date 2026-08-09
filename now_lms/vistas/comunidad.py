@@ -129,6 +129,51 @@ def enlace_valido(bruto: str | None) -> bool:
     return partes.scheme in ("http", "https") and bool(partes.netloc)
 
 
+# How much of a post body the feed shows before "See more". Long enough that most
+# short posts render whole, short enough that one post cannot own the screen.
+EXTRACTO_MAX = 320
+
+
+def texto_plano(markdown_bruto: str) -> str:
+    """Body as plain text, for the feed excerpt.
+
+    Renders and sanitises first, then strips every tag, so the excerpt cannot
+    carry markup into the card and cannot be used to break the layout.
+    """
+    html = markdown_seguro(markdown_bruto or "")
+    return " ".join(clean(html, tags=[], attributes={}, strip=True).split())
+
+
+def extracto(markdown_bruto: str) -> tuple[str, bool]:
+    """Return (excerpt, truncated). Cuts on a word boundary, never mid-word."""
+    plano = texto_plano(markdown_bruto)
+    if len(plano) <= EXTRACTO_MAX:
+        return plano, False
+    corte = plano[:EXTRACTO_MAX].rsplit(" ", 1)[0]
+    return corte, True
+
+
+def hace(momento) -> str:
+    """Compact relative age: 3h, 2d, 5w. Falls back to a date past a year."""
+    if not momento:
+        return ""
+    segundos = (utc_now().replace(tzinfo=None) - momento).total_seconds()
+    if segundos < 60:
+        return _("just now")
+    for umbral, divisor, sufijo in ((3600, 60, "m"), (86400, 3600, "h"), (604800, 86400, "d"), (31536000, 604800, "w")):
+        if segundos < umbral:
+            return f"{int(segundos // divisor)}{sufijo}"
+    return momento.strftime("%b %Y")
+
+
+def iniciales(autor) -> str:
+    """Two letters for the avatar circle, falling back to the username."""
+    partes = [p for p in (autor.nombre, autor.apellido) if p]
+    if partes:
+        return "".join(p[0] for p in partes[:2]).upper()
+    return (autor.usuario or "?")[:2].upper()
+
+
 # ---------------------------------------------------------------------------------------
 # Rate limiting. In-process sliding window keyed on the member, following
 # vistas/request_access.py. The repo's `check_rate_limit` helper is deliberately NOT used:
@@ -277,18 +322,26 @@ def _decorar(filas, usuario: str) -> list[dict]:
     """Attach counts to a page of posts without a query per row."""
     ids = [pub.id for pub, _ in filas]
     likes, respuestas, mios = _agregados(ids, usuario)
-    return [
-        {
-            "pub": pub,
-            "autor": autor,
-            "likes": likes.get(pub.id, 0),
-            "respuestas": respuestas.get(pub.id, 0),
-            "me_gusta": pub.id in mios,
-            "es_propio": pub.usuario == usuario,
-            "etiqueta": TIPO_ETIQUETAS.get(pub.tipo, pub.tipo),
-        }
-        for pub, autor in filas
-    ]
+    decorados = []
+    for pub, autor in filas:
+        cuerpo, cortado = extracto(pub.contenido)
+        decorados.append(
+            {
+                "pub": pub,
+                "autor": autor,
+                "likes": likes.get(pub.id, 0),
+                "respuestas": respuestas.get(pub.id, 0),
+                "me_gusta": pub.id in mios,
+                "es_propio": pub.usuario == usuario,
+                "etiqueta": TIPO_ETIQUETAS.get(pub.tipo, pub.tipo),
+                "extracto": cuerpo,
+                "cortado": cortado,
+                "hace": hace(pub.fecha_creacion),
+                "iniciales": iniciales(autor),
+                "nombre": " ".join(p for p in (autor.nombre, autor.apellido) if p) or autor.usuario,
+            }
+        )
+    return decorados
 
 
 def calcular_trending(usuario: str) -> tuple[list[dict], bool]:
@@ -471,6 +524,7 @@ def feed() -> str:
         tipos=[(t, TIPO_ETIQUETAS[t]) for t in COMUNIDAD_TIPOS],
         es_staff=es_staff(),
         accion_form=AccionForm(),
+        mis_iniciales=iniciales(current_user),
     )
 
 

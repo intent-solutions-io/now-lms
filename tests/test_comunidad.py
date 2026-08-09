@@ -575,3 +575,93 @@ def test_feed_shows_native_announcements_not_a_hub_post_type(hub, client, app):
     entrar(client, "c_a")
     assert "Cohort call moves to Thursday" in client.get("/community").get_data(as_text=True)
     assert "announcement" not in vista.COMUNIDAD_TIPOS
+
+
+# ---------------------------------------------------------------------------------------
+# Feed presentation — the card shows the post, not just its title
+# ---------------------------------------------------------------------------------------
+def test_feed_shows_post_content_not_just_the_title(hub, client, app):
+    with app.app_context():
+        pub = ComunidadPublicacion(
+            parent_id=None,
+            usuario="c_a",
+            contenido="The body of the post that a reader should be able to see without clicking.",
+            titulo="A Title",
+            tipo="build",
+            estado_moderacion="visible",
+            estado="abierto",
+            fijado=False,
+            reportes_abiertos=0,
+        )
+        database.session.add(pub)
+        database.session.commit()
+    entrar(client, "c_b")
+    cuerpo = client.get("/community").get_data(as_text=True)
+    assert "A Title" in cuerpo
+    assert "body of the post that a reader should be able to see" in cuerpo
+
+
+def test_long_bodies_are_truncated_on_a_word_boundary_with_see_more(hub, client, app):
+    largo = "word " * 200
+    with app.app_context():
+        pub = ComunidadPublicacion(
+            parent_id=None,
+            usuario="c_a",
+            contenido=largo,
+            titulo="Long One",
+            tipo="build",
+            estado_moderacion="visible",
+            estado="abierto",
+            fijado=False,
+            reportes_abiertos=0,
+        )
+        database.session.add(pub)
+        database.session.commit()
+    entrar(client, "c_b")
+    cuerpo = client.get("/community").get_data(as_text=True)
+    assert "See more" in cuerpo
+    texto, cortado = vista.extracto(largo)
+    assert cortado is True
+    assert len(texto) <= vista.EXTRACTO_MAX
+    assert not texto.endswith("wor"), "excerpt cut mid-word"
+
+
+def test_excerpt_carries_no_markup(hub, client, app):
+    """The excerpt is inert text: no live tag reaches the card.
+
+    A `<script>` in a body survives as the escaped characters `&lt;script&gt;`,
+    which render as visible text and execute nothing. What must never appear is a
+    real angle bracket opening a tag, so that is what this asserts — both in the
+    helper's output and in the rendered page, since Jinja escapes it again.
+    """
+    salida, _cortado = vista.extracto("**bold** and <script>alert(1)</script> and [a](https://e.test)")
+    assert "<" not in salida, "a raw angle bracket reached the excerpt"
+    assert "bold" in salida, "markdown emphasis should be flattened to its text"
+
+    with app.app_context():
+        database.session.add(
+            ComunidadPublicacion(
+                parent_id=None,
+                usuario="c_a",
+                contenido="<script>alert(1)</script> hello",
+                titulo="XSS Probe",
+                tipo="build",
+                estado_moderacion="visible",
+                estado="abierto",
+                fijado=False,
+                reportes_abiertos=0,
+            )
+        )
+        database.session.commit()
+    entrar(client, "c_b")
+    cuerpo = client.get("/community").get_data(as_text=True)
+    assert "<script>alert(1)</script>" not in cuerpo
+
+
+def test_relative_age_is_compact(hub):
+    from datetime import timedelta as _td
+
+    ahora = utc_now().replace(tzinfo=None)
+    assert vista.hace(ahora - _td(hours=3)) == "3h"
+    assert vista.hace(ahora - _td(days=2)) == "2d"
+    assert vista.hace(ahora - _td(seconds=10)) == "just now"
