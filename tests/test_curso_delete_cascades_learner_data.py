@@ -129,3 +129,45 @@ def test_delete_course_with_both_still_cascades_cleanly(app, db_session):
     database.session.commit()
 
     assert database.session.execute(database.select(Curso).filter_by(codigo="CASCADE-DEL-3")).scalar_one_or_none() is None
+
+
+def test_delete_course_after_loading_its_calendar_events(app, db_session):
+    """The case `passive_deletes=True` does NOT cover, found by review on PR #78.
+
+    `passive_deletes=True` stops SQLAlchemy loading unloaded children in order to
+    disassociate them, but it does not stop it disassociating children that are
+    ALREADY in the session. `UserEvent.course_id` is NOT NULL, so nulling a loaded
+    row raises IntegrityError even though the database would have cascaded happily.
+
+    The three sibling relationships are `lazy="dynamic"` and therefore can never be
+    loaded into the session, which is why only `user_events` needs the stronger
+    setting. Touching `curso.user_events` before the delete is all it takes, and any
+    view that renders a course's calendar does exactly that.
+    """
+    from datetime import datetime, timezone
+
+    _make_course("CASCADE-DEL-4")
+    _make_user("cascade.loaded.user")
+    database.session.add(
+        UserEvent(
+            user_id="cascade.loaded.user",
+            course_id="CASCADE-DEL-4",
+            resource_type="meet",
+            title="Live session",
+            start_time=datetime.now(timezone.utc),
+        )
+    )
+    database.session.commit()
+
+    curso = database.session.execute(database.select(Curso).filter_by(codigo="CASCADE-DEL-4")).scalar_one()
+
+    # The difference from the sibling test: load the collection first.
+    assert len(curso.user_events) == 1
+
+    database.session.delete(curso)
+    database.session.commit()  # must not raise IntegrityError
+
+    remaining = database.session.execute(
+        database.select(UserEvent).filter_by(course_id="CASCADE-DEL-4")
+    ).scalar_one_or_none()
+    assert remaining is None, "the DB's own ON DELETE CASCADE should have removed the loaded calendar event"
