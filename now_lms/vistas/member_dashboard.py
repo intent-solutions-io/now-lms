@@ -39,11 +39,6 @@ an N+1 across a dashboard.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------------------
-# Standard library
-# ---------------------------------------------------------------------------------------
-from datetime import datetime
-
-# ---------------------------------------------------------------------------------------
 # Third-party libraries
 # ---------------------------------------------------------------------------------------
 from flask import Blueprint, render_template
@@ -64,6 +59,7 @@ from now_lms.db import (
     PriorCredential,
     database,
     select,
+    utc_now,
 )
 from now_lms.vistas.prior_credentials import CREDENTIAL_TOTAL
 
@@ -98,9 +94,10 @@ def _cursos_con_avance(usuario: str) -> list[dict]:
 
     cursos = []
     for curso, avance in filas:
-        # `avance` is Numeric when asdecimal=True, so coerce before rounding —
-        # a Decimal reaching the template formats differently across backends.
-        porcentaje = int(round(float(avance.avance))) if avance and avance.avance is not None else 0
+        # `avance` is Decimal on PostgreSQL (Float(asdecimal=True)) and float on
+        # SQLite, and a Decimal reaching the template formats differently. round()
+        # on a float already returns int, so no cast is needed after the coerce.
+        porcentaje = round(float(avance.avance)) if avance and avance.avance is not None else 0
         cursos.append(
             {
                 "curso": curso,
@@ -123,7 +120,10 @@ def _anuncios_fijados() -> list[Announcement]:
     CRUD with stickiness and expiry, and a second announcement concept would be
     two channels for the same message.
     """
-    ahora = datetime.now()
+    # Naive UTC, matching Announcement.is_active() and how expires_at is stored.
+    # The native view compared against datetime.now(), which is local time, so on
+    # a non-UTC host it retired announcements early or late by the offset.
+    ahora = utc_now().replace(tzinfo=None)
     return list(
         database.session.execute(
             select(Announcement)
