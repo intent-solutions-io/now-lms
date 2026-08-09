@@ -239,11 +239,12 @@ def _elimina_vistas_por_usuario(usuario: str, rutas: list[str]) -> None:
 def _obtiene_roster_curso(course_code: str) -> set[str]:
     """Usuarios cuya cache por-usuario de este curso debe invalidarse: estudiantes
     matriculados, docentes y moderadores asignados al curso."""
-    from now_lms.db import DocenteCurso, EstudianteCurso, ModeradorCurso
+    from now_lms.db import DocenteCurso, EstudianteCurso, ModeradorCurso, database
 
     roster: set[str] = set()
     for modelo in (EstudianteCurso, DocenteCurso, ModeradorCurso):
-        roster.update(row.usuario for row in modelo.query.filter_by(curso=course_code).all())
+        rows = database.session.execute(database.select(modelo).filter_by(curso=course_code)).scalars().all()
+        roster.update(row.usuario for row in rows)
     return roster
 
 
