@@ -10717,7 +10717,7 @@ msgstr "Modern and complete learning management system."
 #: now_lms/templates/themes/ocean/footer.j2:51 now_lms/templates/themes/oxford/footer.j2:51
 #: now_lms/templates/themes/sakura/footer.j2:51
 msgid "Síguenos"
-msgstr "follow us"
+msgstr "Follow us"
 
 #: now_lms/templates/themes/cambridge/footer.j2:114 now_lms/templates/themes/corporative/footer.j2:114
 #: now_lms/templates/themes/excel/footer.j2:114 now_lms/templates/themes/harvard/footer.j2:114
