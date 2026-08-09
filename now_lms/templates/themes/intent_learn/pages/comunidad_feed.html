@@ -35,6 +35,14 @@
                 display: inline-flex; align-items: center; min-height: 44px; padding-right: .25rem;
             }
             .isl-action:hover, button.isl-action:hover { color: var(--isl-ember, #f97316); }
+            .isl-avatar-sm { width: 32px; height: 32px; font-size: .7rem; }
+            /* Date chip in the events list, mirroring the reference's stacked day/month. */
+            .isl-date {
+                width: 44px; padding: .35rem 0; border-radius: .5rem; text-align: center;
+                background: var(--isl-surface-2, #1f1f23); line-height: 1.1;
+            }
+            .isl-date strong { display: block; font-size: 1rem; color: var(--isl-ink, #fafafa); }
+            .isl-date span { display: block; font-size: .65rem; color: var(--isl-ink-faint, #71717a); }
             .min-width-0 { min-width: 0; }
         </style>
     </head>
@@ -57,6 +65,8 @@
                     </div>
                 </div>
 
+                <div class="row g-4">
+                <div class="col-12 col-lg-8">
                 {# Composer entry, matching the reference: one obvious way in. #}
                 <a href="{{ url_for('comunidad.nueva_publicacion') }}"
                    class="card mb-3 text-decoration-none isl-composer">
@@ -228,6 +238,58 @@
                     <a href="{{ url_for('comunidad.moderacion') }}" class="small text-decoration-none">{{ _('Moderation queue') }}</a>
                 </p>
                 {% endif %}
+                </div>
+
+                {# ---- Right sidebar ---- #}
+                <div class="col-12 col-lg-4">
+                    <div class="card mb-4">
+                        <div class="card-header">{{ _('Upcoming events') }}</div>
+                        {% if eventos %}
+                        <ul class="list-group list-group-flush">
+                            {% for evento in eventos %}
+                            <li class="list-group-item d-flex align-items-start gap-3">
+                                <span class="isl-date flex-shrink-0" aria-hidden="true">
+                                    <strong>{{ evento.start_time.strftime('%d') }}</strong>
+                                    <span>{{ evento.start_time.strftime('%b')|upper }}</span>
+                                </span>
+                                <span class="min-width-0">
+                                    <span class="d-block fw-semibold">{{ evento.title }}</span>
+                                    <span class="d-block small text-muted">{{ evento.start_time.strftime('%-I:%M %p') }}</span>
+                                </span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        <div class="card-body py-2">
+                            <a href="{{ url_for('calendar.calendar_view') }}"
+                               class="small text-decoration-none">{{ _('Open calendar') }}</a>
+                        </div>
+                        {% else %}
+                        <div class="card-body text-muted small">{{ _('Nothing scheduled.') }}</div>
+                        {% endif %}
+                    </div>
+
+                    {# Only rendered when Trending actually ranks. Below the threshold the
+                       card is omitted entirely rather than showing filler under a label
+                       that would then be untrue. #}
+                    {% if destacados %}
+                    <div class="card mb-4">
+                        <div class="card-header">{{ _('Trending posts') }}</div>
+                        <ul class="list-group list-group-flush">
+                            {% for item in destacados %}
+                            <li class="list-group-item d-flex align-items-start gap-3">
+                                <span class="isl-avatar isl-avatar-sm flex-shrink-0" aria-hidden="true">{{ item.iniciales }}</span>
+                                <span class="min-width-0">
+                                    <a href="{{ url_for('comunidad.ver_publicacion', publicacion_id=item.pub.id) }}"
+                                       class="d-block text-decoration-none isl-post-title">{{ item.pub.titulo }}</a>
+                                    <span class="d-block small text-muted">{{ item.nombre }}</span>
+                                </span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+                </div>
             </div>
         </main>
         {{ current_theme.footer() }}

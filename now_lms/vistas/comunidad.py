@@ -51,6 +51,7 @@ from wtforms.validators import Optional as OptionalValidator
 # Local resources
 # ---------------------------------------------------------------------------------------
 from now_lms.auth import email_verificado_requerido
+from now_lms.calendar_utils import get_upcoming_events_for_user
 from now_lms.config import DIRECTORIO_PLANTILLAS
 from now_lms.db import (
     COMUNIDAD_TIPOS,
@@ -512,9 +513,15 @@ def feed() -> str:
         ).all()
         publicaciones = _decorar(filas, usuario)
 
+    # Sidebar. Trending is shown only when it genuinely ranks — a shortlist of
+    # three posts labelled "Trending" on thin data is the fabrication the fallback
+    # exists to prevent, so the card is omitted rather than filled with filler.
+    destacados, hay_destacados = calcular_trending(usuario)
     return render_template(
         FEED_TEMPLATE,
         publicaciones=publicaciones,
+        eventos=get_upcoming_events_for_user(usuario, limit=5),
+        destacados=destacados[:4] if hay_destacados else [],
         anclados=_anclados(usuario) if not consulta and not tipo else [],
         anuncios=anuncios_activos() if not consulta and not tipo else [],
         vista=vista,
