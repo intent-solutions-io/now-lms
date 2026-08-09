@@ -1374,7 +1374,7 @@ msgstr "State"
 #: now_lms/templates/learning/resources_new/editar_recurso_img.html:45
 #: now_lms/templates/masterclass/admin_list.html:42
 msgid "Tipo"
-msgstr "Guy"
+msgstr "Type"
 
 #: now_lms/forms/__init__.py:735
 msgid "Genero"
