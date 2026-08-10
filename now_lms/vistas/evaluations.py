@@ -265,7 +265,7 @@ def evaluation_result(attempt_id: int) -> str:
     return render_template(get_evaluation_result_template(), attempt=attempt)
 
 
-def _course_questions_by_domain(course_code: str, usuario: str) -> tuple[list[dict], dict]:
+def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dict]:
     """Every labelled question in a course, grouped by domain, with the member's standing.
 
     Reads across the course's evaluations rather than a single one, because a domain's
@@ -288,12 +288,28 @@ def _course_questions_by_domain(course_code: str, usuario: str) -> tuple[list[di
     if not section_ids:
         return [], {}
 
-    evaluation_ids = [
-        row.id
-        for row in database.session.execute(
+    evaluations = list(
+        database.session.execute(
             database.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))
         ).scalars()
+    )
+
+    # Practice NEVER draws from a scored exam. Those questions are the answer key to an
+    # attempt the member has not made yet, and this surface reveals the correct option
+    # and the rationale on click — so including them let anyone read the mock exam's
+    # answers, then sit it. Unlimited-attempt practice quizzes already show their own
+    # answers after a submission, so drawing from those discloses nothing new.
+    #
+    # Access is delegated to `can_user_access_evaluation` per evaluation rather than
+    # re-checked here. An `EstudianteCurso` row merely existing is a weaker gate than
+    # the platform's: it ignores `pagado`/`pago` and inactive enrollments, so an unpaid
+    # enrollment could reach paid questions.
+    practice_ids = [
+        evaluation.id
+        for evaluation in evaluations
+        if not evaluation.is_exam and can_user_access_evaluation(evaluation, user)
     ]
+    evaluation_ids = practice_ids
     if not evaluation_ids:
         return [], {}
 
@@ -307,19 +323,38 @@ def _course_questions_by_domain(course_code: str, usuario: str) -> tuple[list[di
     )
 
     # Latest answer per question for this member, newest attempt last so it wins.
+    #
+    # Keyed by question TEXT, not id. The same bank item exists as several rows, and
+    # de-duplication below keeps only one of them — so an answer recorded against the
+    # mock-exam copy would never match the surviving section-quiz row, and the card
+    # would report "not attempted" for a question the member has answered. Standing is
+    # about the item, not the row.
+    #
+    # Attempts are read across EVERY evaluation in the course, including exams: the
+    # exam is where most items get answered, and reading a member's own history is not
+    # the disclosure the exam filter above guards against.
+    all_evaluation_ids = [evaluation.id for evaluation in evaluations]
     latest: dict[str, list] = {}
     attempts = list(
         database.session.execute(
             database.select(EvaluationAttempt)
-            .filter(EvaluationAttempt.evaluation_id.in_(evaluation_ids))
-            .filter_by(user_id=usuario)
+            .filter(EvaluationAttempt.evaluation_id.in_(all_evaluation_ids))
+            .filter_by(user_id=user.usuario)
             .order_by(EvaluationAttempt.started_at)
         ).scalars()
     )
     for attempt in attempts:
         for answer in attempt.answers:
-            if answer.selected_option_ids:
-                latest[answer.question_id] = sorted(json.loads(answer.selected_option_ids))
+            if not answer.selected_option_ids or answer.question is None:
+                continue
+            chosen = set(json.loads(answer.selected_option_ids))
+            # Stored as option TEXT, not option id. Each duplicated question row owns
+            # its own QuestionOption rows, so the ids of the mock-exam copy never match
+            # the section-quiz copy's — comparing ids across copies can only ever say
+            # "wrong". Text is the identity the seeder copies verbatim from the bank.
+            latest[answer.question.text] = sorted(
+                option.text for option in answer.question.options if option.id in chosen
+            )
 
     # The same bank item is seeded more than once on purpose: a course's mock exam
     # re-imports the whole bank that its section quizzes already cover, so CCA-A holds
@@ -346,11 +381,11 @@ def _course_questions_by_domain(course_code: str, usuario: str) -> tuple[list[di
              "total": 0, "seen": 0, "correct": 0},
         )
         row["total"] += 1
-        selected = latest.get(question.id)
+        selected = latest.get(question.text)
         if selected is not None:
             row["seen"] += 1
-            correct_ids = sorted(option.id for option in question.options if option.is_correct)
-            if selected == correct_ids:
+            correct_texts = sorted(option.text for option in question.options if option.is_correct)
+            if selected == correct_texts:
                 row["correct"] += 1
 
     domains = sorted(stats.values(), key=lambda row: row["name"])
@@ -373,7 +408,7 @@ def practice_by_domain(course_code: str) -> str | Response:
     if not enrolled:
         abort(403)
 
-    domains, by_key = _course_questions_by_domain(course_code, current_user.usuario)
+    domains, by_key = _course_questions_by_domain(course_code, current_user)
     selected_key = request.args.get("domain") or None
     if selected_key and selected_key not in by_key:
         abort(404)

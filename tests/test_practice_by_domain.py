@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from now_lms import lms_app
-from now_lms.db import Question, database
+from now_lms.db import Question, Usuario, database
 from now_lms.themes import get_practice_template
 from now_lms.vistas.evaluations import _course_questions_by_domain
 
@@ -47,6 +47,33 @@ def test_the_platform_ships_a_default_and_intent_overrides_it(app_context, monke
     assert get_practice_template() == "themes/intent_learn/overrides/practice.j2"
 
 
+def _member(usuario="drill-member"):
+    """A real enrolled member: the gathering now delegates access to
+    `can_user_access_evaluation`, which needs a user, not a username."""
+    existing = database.session.execute(database.select(Usuario).filter_by(usuario=usuario)).scalars().first()
+    if existing is not None:
+        return existing
+    user = Usuario(
+        usuario=usuario,
+        acceso=b"x",
+        nombre="Drill",
+        apellido="Member",
+        correo_electronico=f"{usuario}@example.invalid",
+        tipo="student",
+        activo=True,
+    )
+    database.session.add(user)
+    database.session.commit()
+    return user
+
+
+def _enroll(user, code):
+    from now_lms.db import EstudianteCurso
+
+    database.session.add(EstudianteCurso(usuario=user.usuario, curso=code, vigente=True))
+    database.session.commit()
+
+
 def _question(text, domain_key, domain_name="A domain"):
     return {
         "text": text,
@@ -74,16 +101,88 @@ def _spec(code, section_questions, mock_questions):
     }
 
 
-def test_a_domain_gathers_items_from_every_evaluation_in_the_course(cca_db):
-    """Section quiz and mock exam both contribute; the union is what a drill needs."""
-    section = [_question("Section-only item.", "d-alpha")]
-    mock = [_question("Mock-only item.", "d-alpha"), _question("Another domain.", "d-beta")]
-    _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P1", section, mock))
+def test_a_scored_exams_questions_never_reach_the_drill(cca_db):
+    """The answer key must not be readable before the exam is sat.
 
-    domains, by_key = _course_questions_by_domain("CCA-P1", "nobody")
-    texts = {question.text for question in by_key["d-alpha"]}
-    assert texts == {"Section-only item.", "Mock-only item."}, "a drill must see both sources"
-    assert {row["key"] for row in domains} == {"d-alpha", "d-beta"}
+    This surface reveals the correct option and the rationale on click. An earlier cut
+    gathered from every evaluation in the course, so a member could open the drill,
+    read the mock exam's answers, and then sit it. Practice quizzes are different:
+    they have unlimited attempts and show their own answers after a submission, so
+    drawing from those discloses nothing the member could not already get.
+    """
+    section = [_question("Section-quiz item.", "d-alpha")]
+    mock = [_question("Exam-only item.", "d-alpha"), _question("Exam-only other domain.", "d-beta")]
+    member = _member()
+    _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P1", section, mock))
+    _enroll(member, "CCA-P1")
+
+    domains, by_key = _course_questions_by_domain("CCA-P1", member)
+    texts = {question.text for question in by_key.get("d-alpha", [])}
+    assert texts == {"Section-quiz item."}, "only the practice-quiz item may be drilled"
+    assert "Exam-only item." not in texts
+    assert "d-beta" not in by_key, "a domain that exists only inside the exam must not appear"
+    assert {row["key"] for row in domains} == {"d-alpha"}
+
+
+def test_an_unpaid_enrollment_reaches_nothing(cca_db):
+    """Existence of an EstudianteCurso row is a weaker gate than the platform's.
+
+    `can_user_access_evaluation` also checks that a paid course has actually been paid
+    for. Delegating to it is what stops an unpaid enrollment reading paid questions,
+    their correct answers and their explanations.
+    """
+    from now_lms.db import Curso
+
+    section = [_question("Paid item.", "d-alpha")]
+    member = _member("unpaid-member")
+    _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P4", section, None))
+    _enroll(member, "CCA-P4")
+
+    curso = database.session.execute(database.select(Curso).filter_by(codigo="CCA-P4")).scalars().one()
+    curso.pagado = True
+    database.session.commit()
+
+    domains, by_key = _course_questions_by_domain("CCA-P4", member)
+    assert domains == [], "an unpaid enrollment must not gather paid questions"
+    assert by_key == {}
+
+
+def test_standing_follows_the_item_not_the_row(cca_db):
+    """Answering the mock copy must still count for the surviving section-quiz row.
+
+    De-duplication keeps one physical row per item. Keying the member's latest answer
+    by question id meant an answer recorded against the other copy never matched, and
+    the card reported "not attempted" for a question they had answered.
+    """
+    import json
+
+    from now_lms.db import Answer, Evaluation, EvaluationAttempt
+
+    repeated = _question("Answered in the mock only.", "d-alpha")
+    member = _member("standing-member")
+    _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P5", [repeated], [repeated]))
+    _enroll(member, "CCA-P5")
+
+    exam = [
+        evaluation
+        for evaluation in database.session.execute(database.select(Evaluation)).scalars()
+        if evaluation.is_exam and evaluation.title.endswith("Practice test course")
+    ][-1]
+    exam_question = exam.questions[0]
+    correct = sorted(option.id for option in exam_question.options if option.is_correct)
+
+    attempt = EvaluationAttempt(evaluation_id=exam.id, user_id=member.usuario)
+    database.session.add(attempt)
+    database.session.flush()
+    database.session.add(
+        Answer(attempt_id=attempt.id, question_id=exam_question.id, selected_option_ids=json.dumps(correct))
+    )
+    database.session.commit()
+
+    domains, _by_key = _course_questions_by_domain("CCA-P5", member)
+    row = next(entry for entry in domains if entry["key"] == "d-alpha")
+    assert row["seen"] == 1, "the answer was given in the exam copy and must still count"
+    assert row["correct"] == 1
 
 
 def test_the_same_item_seeded_twice_appears_once(cca_db):
@@ -96,7 +195,9 @@ def test_the_same_item_seeded_twice_appears_once(cca_db):
     denominator.
     """
     repeated = _question("This item is in both the quiz and the mock.", "d-alpha")
+    member = _member()
     _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P2", [repeated], [repeated]))
+    _enroll(member, "CCA-P2")
 
     rows = [
         question
@@ -105,7 +206,7 @@ def test_the_same_item_seeded_twice_appears_once(cca_db):
     ]
     assert len(rows) == 2, "the fixture must actually produce the duplicate this guards against"
 
-    _domains, by_key = _course_questions_by_domain("CCA-P2", "nobody")
+    _domains, by_key = _course_questions_by_domain("CCA-P2", member)
     gathered = by_key["d-alpha"]
     assert len(gathered) == 1, "the drill must not show the same question twice"
     assert gathered[0].text == "This item is in both the quiz and the mock."
@@ -115,9 +216,11 @@ def test_the_domain_total_counts_distinct_questions(cca_db):
     """The count on a domain card has to agree with what the drill will show."""
     repeated = _question("Repeated item.", "d-alpha")
     unique = _question("Unique item.", "d-alpha")
+    member = _member()
     _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P3", [repeated, unique], [repeated]))
+    _enroll(member, "CCA-P3")
 
-    domains, by_key = _course_questions_by_domain("CCA-P3", "nobody")
+    domains, by_key = _course_questions_by_domain("CCA-P3", member)
     row = next(entry for entry in domains if entry["key"] == "d-alpha")
     assert row["total"] == 2
     assert row["total"] == len(by_key["d-alpha"]), "the card's count and the drill's length must match"
@@ -125,6 +228,6 @@ def test_the_domain_total_counts_distinct_questions(cca_db):
 
 def test_a_course_with_no_labelled_questions_returns_nothing(cca_db):
     """An unlabelled course must render an empty chooser, not raise."""
-    domains, by_key = _course_questions_by_domain("CCA-DOES-NOT-EXIST", "nobody")
+    domains, by_key = _course_questions_by_domain("CCA-DOES-NOT-EXIST", _member())
     assert domains == []
     assert by_key == {}
