@@ -13500,6 +13500,39 @@ msgstr "Password updated successfully."
 msgid "Error al actualizar la contraseña."
 msgstr "Error updating password."
 
+#: now_lms/templates/themes/intent_learn/pages/comunidad_post.html:40
+#, python-format
+msgid "Like this post (%(num)d like)"
+msgid_plural "Like this post (%(num)d likes)"
+msgstr[0] ""
+msgstr[1] ""
+
+#: now_lms/templates/themes/intent_learn/pages/comunidad_post.html:46
+#, python-format
+msgid "%(num)d like"
+msgid_plural "%(num)d likes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: now_lms/templates/themes/intent_learn/pages/comunidad_post.html:52
+#, python-format
+msgid "%(num)d reply"
+msgid_plural "%(num)d replies"
+msgstr[0] ""
+msgstr[1] ""
+
+#: now_lms/templates/themes/intent_learn/pages/comunidad_post.html:76
+#, python-format
+msgid "Replies from members are community experience, not official %(brand)s guidance."
+msgstr ""
+
+#: now_lms/templates/themes/intent_learn/pages/comunidad_nuevo.html:42
+#, python-format
+msgid ""
+"What you post here is community experience, not official %(brand)s guidance. Questions about "
+"certification, pricing or partner policy are routed to %(owner)s."
+msgstr ""
+
 #~ msgid "Recuperar Contraseña"
 #~ msgstr "Recover Password"
 

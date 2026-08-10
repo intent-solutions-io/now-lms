@@ -37,25 +37,25 @@
                                         {{ accion_form.csrf_token }}
                                         <button type="submit" class="btn btn-sm {{ 'btn-primary' if item.me_gusta else 'btn-outline-secondary' }}"
                                                 aria-pressed="{{ 'true' if item.me_gusta else 'false' }}"
-                                                aria-label="{{ _('Like this post') }} ({{ item.likes }})">
+                                                aria-label="{{ ngettext('Like this post (%(num)d like)', 'Like this post (%(num)d likes)', item.likes) }}">
                                             <i class="bi bi-hand-thumbs-up{{ '-fill' if item.me_gusta else '' }}" aria-hidden="true"></i>
                                             <span class="ms-1">{{ item.likes }}</span>
                                         </button>
                                     </form>
                                     {% else %}
-                                    <span class="small text-muted align-self-center">{{ item.likes }} {{ _('likes') }}</span>
+                                    <span class="small text-muted align-self-center">{{ ngettext('%(num)d like', '%(num)d likes', item.likes) }}</span>
                                     {% endif %}
                                 </div>
                             </div>
                         </div>
 
-                        <h2 class="h6 mb-2">{{ respuestas | length }} {{ _('replies') }}</h2>
+                        <h2 class="h6 mb-2">{{ ngettext('%(num)d reply', '%(num)d replies', respuestas | length) }}</h2>
                         {% for r in respuestas %}
                         <div class="card mb-2">
                             <div class="card-body">
                                 <p class="small text-muted mb-1">
                                     {{ r.autor.nombre }} {{ r.autor.apellido }}
-                                    {% if r.es_staff %}<span class="badge bg-primary ms-1">{{ _('Intent Solutions') }}</span>{% endif %}
+                                    {% if r.es_staff %}<span class="badge bg-primary ms-1">Intent Solutions</span>{% endif %}
                                 </p>
                                 <div>{{ r.cuerpo | safe }}</div>
                             </div>
@@ -73,7 +73,7 @@
                                     {{ respuesta_form.csrf_token }}
                                     <label class="form-label" for="contenido">{{ _('Reply') }}</label>
                                     {{ respuesta_form.contenido(class="form-control", id="contenido", rows="4") }}
-                                    <p class="form-text">{{ _('Replies from members are community experience, not official Intent Solutions guidance.') }}</p>
+                                    <p class="form-text">{{ _('Replies from members are community experience, not official %(brand)s guidance.', brand='Intent Solutions') }}</p>
                                     <button class="btn btn-primary" type="submit">{{ _('Post reply') }}</button>
                                 </form>
                                 {% endif %}
