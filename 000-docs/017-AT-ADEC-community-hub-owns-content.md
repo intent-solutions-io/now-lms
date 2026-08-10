@@ -8,7 +8,7 @@
 | **Title** | The Community Hub owns its own content |
 | **Status** | Accepted |
 | **Date** | 2026-08-09 |
-| **Supersedes** | ADR-8 (`015-AT-ADEC-community-hub-storage.md`), which stays readable per the Nygard pattern |
+| **Supersedes** | ADR-8 (`018-AT-ADEC-community-hub-storage.md`), which stays readable per the Nygard pattern |
 | **Ruled** | 2026-08-09 by Max Sheahan |
 | **Note on numbering** | ADR-6 is claimed by open PR #37; ADR-9 is `016-AT-ADEC` (member dashboard). This takes ADR-10 and document number `017`. |
 
