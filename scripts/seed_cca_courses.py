@@ -485,6 +485,30 @@ def _build_specs() -> list[dict]:
     architect = _load_bank("questions-architect-professional.json")
     general = _load_bank("questions.json")
 
+    # Matthew Purcell's authored CCAO-F practice exam (optional, reuse-granted on
+    # condition of credit) -> one full-length exam appended to Course A.
+    #
+    # This bank is the ONLY source of select-TWO items in the curriculum. Until it was
+    # loaded here, `_correct_positions` had correct multi-correct handling that nothing
+    # ever exercised: a real end-to-end seed produced 539 questions, every one with
+    # exactly one correct option and no two-correct group at all. It is left exam-shaped
+    # rather than partitioned through `_weighted_exam_series`, because the author wrote
+    # it as a single full-length form against the published blueprint.
+    matthew = _load_bank_optional("matthew-purcell-practice-exams.json")
+    associate_extra_exams: list[dict] = []
+    if matthew:
+        associate_extra_exams.append({
+            "nombre": "Practice exam — Matthew Purcell (full-length CCAO-F)",
+            "descripcion": "Full-length practice exam, including select-TWO items. Unlimited attempts.",
+            "lesson": "# Practice exam — Matthew Purcell's CCAO-F set\n\n"
+                      "A full-length, exam-shaped practice test written against the public CCAO-F Exam "
+                      "Guide blueprint by Matthew Purcell, reused with permission. Some items ask you to "
+                      "**select TWO** answers; those are graded all-or-nothing, so a partially correct "
+                      "selection scores zero. Attempts are unlimited. Work the domain quizzes first, then "
+                      "use this to rehearse under exam conditions.",
+            "questions": matthew,
+        })
+
     specs: list[dict] = []
 
     # --- Course 0: Getting Started (onboarding, no exam) ---
@@ -538,6 +562,7 @@ def _build_specs() -> list[dict]:
             for _num, name, key, qs in _group_by_domain(associate)
         ],
         "mock_questions": associate,
+        "extra_exams": associate_extra_exams,
     })
 
     # --- Course B: Developer ---
