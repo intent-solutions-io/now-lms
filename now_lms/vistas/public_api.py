@@ -111,7 +111,7 @@ def get_course(course_code):
     # course's existence and metadata from leaking to any integration holding a
     # key, the same 404 an anonymous browser gets on the web path.
     if not course or not course.publico:
-        return jsonify({"error": "course_not_found", "message": "Course code was not found."}), 404
+        return jsonify({"error": "course_not_found", "message": _("Course code was not found.")}), 404
 
     return (
         jsonify(
@@ -174,7 +174,7 @@ def remote_enrollment():
     course = database.session.execute(database.select(Curso).filter_by(codigo=course_code)).scalar_one_or_none()
 
     if not course:
-        return jsonify({"error": "course_not_found", "message": "Course code was not found."}), 404
+        return jsonify({"error": "course_not_found", "message": _("Course code was not found.")}), 404
 
     # User existence/creation
     user = database.session.execute(database.select(Usuario).filter_by(correo_electronico=email)).scalar_one_or_none()
