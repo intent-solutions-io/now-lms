@@ -294,6 +294,40 @@ def test_build_link_validation():
     assert not vista.enlace_valido("https://")
 
 
+def test_invalid_build_link_keeps_the_typed_post(hub, client, app):
+    """An invalid link must re-render the bound compose form, not redirect.
+
+    A redirect lands on a blank GET compose form and silently discards the
+    typed title and body — the member loses their draft over a typo in an
+    optional field.
+    """
+    entrar(client, "c_a")
+    respuesta = client.post(
+        "/community/new",
+        data={
+            "titulo": "My build survives a bad link",
+            "tipo": "build",
+            "contenido": "A body the member typed and must not lose.",
+            "enlace_build": "javascript:alert(1)",
+        },
+        follow_redirects=False,
+    )
+    # Re-rendered form, not a redirect.
+    assert respuesta.status_code == 200
+    pagina = respuesta.get_data(as_text=True)
+    assert "My build survives a bad link" in pagina
+    assert "A body the member typed and must not lose." in pagina
+    assert "That link does not look like a web address." in pagina
+    # And nothing was persisted.
+    with app.app_context():
+        assert (
+            database.session.execute(
+                select(ComunidadPublicacion).filter_by(titulo="My build survives a bad link")
+            ).first()
+            is None
+        )
+
+
 # ---------------------------------------------------------------------------------------
 # Moderation
 # ---------------------------------------------------------------------------------------

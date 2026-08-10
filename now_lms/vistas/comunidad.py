@@ -71,6 +71,7 @@ comunidad = Blueprint("comunidad", __name__, template_folder=DIRECTORIO_PLANTILL
 FEED_TEMPLATE = "themes/intent_learn/pages/comunidad_feed.html"
 POST_TEMPLATE = "themes/intent_learn/pages/comunidad_post.html"
 STAFF_TEMPLATE = "themes/intent_learn/pages/comunidad_staff.html"
+NUEVO_TEMPLATE = "themes/intent_learn/pages/comunidad_nuevo.html"
 
 TITULO_MAX = 160
 CUERPO_MAX = 8000
@@ -631,8 +632,10 @@ def nueva_publicacion() -> str | Response:
             flash(_("You have posted a lot in a short time. Try again shortly."), "warning")
             return redirect(url_for("comunidad.feed"))
         if not enlace_valido(form.enlace_build.data):
+            # Re-render the bound form rather than redirect: a redirect lands on a
+            # blank GET compose form and silently discards the typed title and body.
             flash(_("That link does not look like a web address."), "warning")
-            return render_template(FEED_TEMPLATE + "#", form=form) if False else redirect(url_for("comunidad.nueva_publicacion"))
+            return render_template(NUEVO_TEMPLATE, form=form, tipos=[(t, TIPO_ETIQUETAS[t]) for t in COMUNIDAD_TIPOS])
 
         publicacion = ComunidadPublicacion(
             parent_id=None,
@@ -650,9 +653,7 @@ def nueva_publicacion() -> str | Response:
         database.session.commit()
         return redirect(url_for("comunidad.ver_publicacion", publicacion_id=publicacion.id))
 
-    return render_template(
-        "themes/intent_learn/pages/comunidad_nuevo.html", form=form, tipos=[(t, TIPO_ETIQUETAS[t]) for t in COMUNIDAD_TIPOS]
-    )
+    return render_template(NUEVO_TEMPLATE, form=form, tipos=[(t, TIPO_ETIQUETAS[t]) for t in COMUNIDAD_TIPOS])
 
 
 @comunidad.route("/community/post/<publicacion_id>/reply", methods=["POST"])
