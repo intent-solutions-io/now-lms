@@ -101,14 +101,19 @@ def _spec(code, section_questions, mock_questions):
     }
 
 
-def test_a_scored_exams_questions_never_reach_the_drill(cca_db):
-    """The answer key must not be readable before the exam is sat.
+def test_the_drill_covers_exam_items_too(cca_db):
+    """Exam-only material is the LARGEST practice pool, and must reach the drill.
 
-    This surface reveals the correct option and the rationale on click. An earlier cut
-    gathered from every evaluation in the course, so a member could open the drill,
-    read the mock exam's answers, and then sit it. Practice quizzes are different:
-    they have unlimited attempts and show their own answers after a submission, so
-    drawing from those discloses nothing the member could not already get.
+    This test replaces one that asserted the opposite and passed for the wrong reason.
+    It gave its exam a question no section quiz had, which the real seeder never does —
+    each mock exam is a verbatim re-import of the section bank
+    (`"mock_questions": associate`), so every "excluded" exam question had an identical
+    drillable twin and the exclusion withheld nothing while claiming to withhold
+    everything.
+
+    Meanwhile Matthew Purcell's 60 items and Rick Hightower's 480 live ONLY inside exam
+    evaluations, so the filter hid the bulk of the practice material from the members
+    meant to use it. Ruled by Max, 2026-08-09.
     """
     section = [_question("Section-quiz item.", "d-alpha")]
     mock = [_question("Exam-only item.", "d-alpha"), _question("Exam-only other domain.", "d-beta")]
@@ -117,11 +122,10 @@ def test_a_scored_exams_questions_never_reach_the_drill(cca_db):
     _enroll(member, "CCA-P1")
 
     domains, by_key = _course_questions_by_domain("CCA-P1", member)
-    texts = {question.text for question in by_key.get("d-alpha", [])}
-    assert texts == {"Section-quiz item."}, "only the practice-quiz item may be drilled"
-    assert "Exam-only item." not in texts
-    assert "d-beta" not in by_key, "a domain that exists only inside the exam must not appear"
-    assert {row["key"] for row in domains} == {"d-alpha"}
+    texts = {question.text for question in by_key["d-alpha"]}
+    assert texts == {"Section-quiz item.", "Exam-only item."}, "exam items belong in the drill"
+    assert "d-beta" in by_key, "a domain that exists only inside an exam must still be practisable"
+    assert {row["key"] for row in domains} == {"d-alpha", "d-beta"}
 
 
 def test_an_unpaid_enrollment_reaches_nothing(cca_db):
@@ -233,44 +237,32 @@ def test_a_course_with_no_labelled_questions_returns_nothing(cca_db):
     assert by_key == {}
 
 
-def test_a_limited_attempt_evaluation_is_not_drillable_even_without_the_exam_flag(cca_db):
-    """`is_exam` is not sufficient, and relying on it was the second disclosure path.
+def test_a_limited_attempt_evaluation_is_drillable(cca_db):
+    """A finite attempt limit no longer withholds anything.
 
-    `is_exam` and `max_attempts` are independent fields on the instructor form, so an
-    instructor can create a scored, limited-attempt evaluation without ticking "is an
-    exam". Admitting it into a drill hands out its answer key just the same. A finite
-    attempt limit is what makes an evaluation scored in practice.
+    It was excluded as a proxy for "scored, so protect its answers". That protection is
+    not wanted here, and the exclusion cost members access to real practice material.
     """
-    from now_lms.db import Evaluation
+    from now_lms.db import CursoSeccion, Evaluation
 
     section = [_question("Quiz item.", "d-alpha")]
     member = _member("limited-member")
     _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P6", section, None))
     _enroll(member, "CCA-P6")
 
-    # Turn this course's seeded quizzes into scored ones WITHOUT marking them exams.
-    # Scoped by section rather than found by question text: once other tests have
-    # seeded courses, a text lookup picks up whatever else is in the table.
-    from now_lms.db import CursoSeccion
-
     section_ids = [
-        section.id
-        for section in database.session.execute(database.select(CursoSeccion).filter_by(curso="CCA-P6")).scalars()
+        row.id
+        for row in database.session.execute(database.select(CursoSeccion).filter_by(curso="CCA-P6")).scalars()
     ]
-    quizzes = list(
-        database.session.execute(
-            database.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))
-        ).scalars()
-    )
-    assert quizzes, "the fixture must have seeded at least one evaluation"
-    for quiz in quizzes:
-        assert quiz.is_exam is False, "the fixture must be an unmarked evaluation"
+    for quiz in database.session.execute(
+        database.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))
+    ).scalars():
         quiz.max_attempts = 2
     database.session.commit()
 
     domains, by_key = _course_questions_by_domain("CCA-P6", member)
-    assert domains == [], "a limited-attempt evaluation must not be drillable"
-    assert by_key == {}
+    assert [row["key"] for row in domains] == ["d-alpha"]
+    assert len(by_key["d-alpha"]) == 1
 
 
 def test_an_inactive_enrollment_reaches_nothing(cca_db):

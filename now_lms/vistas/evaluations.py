@@ -21,6 +21,7 @@ from datetime import datetime
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 from werkzeug.wrappers import Response
 
 # ---------------------------------------------------------------------------------------
@@ -265,23 +266,29 @@ def evaluation_result(attempt_id: int) -> str:
     return render_template(get_evaluation_result_template(), attempt=attempt)
 
 
-def _is_safe_to_drill(evaluation_obj) -> bool:
-    """Whether an evaluation's questions may be shown with their answers.
+def _is_drillable(evaluation_obj) -> bool:
+    """Whether an evaluation's questions belong in domain practice.
 
-    `is_exam` is NOT sufficient. It and `max_attempts` are independent fields on the
-    instructor form, so a scored, limited-attempt evaluation can exist without anybody
-    ticking "is an exam" — and admitting it into a drill hands out its answer key just
-    the same. A finite attempt limit is what makes an evaluation scored in practice, so
-    that is the test.
+    NOT an answer-key guard, and an earlier version of this function pretended to be
+    one. It excluded exams and limited-attempt evaluations on the theory that showing
+    their correct options before a member sat them handed out the answer key. On this
+    curriculum that was false: the seeder builds each mock exam by re-importing the
+    whole section bank (`"mock_questions": associate`), so every excluded exam question
+    had an identical, drillable twin in a section quiz — the exclusion withheld nothing
+    while claiming to withhold everything.
 
-    What remains drillable is the unlimited-attempt practice quiz, which already shows
-    its own answers after any submission. Drilling it discloses nothing new.
+    It was also working against the point. Matthew Purcell's 60 items and Rick
+    Hightower's 480 exist ONLY inside exam evaluations, so the filter hid the largest
+    body of practice material in the course from the members meant to practise on it.
+
+    Ruled by Max, 2026-08-09: cohort members use these resources to prepare for
+    certification, and practice questions reappearing in a seated practice exam is
+    fine as long as they improve. Intent Solutions issues no certification of its own,
+    so nothing here gates an award.
+
+    What remains is instructor intent: a quiz closed with `available_until` stays
+    closed.
     """
-    if evaluation_obj.is_exam or evaluation_obj.max_attempts is not None:
-        return False
-    # An instructor who sets `available_until` has closed the quiz. The normal attempt
-    # path honours that through `is_evaluation_available`; practice must too, or a
-    # closed quiz keeps handing out its answers and explanations indefinitely.
     return is_evaluation_available(evaluation_obj)
 
 
@@ -333,31 +340,35 @@ def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dic
         ).scalars()
     )
 
-    # Practice NEVER draws from a scored exam. Those questions are the answer key to an
-    # attempt the member has not made yet, and this surface reveals the correct option
-    # and the rationale on click — so including them let anyone read the mock exam's
-    # answers, then sit it. Unlimited-attempt practice quizzes already show their own
-    # answers after a submission, so drawing from those discloses nothing new.
+    # Practice draws from every evaluation in the course the member is entitled to,
+    # exams included — see `_is_drillable` for why the old exam exclusion was both
+    # ineffective and counterproductive.
     #
-    # Access is delegated to `can_user_access_evaluation` per evaluation rather than
-    # re-checked here. An `EstudianteCurso` row merely existing is a weaker gate than
-    # the platform's: it ignores `pagado`/`pago` and inactive enrollments, so an unpaid
-    # enrollment could reach paid questions.
+    # Entitlement is a separate question from disclosure and still applies. Access is
+    # delegated to `can_user_access_evaluation` per evaluation rather than re-checked
+    # here: an `EstudianteCurso` row merely existing is a weaker gate than the
+    # platform's, ignoring `pagado`/`pago`, and it never checks `vigente` at all — so
+    # both an unpaid and a withdrawn enrollment could otherwise reach paid content.
     practice_ids = [
         evaluation.id
         for evaluation in evaluations
-        if _is_safe_to_drill(evaluation) and can_user_access_evaluation(evaluation, user) and active_enrollment
+        if _is_drillable(evaluation) and can_user_access_evaluation(evaluation, user) and active_enrollment
     ]
     evaluation_ids = practice_ids
     if not evaluation_ids:
         return [], {}
 
+    # `options` is eager-loaded: standing compares option text per question, so a lazy
+    # relationship here costs one query per question. Measured before this: 310 SQL
+    # statements to render one practice page on a 96-question course, growing by ~190
+    # for every attempt a member records.
     questions = list(
         database.session.execute(
             database.select(Question)
+            .options(selectinload(Question.options))
             .filter(Question.evaluation_id.in_(evaluation_ids))
             .filter(Question.domain_key.isnot(None))
-            .order_by(Question.order)
+            .order_by(Question.order, Question.id)
         ).scalars()
     )
 
@@ -377,6 +388,11 @@ def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dic
     attempts = list(
         database.session.execute(
             database.select(EvaluationAttempt)
+            .options(
+                selectinload(EvaluationAttempt.answers)
+                .selectinload(Answer.question)
+                .selectinload(Question.options)
+            )
             .filter(EvaluationAttempt.evaluation_id.in_(all_evaluation_ids))
             .filter_by(user_id=user.usuario)
             .order_by(EvaluationAttempt.started_at)
