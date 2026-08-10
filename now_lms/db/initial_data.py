@@ -2296,6 +2296,13 @@ def sincronizar_paginas_predeterminadas(lang: str | None = None, *, aplicar: boo
         config = get_configuracion()
         lang = config.lang if config else "en"
 
+    # paginas_predeterminadas() falls back to English for a language it does not
+    # ship, so an unsupported Configuracion.lang must be resolved to the language
+    # actually written before it is reported. Reporting the raw code would have
+    # the report claim a page is in, say, French, when the row holds the English
+    # default, and reporting truthfully is this function's whole job.
+    idioma_efectivo = lang if lang in IDIOMAS_PAGINAS_PREDETERMINADAS else "en"
+
     objetivo = paginas_predeterminadas(lang)
     conocidas = {idioma: paginas_predeterminadas(idioma) for idioma in IDIOMAS_PAGINAS_PREDETERMINADAS}
 
@@ -2310,7 +2317,7 @@ def sincronizar_paginas_predeterminadas(lang: str | None = None, *, aplicar: boo
         if fila is None:
             registro: Dict[str, Any] = {"slug": slug, "estado": "faltante", "idioma": None, "titulo": None}
         elif (fila.title, fila.content) == (pagina["title"], pagina["content"]):
-            registro = {"slug": slug, "estado": "al-dia", "idioma": lang, "titulo": fila.title}
+            registro = {"slug": slug, "estado": "al-dia", "idioma": idioma_efectivo, "titulo": fila.title}
         else:
             idioma_actual = next(
                 (
@@ -2342,7 +2349,7 @@ def sincronizar_paginas_predeterminadas(lang: str | None = None, *, aplicar: boo
                 fila.title = pagina["title"]
                 fila.content = pagina["content"]
             escrituras += 1
-            log.debug(f"Custom page {slug} synchronised to {lang}.")
+            log.debug(f"Custom page {slug} synchronised to {idioma_efectivo}.")
 
         reporte.append(registro)
 

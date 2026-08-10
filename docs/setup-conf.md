@@ -198,7 +198,6 @@ You can use the following options to configure NOW-LMS:
 - **NOW_LMS_CURRENCY** (<span style="color:green">optional</span>): Default currency for paid courses. Uses standard currency codes (e.g., `USD`, `EUR`, `MXN`). Defaults to `USD`.
 
 !!! note "Changing the language later does not rewrite the default pages"
-
     The default custom pages (About Us, Privacy Policy) are written once, during
     initial setup, in whatever language was configured at that moment. Changing the
     language afterwards — in the admin settings or with `lmsctl settings lang_set` —

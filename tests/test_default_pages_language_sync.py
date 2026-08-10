@@ -62,6 +62,13 @@ def _titulos():
     return {f.slug: f.title for f in filas}
 
 
+def _filas():
+    from now_lms.db import CustomPage, database
+
+    filas = database.session.execute(database.select(CustomPage).filter(CustomPage.slug.in_(list(EN_TITLES)))).scalars()
+    return {f.slug: (f.title, f.content) for f in filas}
+
+
 def test_pages_seeded_in_another_language_are_reported_and_not_written(app):
     """The report names the stale pages, names the language they are in, and writes nothing."""
     from now_lms.db import Configuracion, database
@@ -169,10 +176,35 @@ def test_seeding_output_is_unchanged_by_the_refactor(app):
         for lang, esperado in (("en", EN_TITLES), ("es", ES_TITLES)):
             _sembrar(lang)
             defaults = paginas_predeterminadas(lang)
-            filas = _titulos()
-            assert filas == esperado
+            assert _titulos() == esperado
+            filas = _filas()
             for slug, pagina in defaults.items():
-                assert filas[slug] == pagina["title"], f"{slug} title drifted from the accessor in {lang}"
+                # Both fields, not just the title: content is equally part of the
+                # equality contract the synchronisation decides on.
+                assert filas[slug] == (pagina["title"], pagina["content"]), f"{slug} drifted from the accessor in {lang}"
 
         # An unknown language falls back to English, as the original resolution did.
         assert paginas_predeterminadas("fr") == paginas_predeterminadas("en")
+
+
+def test_an_unsupported_language_is_reported_as_the_language_actually_written(app):
+    """The report must name the language on disk, not the unsupported code asked for.
+
+    ``paginas_predeterminadas`` falls back to English for a language it does not
+    ship. Reporting ``Configuracion.lang`` verbatim therefore had the report claim
+    a page was in, say, French, while the row held the English default. A tool
+    whose entire purpose is to say truthfully what language a page is in cannot
+    get that wrong. CodeRabbit, PR #86.
+    """
+    from now_lms.db import Configuracion, database
+
+    with app.app_context():
+        _sembrar("en")
+
+        config = database.session.execute(database.select(Configuracion)).scalars().first()
+        config.lang = "fr"
+        database.session.commit()
+
+        for slug, registro in _estados().items():
+            assert registro["estado"] == "al-dia", f"{slug} should match the English default that fr falls back to"
+            assert registro["idioma"] == "en", f"{slug} reported the requested code rather than the language on disk"
