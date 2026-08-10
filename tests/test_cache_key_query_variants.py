@@ -21,7 +21,7 @@ from flask_login import LoginManager
 
 import pytest
 
-from now_lms.cache import bump_generacion_catalogo, cache, cache_key_with_auth_state
+from now_lms.cache import bump_generacion, cache, cache_key_with_auth_state
 
 
 @pytest.fixture()
@@ -52,14 +52,29 @@ def _clave(aplicacion, path: str, query: str = "") -> str:
         return cache_key_with_auth_state()
 
 
-def test_course_view_key_ignores_a_query_string_it_never_reads(probe):
-    """The reported case: a query variant must not create an unreachable key."""
-    base = _clave(probe, "/course/CCA-F/view")
-    variante = _clave(probe, "/course/CCA-F/view", "tab=details")
-    assert base == variante, (
-        "the course view ignores query args, so a query string must not fork the key — "
-        f"got {base!r} vs {variante!r}"
+def test_bumping_a_course_scope_retires_its_query_variants(probe):
+    """The reported case: `.../view/user:someone?tab=details` must become reachable.
+
+    The query string stays in the key — collapsing it would serve one page's output
+    for another, and eleven cached routes genuinely read args. What changes is that
+    the key carries a generation, so one bump retires every variant of that course.
+    """
+    antes = _clave(probe, "/course/CCA-F/view", "tab=details")
+
+    with probe.app_context():
+        bump_generacion("curso:CCA-F")
+
+    assert _clave(probe, "/course/CCA-F/view", "tab=details") != antes, (
+        "bumping the course scope did not retire the ?tab=details variant"
     )
+
+
+def test_a_course_bump_does_not_dump_another_course(probe):
+    """Scopes are per course, so editing one must not evict every other course."""
+    otro = _clave(probe, "/course/CCA-B/view")
+    with probe.app_context():
+        bump_generacion("curso:CCA-F")
+    assert _clave(probe, "/course/CCA-B/view") == otro, "a bump leaked across course scopes"
 
 
 def test_catalogue_key_still_varies_by_query(probe):
@@ -72,6 +87,12 @@ def test_catalogue_key_still_varies_by_query(probe):
     b = _clave(probe, "/course/explore", "nivel=3")
     assert a != b, "catalogue filters must remain distinct cache entries"
 
+    # And the general contract the existing suite relies on: any two query strings
+    # are two keys, on any path. Breaking this served one page's cache for another.
+    p1 = _clave(probe, "/course/list", "page=1")
+    p2 = _clave(probe, "/course/list", "page=2")
+    assert p1 != p2, "pagination must remain distinct on every path, not just the catalogue"
+
 
 def test_bumping_the_generation_retires_every_catalogue_variant(probe):
     """One write must make all prior variants unreachable, whatever query made them."""
@@ -79,7 +100,7 @@ def test_bumping_the_generation_retires_every_catalogue_variant(probe):
     antes_b = _clave(probe, "/course/explore", "page=2")
 
     with probe.app_context():
-        bump_generacion_catalogo()
+        bump_generacion("global")
 
     despues_a = _clave(probe, "/course/explore", "nivel=1")
     despues_b = _clave(probe, "/course/explore", "page=2")

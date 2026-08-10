@@ -679,6 +679,10 @@ def _delete_course(db, models, code: str) -> bool:
     ``_count_learner_data`` first and get the operator's explicit
     acknowledgement before calling this — it does not check itself, so it is
     only ever called from ``main()`` after that gate has passed.
+
+    Deliberately does NOT commit. The whole reset is one transaction so that a
+    course cannot be dropped while a sibling's re-check is still deciding, and so
+    a failure part-way leaves nothing half-deleted. ``main()`` commits once.
     """
     Curso = models["Curso"]
     curso = db.session.execute(db.select(Curso).filter_by(codigo=code)).scalar_one_or_none()
@@ -692,7 +696,7 @@ def _delete_course(db, models, code: str) -> bool:
             db.session.delete(rec)
         db.session.delete(sec)
     db.session.delete(curso)
-    db.session.commit()
+    db.session.flush()  # surface integrity errors here, still inside the caller's transaction
     return True
 
 
@@ -796,9 +800,40 @@ def main() -> int:
                     )
                     raise SystemExit(3)
 
+            # Re-count inside the deleting transaction and refuse if anything moved.
+            #
+            # The acknowledgement flag is checked against counts read a moment
+            # earlier, and nothing stopped a learner enrolling or submitting an
+            # attempt in between — that record would then be destroyed without ever
+            # appearing in the number the operator acknowledged. Locking the Curso
+            # row does not help, because a new enrollment inserts into
+            # EstudianteCurso, which that lock does not cover. So the acknowledged
+            # numbers are enforced HERE, at the point of deletion, rather than only
+            # at the point of checking. Greptile, PR #78.
+            ahora_enrollments = 0
+            ahora_attempts = 0
+            for code in reset_codes:
+                e, a = _count_learner_data(database, models, code)
+                ahora_enrollments += e
+                ahora_attempts += a
+
+            if (ahora_enrollments, ahora_attempts) != (total_enrollments, total_attempts):
+                database.session.rollback()
+                print(
+                    "ERROR: learner data changed between the check and the delete.\n"
+                    f"  acknowledged: {total_enrollments} enrollment(s), {total_attempts} attempt(s)\n"
+                    f"  now:          {ahora_enrollments} enrollment(s), {ahora_attempts} attempt(s)\n"
+                    "Nothing was deleted. Someone enrolled or submitted an attempt while this ran, "
+                    "and their record is not covered by the flag you passed. Re-run to see the "
+                    "current numbers.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(4)
+
             for code in reset_codes:
                 if _delete_course(database, models, code):
                     print(f"  [reset] deleted course '{code}' for rebuild")
+            database.session.commit()  # one commit for the whole reset
 
         specs = _build_specs()
         for spec in specs:

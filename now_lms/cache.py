@@ -141,65 +141,62 @@ def cache_key_with_auth_state() -> str:
     # Build key from request path and the identity scope
     key = f"view/{request.path}/{scope}"
 
-    # The query string belongs in the key ONLY where the view actually reads it.
-    #
-    # Every other route gets an unbounded family of keys that no invalidator can
-    # reach: `cache.delete()` takes one exact key, and none of the supported
-    # backends (Redis, Memcached, FileSystem) offers portable pattern deletion, so
-    # `.../view/user:someone?anything` survives a course edit forever. It is also a
-    # cache-busting vector, since any visitor can mint fresh entries by appending a
-    # parameter the view ignores.
-    #
-    # RUTAS_CON_QUERY is the allow-list of paths whose output genuinely varies:
-    # the catalogue and home pages read `page`, `nivel`, `tag` and `category`.
-    # `/course/<code>/view` reads none, which is why the reported case
-    # (`.../view/user:founding.member?tab=details`) was uninvalidatable.
-    # Greptile, PR #78.
-    if request.query_string and _varia_por_query(request.path):
+    # The query string stays in the key. Dropping it for "routes that ignore args"
+    # was tried and is wrong: the key contract is that two different query strings
+    # are two different pages, and eleven cached routes genuinely read args
+    # (catalogue filters, admin user lists, pagination). A key that collapses them
+    # serves one page's cached output for another, which is worse than the bug
+    # being fixed.
+    if request.query_string:
         key += f"?{request.query_string.decode('utf-8')}"
 
-    # For the query-varying routes the exact keys still cannot be enumerated, so
-    # they carry a generation instead: bumping it makes every prior variant
-    # unreachable in one write, whatever query produced it.
-    if _varia_por_query(request.path):
-        key += f"/g{_generacion_catalogo()}"
+    # Invalidation is what the query string broke, so invalidation is what changes.
+    # `cache.delete()` takes one exact key and no supported backend offers portable
+    # pattern deletion, so the invalidator could never reach
+    # `.../view/user:someone?tab=details`. Every key now carries a GENERATION for
+    # its scope; bumping that scope retires all its variants, for every user and
+    # every query, in one write. Greptile, PR #78.
+    key += f"/g{_generacion(_ambito(request.path))}"
 
     return key
 
 
-# Paths whose rendered output depends on the query string, so the key must carry it.
-# Keep this list in step with the views: a path listed here that ignores its args
-# just fragments the cache; a path missing from here that reads args serves the
-# wrong page. Both are worse than the invalidation bug this exists to fix.
-RUTAS_CON_QUERY = ("/course/explore", "/program/explore", "/")
+def _ambito(path: str) -> str:
+    """The invalidation scope a path belongs to.
 
-GENERACION_CATALOGO = "cache_gen:catalogo"
+    Course pages get their own scope so editing one course does not dump the whole
+    cache; everything else shares the global scope, which the catalogue and home
+    pages live in because they render course listings.
+    """
+    partes = [p for p in path.split("/") if p]
+    # A course PAGE has three segments: /course/<code>/<action>. A listing has two
+    # (/course/explore, /course/list) and belongs to the global scope — scoping
+    # those per "course code" would have made `explore` its own bucket that no
+    # course edit ever bumps.
+    if len(partes) >= 3 and partes[0] == "course":
+        return f"curso:{partes[1]}"
+    return "global"
 
 
-def _varia_por_query(path: str) -> bool:
-    """True when this path's output legitimately depends on its query string."""
-    return path.rstrip("/") in tuple(r.rstrip("/") for r in RUTAS_CON_QUERY) or path == "/"
+def _generacion(ambito: str) -> int:
+    """Current generation for a scope. Absent or unreadable counts as zero.
 
-
-def _generacion_catalogo() -> int:
-    """Current generation for the query-varying catalogue routes.
-
-    Stored without expiry. If the backend evicts it the counter restarts at zero,
-    which can briefly resurface a stale catalogue entry — strictly better than the
-    present behaviour, where those entries are never invalidated at all.
+    Stored without expiry. If the backend evicts it the counter restarts and a
+    stale entry can briefly resurface — strictly better than the previous
+    behaviour, where query variants were never invalidated at all.
     """
     try:
-        return int(cache.get(GENERACION_CATALOGO) or 0)
+        return int(cache.get(f"cache_gen:{ambito}") or 0)
     except (TypeError, ValueError):
         return 0
 
 
-def bump_generacion_catalogo() -> None:
-    """Retire every cached catalogue and home variant, for every user, in one write."""
+def bump_generacion(ambito: str) -> None:
+    """Retire every cached variant in this scope, whatever query produced it."""
     try:
-        cache.set(GENERACION_CATALOGO, _generacion_catalogo() + 1, timeout=0)
+        cache.set(f"cache_gen:{ambito}", _generacion(ambito) + 1, timeout=0)
     except Exception:  # noqa: BLE001 - a cache that cannot count must not break a write path
-        log.warning("cache: could not bump the catalogue generation; entries will expire on TTL")
+        log.warning("cache: could not bump generation for %s; entries will expire on TTL", ambito)
 
 
 def cache_key_with_query_string() -> str:
@@ -331,7 +328,10 @@ def invalidar_cache_curso(course_code: str) -> None:
         # The catalogue and home pages vary by query string, so their exact keys
         # cannot be enumerated. Bumping the generation retires every variant for
         # every user in one write, which is what deleting a fixed list could not do.
-        bump_generacion_catalogo()
+        # This course's own pages, and the global scope because the catalogue and
+        # home pages list courses.
+        bump_generacion(f"curso:{course_code}")
+        bump_generacion("global")
 
         roster = _obtiene_roster_curso(course_code)
         for usuario in roster:
@@ -356,7 +356,7 @@ def invalidar_cache_programa(program_code: str) -> None:
         keys_to_delete.extend(_obtiene_llaves_generales_cache())
         for key in keys_to_delete:
             cache.delete(key)
-        bump_generacion_catalogo()
+        bump_generacion("global")
         log.trace(f"Cache invalidated for program: {program_code}")
     except Exception as e:
         log.error(f"Error invalidating cache for program {program_code}: {e}")
