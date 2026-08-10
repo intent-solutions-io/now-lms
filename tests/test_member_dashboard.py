@@ -175,7 +175,9 @@ def test_dashboard_shows_the_members_own_progress(dashboard_setup, client):
     cuerpo = client.get("/dashboard").get_data(as_text=True)
     assert "75%" in cuerpo
     assert "Dashboard Course" in cuerpo
-    assert "3" in cuerpo and "4" in cuerpo  # "3 of 4 required items complete"
+    # One translatable string with placeholders, not fragments glued together in
+    # the template — split fragments can't be reordered by a translator.
+    assert "3 of 4 required items complete" in cuerpo
 
 
 def test_dashboard_does_not_leak_another_members_progress(dashboard_setup, client):
@@ -245,6 +247,59 @@ def test_announcements_beyond_the_dashboard_cap_stay_reachable(dashboard_setup, 
     # And the dashboard admits it is truncating, rather than hiding it.
     panel = client.get("/dashboard").get_data(as_text=True)
     assert "/dashboard/announcements" in panel, "the dashboard must link to the full archive"
+
+
+def test_upcoming_event_dates_follow_the_site_locale(dashboard_setup, client, app):
+    """The 'Coming up' card must render dates through Babel, not strftime.
+
+    ``strftime('%b %d, %H:%M')`` hardcodes English month abbreviations no matter
+    what the site locale is. Rendering through flask-babel's ``datetimeformat``
+    filter localises the month name. Found by MiniMax review on PR #79.
+    """
+    from datetime import datetime
+
+    import flask_babel
+
+    from now_lms.db import Configuracion, UserEvent
+    from now_lms.i18n import invalidate_configuracion_cache
+
+    def _set_lang(lang: str) -> None:
+        # Deliberately NOT inside a nested app.app_context(): the fixtures keep
+        # an app context open for the whole test, so test-client requests reuse
+        # its session. A commit made in a nested context would not expire that
+        # ambient session's identity map, and requests would keep reading the
+        # stale Configuracion row.
+        config = database.session.execute(database.select(Configuracion)).scalars().first()
+        config.lang = lang
+        database.session.commit()
+        invalidate_configuracion_cache()
+        # flask-babel memoises the resolved locale on g, and g lives as long as
+        # the fixture-held app context, i.e. across test-client requests.
+        flask_babel.refresh()
+
+    with app.app_context():
+        database.session.add(
+            UserEvent(
+                user_id="dash_student",
+                course_id="DASH01",
+                resource_type="meet",
+                title="Cohort call",
+                start_time=datetime(2099, 12, 1, 10, 30),
+            )
+        )
+        database.session.commit()
+
+    _entrar(client, "dash_student")
+
+    # English site locale: abbreviated English month, no leading zero on the day.
+    _set_lang("en")
+    cuerpo = client.get("/dashboard").get_data(as_text=True)
+    assert "Dec 1, 10:30" in cuerpo
+
+    # Flip the site locale and the same event renders a Spanish month name.
+    _set_lang("es")
+    cuerpo = client.get("/dashboard").get_data(as_text=True)
+    assert "dic 1, 10:30" in cuerpo, "the event date must follow the site locale, not strftime's English"
 
 
 def test_dashboard_has_no_fabricated_counters(dashboard_setup, client):
