@@ -79,6 +79,8 @@ LESSONS_DIR = CONTENT_DIR / "lessons"
 MAX_QUESTION_TEXT = 1000
 MAX_EXPLANATION = 1000
 MAX_OPTION_TEXT = 500
+MAX_DOMAIN_KEY = 50
+MAX_DOMAIN_NAME = 150
 
 
 def _truncate(value: str, limit: int) -> str:
@@ -322,12 +324,25 @@ def _add_evaluation(db, models, section_id: str, title: str, description: str, i
         rationale = (item.get("rationale") or "").strip()
         source = (item.get("source") or "").strip()
         explanation = rationale + (f"\n\nSource: {source}" if source else "")
+        # Carry the bank's domain onto the row. Every bank item already declares one;
+        # until now the importer read it only to group questions into sections and then
+        # dropped it, so a full-length exam — whose items span every domain inside ONE
+        # evaluation — could not be scored per domain, and no bank could be drilled one
+        # domain at a time. Falling back to the integer `domain` keeps items from an
+        # older bank shape usable rather than silently unlabelled.
+        domain_key = (item.get("domainKey") or "").strip() or None
+        if domain_key is None and item.get("domain") is not None:
+            domain_key = str(item["domain"])
+        domain_name = (item.get("domainName") or "").strip() or None
+
         question = models["Question"](
             evaluation_id=evaluation.id,
             type="multiple",
             text=_truncate(item["text"], MAX_QUESTION_TEXT),
             explanation=_truncate(explanation, MAX_EXPLANATION),
             order=order,
+            domain_key=_truncate(domain_key, MAX_DOMAIN_KEY) or None,
+            domain_name=_truncate(domain_name, MAX_DOMAIN_NAME) or None,
         )
         db.session.add(question)
         db.session.commit()  # flush so question.id is available for options
