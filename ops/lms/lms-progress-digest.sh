@@ -259,8 +259,14 @@ trap 'rm -f "$REPORT_HTML"' EXIT
     fi
     echo "<table style=\"$TABLE\">"
     echo "<tr><th style=\"$TH;text-align:right\">Miss</th><th style=\"$TH\">Question</th><th style=\"$TH\">Course / evaluation</th><th style=\"$TH;text-align:right\">Answered</th></tr>"
-    printf '%s\n' "$MISSED" | head -n "$MISSED_TOP" | awk -F'|' -v td="$TD" -v muted="$MUTED" -v zebra="$ZEBRA" '
+    # Cap inside awk, never with `head`. Under `set -o pipefail` a `head` that stops
+    # early closes the pipe, `printf` dies of SIGPIPE, the pipeline inherits that
+    # non-zero status and `set -e` kills the whole script — so the digest would fail
+    # to send precisely when there are MORE than MISSED_TOP rows, which is exactly
+    # when it is worth sending. Found by Greptile on PR #81.
+    printf '%s\n' "$MISSED" | awk -F'|' -v top="$MISSED_TOP" -v td="$TD" -v muted="$MUTED" -v zebra="$ZEBRA" '
       function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);return s}
+      NR>top{next}
       {bg=(NR%2==0)?"background:" zebra ";":""; m=$6+0;
        col=(m>=70)?"#b91c1c":((m>=40)?"#b45309":"#4b5563");
        skip=($5<$4)?"<div style=\"font-size:11px;color:#b45309;margin-top:2px\">" ($4-$5) " skipped</div>":"";
