@@ -29,7 +29,8 @@ Usage
 -----
     python scripts/seed_practice_tracks.py                  # create, skip existing
     python scripts/seed_practice_tracks.py --reset          # rebuild the three
-    python scripts/seed_practice_tracks.py --remove-demo    # also drop upstream demo courses
+    python scripts/seed_practice_tracks.py --remove-demo       # also drop upstream demo content
+    python scripts/seed_practice_tracks.py --only-remove-demo  # remove only; seed nothing
 
 All three tracks sit at the same level. They are peers — three ways to prove the
 same house method — not a ladder, so ranking one above another would be a claim
@@ -50,7 +51,7 @@ import sys
 from datetime import datetime, timezone
 
 from now_lms import lms_app
-from now_lms.db import Curso, CursoRecurso, CursoSeccion, EstudianteCurso, database
+from now_lms.db import BlogPost, Curso, CursoRecurso, CursoSeccion, EstudianteCurso, database
 
 # Upstream's demo seed data. Codes come from now_lms/db/initial_data.py.
 #
@@ -69,6 +70,14 @@ from now_lms.db import Curso, CursoRecurso, CursoSeccion, EstudianteCurso, datab
 #
 # Bead now-lms-4vf.
 DEMO_COURSE_CODES = ["now", "details", "free", "resources"]
+
+# Upstream's sample blog post, created by crear_blog_post_predeterminado(). Identified
+# by the slug that function derives from its own title, which is stable.
+#
+# It is served PUBLICLY at /blog under Intent Solutions copyright, bylined "System
+# Administrator", and it is about online learning in general — not about anything
+# Intent does. A stranger evaluating the company reads it as our writing.
+DEMO_BLOG_SLUG = "the-importance-of-online-learning-in-todays-world"
 
 HOUSE_CORE_NOTE = (
     "All members begin with the shared house core, regardless of track. "
@@ -128,6 +137,27 @@ def _stamp(row, who: str = "seed_practice_tracks"):
     row.creado = datetime.now(timezone.utc).date()
     row.creado_por = who
     return row
+
+
+def remove_demo_blog_post(db) -> None:
+    """Delete upstream's sample blog post, refusing anything a person has touched.
+
+    Two guards, because this deletes published content rather than sample courses
+    nobody enrolled in. The post is removed only when it is still recognisably
+    upstream's: the exact seeded slug, and no comments. A comment means a member
+    engaged with it, and quietly deleting their words to tidy the blog is worse than
+    leaving a stale post up — so that case reports and keeps.
+    """
+    post = db.session.execute(db.select(BlogPost).filter_by(slug=DEMO_BLOG_SLUG)).scalars().first()
+    if post is None:
+        return
+    if post.comment_count or post.comments:
+        count = post.comment_count or len(post.comments)
+        print(f"[keep] blog post {DEMO_BLOG_SLUG!r}: {count} comment(s) — refusing to delete")
+        return
+    db.session.delete(post)
+    db.session.commit()
+    print(f"[drop] blog post {DEMO_BLOG_SLUG!r}")
 
 
 def remove_demo_courses(db) -> None:
@@ -221,13 +251,22 @@ def seed(db, reset: bool) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true", help="rebuild tracks that already exist")
-    parser.add_argument("--remove-demo", action="store_true", help="delete upstream's demo courses")
+    parser.add_argument(
+        "--remove-demo", action="store_true", help="delete upstream's demo courses and sample blog post"
+    )
+    parser.add_argument(
+        "--only-remove-demo",
+        action="store_true",
+        help="remove upstream demo content and do nothing else (used by the deploy)",
+    )
     args = parser.parse_args()
 
     with lms_app.app_context():
-        if args.remove_demo:
+        if args.remove_demo or args.only_remove_demo:
             remove_demo_courses(database)
-        seed(database, reset=args.reset)
+            remove_demo_blog_post(database)
+        if not args.only_remove_demo:
+            seed(database, reset=args.reset)
 
         codes = [c.codigo for c in database.session.execute(database.select(Curso)).scalars().all()]
         print(f"\ncourses now present: {sorted(codes)}")

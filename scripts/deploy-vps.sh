@@ -137,6 +137,16 @@ for _ in $(seq 1 30); do
     sleep 5
 done
 
+# Upstream's sample content is created by initial_setup() on a fresh database and
+# then simply stays. On 2026-08-09 all four demo courses and the sample blog post
+# were still being served publicly on production, months after the practice tracks
+# replaced them — because the removal existed as a script nobody had a reason to
+# run. Running it here is what makes the removal actually happen: it is idempotent,
+# it refuses any course a member is enrolled in, and it refuses a blog post that has
+# comments, so a repeat deploy is a no-op and nothing of a member's is destroyed.
+echo "==> Removing upstream demo content (idempotent; refuses anything in use)"
+docker compose exec -T app python scripts/seed_practice_tracks.py --only-remove-demo
+
 echo "==> Smoke check"
 bash scripts/deploy-smoke.sh
 
