@@ -35,12 +35,13 @@ from now_lms.db import (
     Evaluation,
     EvaluationAttempt,
     EvaluationReopenRequest,
+    Question,
     QuestionOption,
     database,
 )
 from now_lms.forms import EvaluationReopenRequestForm
 from now_lms.i18n import _
-from now_lms.themes import get_evaluation_result_template
+from now_lms.themes import get_evaluation_result_template, get_practice_template
 
 # ---------------------------------------------------------------------------------------
 # Blueprint definition
@@ -262,6 +263,129 @@ def evaluation_result(attempt_id: int) -> str:
         abort(403)
 
     return render_template(get_evaluation_result_template(), attempt=attempt)
+
+
+def _course_questions_by_domain(course_code: str, usuario: str) -> tuple[list[dict], dict]:
+    """Every labelled question in a course, grouped by domain, with the member's standing.
+
+    Reads across the course's evaluations rather than a single one, because a domain's
+    items are scattered: some sit in that domain's section quiz, others inside a
+    full-length exam that spans every domain at once. Grouping by `domain_key` is the
+    only thing that gathers them.
+
+    Standing is computed from the member's MOST RECENT answer to each question, across
+    every attempt they have made in this course. Their latest thinking is what a
+    "where do I stand" readout should reflect; averaging over old attempts would let a
+    first-run guess drag down a domain they have since learned.
+
+    Returns (domains, questions_by_key). Questions carry no ordering guarantee beyond
+    the order they were seeded in, which is the bank's own order.
+    """
+    section_ids = [
+        row.id
+        for row in database.session.execute(database.select(CursoSeccion).filter_by(curso=course_code)).scalars()
+    ]
+    if not section_ids:
+        return [], {}
+
+    evaluation_ids = [
+        row.id
+        for row in database.session.execute(
+            database.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))
+        ).scalars()
+    ]
+    if not evaluation_ids:
+        return [], {}
+
+    questions = list(
+        database.session.execute(
+            database.select(Question)
+            .filter(Question.evaluation_id.in_(evaluation_ids))
+            .filter(Question.domain_key.isnot(None))
+            .order_by(Question.order)
+        ).scalars()
+    )
+
+    # Latest answer per question for this member, newest attempt last so it wins.
+    latest: dict[str, list] = {}
+    attempts = list(
+        database.session.execute(
+            database.select(EvaluationAttempt)
+            .filter(EvaluationAttempt.evaluation_id.in_(evaluation_ids))
+            .filter_by(user_id=usuario)
+            .order_by(EvaluationAttempt.started_at)
+        ).scalars()
+    )
+    for attempt in attempts:
+        for answer in attempt.answers:
+            if answer.selected_option_ids:
+                latest[answer.question_id] = sorted(json.loads(answer.selected_option_ids))
+
+    # The same bank item is seeded more than once on purpose: a course's mock exam
+    # re-imports the whole bank that its section quizzes already cover, so CCA-A holds
+    # 132 labelled rows for 96 distinct questions. Left alone a drill repeats items
+    # within a single sitting, and a repeated question would also be counted twice in
+    # the denominator below. Identity is the question text, which is what the seeder
+    # copies verbatim from the bank; the first row wins so section order is preserved.
+    seen_text: set = set()
+    deduped = []
+    for question in questions:
+        if question.text in seen_text:
+            continue
+        seen_text.add(question.text)
+        deduped.append(question)
+    questions = deduped
+
+    by_key: dict[str, list] = {}
+    stats: dict[str, dict] = {}
+    for question in questions:
+        by_key.setdefault(question.domain_key, []).append(question)
+        row = stats.setdefault(
+            question.domain_key,
+            {"key": question.domain_key, "name": question.domain_name or question.domain_key,
+             "total": 0, "seen": 0, "correct": 0},
+        )
+        row["total"] += 1
+        selected = latest.get(question.id)
+        if selected is not None:
+            row["seen"] += 1
+            correct_ids = sorted(option.id for option in question.options if option.is_correct)
+            if selected == correct_ids:
+                row["correct"] += 1
+
+    domains = sorted(stats.values(), key=lambda row: row["name"])
+    return domains, by_key
+
+
+@evaluation.route("/course/<course_code>/practice")
+@login_required
+@perfil_requerido("student")
+def practice_by_domain(course_code: str) -> str | Response:
+    """Practice one domain of a course, or choose which domain to practice.
+
+    Deliberately NOT an attempt. A drill is rehearsal: it records nothing, so a member
+    can work the same weak domain repeatedly without polluting the exam history their
+    result pages are built from. Grading and feedback happen in the page.
+    """
+    enrolled = database.session.execute(
+        database.select(EstudianteCurso).filter_by(curso=course_code, usuario=current_user.usuario)
+    ).scalars().first()
+    if not enrolled:
+        abort(403)
+
+    domains, by_key = _course_questions_by_domain(course_code, current_user.usuario)
+    selected_key = request.args.get("domain") or None
+    if selected_key and selected_key not in by_key:
+        abort(404)
+
+    return render_template(
+        get_practice_template(),
+        course_code=course_code,
+        domains=domains,
+        selected_key=selected_key,
+        selected_name=next((row["name"] for row in domains if row["key"] == selected_key), None),
+        questions=by_key.get(selected_key, []),
+    )
 
 
 @evaluation.route("/evaluation/<evaluation_id>/request-reopen", methods=["GET", "POST"])
