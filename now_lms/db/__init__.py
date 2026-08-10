@@ -277,7 +277,12 @@ class Curso(database.Model, BaseTabla):
     secciones = database.relationship("CursoSeccion", lazy="dynamic", back_populates="rel_curso", passive_deletes=True)
     recursos = database.relationship("CursoRecurso", lazy="dynamic", back_populates="rel_curso", passive_deletes=True)
     inscripciones = database.relationship("EstudianteCurso", lazy="dynamic", passive_deletes=True)
-    user_events = database.relationship("UserEvent", back_populates="course", passive_deletes=True)
+    # "all", not True: the three relationships above are lazy="dynamic" and can never be
+    # loaded into the session, so True is enough for them. This one is a plain relationship,
+    # and passive_deletes=True still disassociates children that are ALREADY loaded — which
+    # nulls UserEvent.course_id, a NOT NULL column, and raises IntegrityError on a delete the
+    # database would have cascaded cleanly. Any view that renders a course's calendar loads it.
+    user_events = database.relationship("UserEvent", back_populates="course", passive_deletes="all")
 
     def validar_foro_habilitado(self):
         """Valida que el foro solo pueda habilitarse en cursos no self-paced."""
