@@ -207,12 +207,43 @@ def test_dashboard_shows_pinned_announcements(dashboard_setup, client):
     assert "Cohort call moved" in cuerpo
 
 
-def test_old_announcements_page_redirects_to_the_dashboard(dashboard_setup, client):
-    """One channel: the second global reader is retired, not 404'd."""
+def test_announcements_beyond_the_dashboard_cap_stay_reachable(dashboard_setup, client, app):
+    """Regression: the dashboard cap must not make older announcements unreachable.
+
+    An earlier revision redirected /dashboard/announcements to the dashboard, on
+    the reasoning that one channel beats two. But the dashboard shows only
+    MAX_ANNOUNCEMENTS, so everything past the newest few silently disappeared for
+    every authenticated role. Found by Greptile on PR #79.
+
+    The dashboard stays the primary door; this page is its overflow, linked from
+    the card only when there is more to see.
+    """
+    from now_lms.vistas.member_dashboard import MAX_ANNOUNCEMENTS
+
+    extra = MAX_ANNOUNCEMENTS + 2
+    with app.app_context():
+        for i in range(extra):
+            database.session.add(
+                Announcement(
+                    title=f"Announcement number {i}",
+                    message="body",
+                    course_id=None,
+                    is_sticky=False,
+                    expires_at=None,
+                )
+            )
+        database.session.commit()
+
     _entrar(client, "dash_student")
-    respuesta = client.get("/dashboard/announcements", follow_redirects=False)
-    assert respuesta.status_code == 302
-    assert respuesta.headers["Location"].endswith("/dashboard")
+
+    # The archive renders and carries the oldest one, which the dashboard cannot show.
+    archivo = client.get("/dashboard/announcements")
+    assert archivo.status_code == 200, "the announcements archive must render, not redirect"
+    assert "Announcement number 0" in archivo.get_data(as_text=True)
+
+    # And the dashboard admits it is truncating, rather than hiding it.
+    panel = client.get("/dashboard").get_data(as_text=True)
+    assert "/dashboard/announcements" in panel, "the dashboard must link to the full archive"
 
 
 def test_dashboard_has_no_fabricated_counters(dashboard_setup, client):

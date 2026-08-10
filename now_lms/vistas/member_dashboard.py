@@ -139,6 +139,26 @@ def _anuncios_fijados() -> list[Announcement]:
     )
 
 
+def _anuncios_totales() -> int:
+    """How many active global announcements exist, so the card can admit truncation.
+
+    Without this the dashboard shows its newest few and gives no sign there are
+    more, which is how announcements past the cap became unreachable. The count
+    is what turns a silent truncation into an explicit "view all". Greptile, #79.
+    """
+    ahora = utc_now().replace(tzinfo=None)
+    return int(
+        database.session.execute(
+            select(database.func.count())
+            .select_from(Announcement)
+            .filter(
+                Announcement.course_id.is_(None),
+                database.or_(Announcement.expires_at.is_(None), Announcement.expires_at >= ahora),
+            )
+        ).scalar_one()
+    )
+
+
 @member_dashboard.route("/dashboard", methods=["GET"])
 @login_required
 def panel() -> str:
@@ -169,5 +189,7 @@ def panel() -> str:
         credenciales=credenciales,
         credenciales_total=CREDENTIAL_TOTAL,
         anuncios=_anuncios_fijados(),
+        anuncios_totales=_anuncios_totales(),
+        anuncios_mostrados=MAX_ANNOUNCEMENTS,
         eventos=get_upcoming_events_for_user(usuario, limit=MAX_EVENTS),
     )

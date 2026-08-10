@@ -55,6 +55,13 @@
                             </div>
                         </div>
                         {% endfor %}
+                        {% if anuncios_totales > anuncios_mostrados %}
+                        <p class="small mb-0">
+                            <a href="{{ url_for('public_announcements.global_announcements') }}">
+                                {{ _('View all %(total)d announcements', total=anuncios_totales) }}
+                            </a>
+                        </p>
+                        {% endif %}
                     </div>
                 </div>
                 {% endif %}
