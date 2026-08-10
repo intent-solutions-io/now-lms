@@ -251,21 +251,34 @@ def test_every_multi_correct_item_in_the_curriculum_reaches_a_course_spec():
     banks_dir = seed.BANKS_DIR
     on_disk = {}
     for path in sorted(banks_dir.glob("*.json")):
-        for item in seed._load_bank(path.name):
+        try:
+            items = seed._load_bank(path.name)
+        except (KeyError, TypeError):
+            # Not a question bank. Without this, any other JSON dropped into banks/
+            # makes this test red for a reason that has nothing to do with wiring, and
+            # the failure names the wrong cause.
+            continue
+        for item in items:
             if len(seed._correct_positions(item)) > 1:
-                on_disk[item["text"]] = path.name
+                # Keyed by (bank, id) rather than text: two banks could legitimately
+                # word an item identically, and text-matching would then let one bank's
+                # inclusion mask another's absence. Every item carries an id.
+                on_disk[(path.name, item.get("id") or item["text"])] = path.name
     if not on_disk:
         pytest.skip("no multi-correct items vendored in this checkout")
+
+    def _identity(question):
+        return question.get("id") or question["text"]
 
     seeded = set()
     for spec in seed._build_specs():
         for section in spec.get("sections", []):
-            seeded.update(q["text"] for q in section.get("questions", []))
-        seeded.update(q["text"] for q in spec.get("mock_questions", []))
+            seeded.update(_identity(q) for q in section.get("questions", []))
+        seeded.update(_identity(q) for q in spec.get("mock_questions", []))
         for exam in spec.get("extra_exams", []):
-            seeded.update(q["text"] for q in exam["questions"])
+            seeded.update(_identity(q) for q in exam["questions"])
 
-    missing = {t: b for t, b in on_disk.items() if t not in seeded}
+    missing = {key: bank for key, bank in on_disk.items() if key[1] not in seeded}
     assert not missing, (
         f"{len(missing)} multi-correct item(s) exist on disk but reach no course spec, "
         f"so the platform can never grade them. Unreached banks: {sorted(set(missing.values()))}"
