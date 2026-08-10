@@ -112,6 +112,37 @@ ATRIBUTOS_PERMITIDOS = {"a": ["href", "title", "rel", "target"]}
 PROTOCOLOS_PERMITIDOS = ["http", "https", "mailto"]
 
 
+def _destino_local(respaldo: str) -> str:
+    """Return the referrer only when it points back into this site, else ``respaldo``.
+
+    These endpoints send the member back where they came from after a like, an
+    unlike or a report. ``request.referrer`` is the ``Referer`` header, which the
+    caller controls: a page on another origin can POST here and have this app issue
+    the redirect off-site, which is an open redirect and lends this domain's
+    credibility to whatever it points at. Flagged by CodeQL on PR #82.
+
+    Accepted: a same-host absolute URL, or a root-relative path. Everything else
+    falls back. Protocol-relative (``//evil.example``) and backslash (``/\\evil``)
+    forms are rejected explicitly, because some browsers normalise the backslash to
+    a slash and would treat the result as a host rather than a path.
+    """
+    referrer = request.referrer
+    if not referrer:
+        return respaldo
+
+    partes = urlparse(referrer)
+    if partes.netloc and partes.netloc != request.host:
+        return respaldo
+    if partes.scheme and partes.scheme not in ("http", "https"):
+        return respaldo
+
+    ruta = partes.path or "/"
+    if not ruta.startswith("/") or ruta.startswith("//") or ruta.startswith("/\\"):
+        return respaldo
+
+    return f"{ruta}?{partes.query}" if partes.query else ruta
+
+
 def markdown_seguro(texto: str) -> str:
     """Markdown to sanitised HTML, with every anchor hardened."""
     html = markdown(texto or "", extensions=["nl2br", "codehilite"])
@@ -673,7 +704,7 @@ def dar_like(publicacion_id: str) -> Response:
     if not AccionForm().validate_on_submit():
         abort(400)
     if _limitado("like", current_user.usuario):
-        return redirect(request.referrer or url_for("comunidad.feed"))
+        return redirect(_destino_local(url_for("comunidad.feed")))
 
     try:
         with database.session.begin_nested():
@@ -682,7 +713,7 @@ def dar_like(publicacion_id: str) -> Response:
         # Already liked. The constraint absorbed a concurrent duplicate; this is success.
         pass
     database.session.commit()
-    return redirect(request.referrer or url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
+    return redirect(_destino_local(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id)))
 
 
 @comunidad.route("/community/post/<publicacion_id>/unlike", methods=["POST"])
@@ -699,7 +730,7 @@ def quitar_like(publicacion_id: str) -> Response:
         )
     )
     database.session.commit()
-    return redirect(request.referrer or url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id))
+    return redirect(_destino_local(url_for("comunidad.ver_publicacion", publicacion_id=publicacion_id)))
 
 
 @comunidad.route("/community/post/<publicacion_id>/report", methods=["POST"])

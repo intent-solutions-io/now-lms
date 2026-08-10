@@ -713,3 +713,46 @@ def test_staff_view_counts_are_real(hub, client, app):
     cuerpo = client.get("/community/staff").get_data(as_text=True)
     assert "Unanswered questions" in cuerpo
     assert "Posts this week" in cuerpo
+
+
+def test_destino_local_rejects_offsite_referrers():
+    """Open-redirect guard, found by CodeQL on PR #82.
+
+    `request.referrer` is the Referer header, so a page on another origin can POST
+    to like/unlike/report and have this app issue the redirect off-site. The guard
+    accepts only a same-host absolute URL or a root-relative path.
+
+    Deliberately built on a bare Flask app rather than the suite's `app` fixture:
+    the subject is a pure function over the request, so it needs a request context
+    and nothing else. No database, no schema, no fixture.
+    """
+    from flask import Flask
+
+    from now_lms.vistas.comunidad import _destino_local
+
+    probe = Flask(__name__)
+    respaldo = "/community"
+
+    hostile = [
+        "https://evil.example/phish",           # absolute, other host
+        "//evil.example/phish",                 # protocol-relative
+        "/\\evil.example/phish",                # backslash, normalised to // by some browsers
+        "javascript:alert(1)",                  # non-http scheme
+        "http://evil.example/community",        # right path, wrong host
+    ]
+    friendly = [
+        ("/community/post/abc", "/community/post/abc"),
+        ("/community?tab=trending", "/community?tab=trending"),
+        ("http://localhost/community/post/abc", "/community/post/abc"),
+    ]
+
+    for referrer in hostile:
+        with probe.test_request_context("/", base_url="http://localhost", headers={"Referer": referrer}):
+            assert _destino_local(respaldo) == respaldo, f"should have refused {referrer!r}"
+
+    for referrer, esperado in friendly:
+        with probe.test_request_context("/", base_url="http://localhost", headers={"Referer": referrer}):
+            assert _destino_local(respaldo) == esperado, f"should have honoured {referrer!r}"
+
+    with probe.test_request_context("/", base_url="http://localhost"):
+        assert _destino_local(respaldo) == respaldo
