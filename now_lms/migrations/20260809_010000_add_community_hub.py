@@ -1,7 +1,7 @@
 """Add the Community Hub tables
 
 Revision ID: 20260809_010000
-Revises: 20260730_000000
+Revises: 20260810_000000
 Create Date: 2026-08-09 01:00:00
 
 Three tables backing the Community Hub (ADR-10, 000-docs/017-AT-ADEC, which
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20260809_010000"
-down_revision = "20260730_000000"
+down_revision = "20260810_000000"
 branch_labels = None
 depends_on = None
 
