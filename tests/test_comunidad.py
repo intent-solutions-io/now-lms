@@ -756,3 +756,62 @@ def test_destino_local_rejects_offsite_referrers():
 
     with probe.test_request_context("/", base_url="http://localhost"):
         assert _destino_local(respaldo) == respaldo
+
+
+def test_hidden_post_refuses_member_mutations(hub, client, app):
+    """The moderation boundary must cover writes, not just reads. Greptile, PR #82.
+
+    `ver_publicacion` 404s a hidden post for anyone but staff and its author. The
+    mutation routes reloaded the row through `_cargar()`, which filtered only on
+    `parent_id`, so a member who knew the ID could reply to a hidden post, like it
+    and report it — and could tell "hidden" from "never existed" by whether the
+    write succeeded, which is the disclosure the 404 exists to prevent.
+    """
+    with app.app_context():
+        pid = publicar("c_a", titulo="Hidden thread")
+        pub = database.session.get(ComunidadPublicacion, pid)
+        pub.estado_moderacion = "oculto"
+        database.session.commit()
+
+    entrar(client, "c_b")  # not the author, not staff
+
+    # Read is already guarded; assert it so the test documents the whole boundary.
+    assert client.get(f"/community/post/{pid}").status_code == 404
+
+    # Writes must refuse identically — 404, not 403, so existence stays undisclosed.
+    for ruta, datos in (
+        (f"/community/post/{pid}/reply", {"contenido": "sneaking in"}),
+        (f"/community/post/{pid}/like", {}),
+        (f"/community/post/{pid}/report", {"motivo": "probing"}),
+    ):
+        r = client.post(ruta, data=datos, follow_redirects=False)
+        assert r.status_code == 404, f"{ruta} returned {r.status_code}, expected 404 on a hidden post"
+
+    with app.app_context():
+        respuestas = database.session.execute(
+            select(ComunidadPublicacion).filter(ComunidadPublicacion.parent_id == pid)
+        ).scalars().all()
+        assert respuestas == [], "a reply was stored against a hidden post"
+        likes = database.session.execute(
+            select(ComunidadReaccion).filter(ComunidadReaccion.publicacion_id == pid)
+        ).scalars().all()
+        assert likes == [], "a like was stored against a hidden post"
+
+
+def test_staff_can_still_act_on_a_hidden_post(hub, client, app):
+    """The guard is fail-closed by default, so prove the staff bypass still works.
+
+    A boundary that also locked out moderators would make hiding a post irreversible.
+    """
+    with app.app_context():
+        pid = publicar("c_a", titulo="Hidden but restorable")
+        pub = database.session.get(ComunidadPublicacion, pid)
+        pub.estado_moderacion = "oculto"
+        database.session.commit()
+
+    entrar(client, "c_mod")
+    r = client.post(f"/community/post/{pid}/restore", data={"motivo": "appeal upheld"}, follow_redirects=False)
+    assert r.status_code in (302, 303), f"staff restore returned {r.status_code}"
+
+    with app.app_context():
+        assert database.session.get(ComunidadPublicacion, pid).estado_moderacion == "visible"
