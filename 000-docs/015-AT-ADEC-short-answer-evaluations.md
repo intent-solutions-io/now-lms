@@ -6,10 +6,10 @@
 |---|---|
 | **ADR Number** | ADR-6 |
 | **Title** | Add a short-answer question type with instructor grading, authored upstream |
-| **Status** | **Proposed** |
-| **Date** | 2026-07-28 |
+| **Status** | **Accepted** |
+| **Date** | 2026-07-28 (proposed) · 2026-08-02 (accepted) |
 | **Author** | Max Sheahan (curriculum) |
-| **Decision needed from** | Repo owner — accept, amend, or reject |
+| **Decided by** | Repo owner, review on PR #37, 2026-08-02 |
 | **Applies** | ADR-1 (`002-AT-ADEC-adopt-and-mature-upstream.md`) |
 
 ## 1. Decision Summary
@@ -25,7 +25,7 @@
 
 ## 2. Context
 
-NOW-LMS evaluations support exactly two question types. `now_lms/forms/__init__.py:129`
+NOW-LMS evaluations support exactly two question types. `now_lms/forms/__init__.py:130`
 defines the full set:
 
 ```python
@@ -33,7 +33,7 @@ return [("multiple", _l("Opción múltiple")), ("boolean", _l("Verdadero/Falso")
 ```
 
 There is no third type, no storage for a written response, and no rubric
-field. `Answer` (`now_lms/db/__init__.py:1067`) persists only
+field. `Answer` (`now_lms/db/__init__.py:1180`) persists only
 `selected_option_ids`, a JSON array of option UUIDs. `Question` carries `text`
 and `explanation`, both instructor-facing, and neither is a grading criterion.
 
@@ -51,9 +51,9 @@ what a practice-based curriculum needs to assess.
 The gap is also narrower to close than it looks. The entire grading path is
 four functions in one file (`now_lms/vistas/evaluations.py`):
 `_answer_is_correct`, `calculate_score`, `_resolve_option_ids`, and
-`_save_question_answers`. `Question.type` is `String(20)` with no enumeration
+`_save_question_answers`. `Question.type` (`now_lms/db/__init__.py:1122`) is `String(20)` with no enumeration
 constraint, so a new type value needs no schema change. `EvaluationAttempt.passed`
-is already `nullable=True`, so a pending-grade state is representable in the
+(`now_lms/db/__init__.py:1158`) is already `nullable=True`, so a pending-grade state is representable in the
 schema as it stands and is simply never produced today, because
 `take_evaluation` scores every attempt synchronously on submit.
 
@@ -126,6 +126,10 @@ schema as it stands and is simply never produced today, because
 - `_save_question_answers` writes `text_response` for the new type.
 - `take_evaluation` leaves `passed` as `None` when the attempt holds an
   ungraded answer, rather than stamping pass or fail.
+- **An attempt awaiting grading (`passed = NULL`) is never auto-failed**
+  (owner ruling, PR #37, 2026-08-02). No timeout, batch job, or code path may
+  convert a pending attempt into a failure. The 72.0 pass mark applies only
+  once every answer in the attempt has been scored.
 - **Grading the last pending answer finalises the attempt (Greptile P2, 2026-07-28).**
   Today `score`, `passed` and certificate eligibility are all computed once, at
   submission. This change makes submission no longer the moment the result is
@@ -135,7 +139,7 @@ schema as it stands and is simply never produced today, because
   its certificate is withheld — a failure the learner sees and the instructor
   has no way to clear. The finalisation path is shared with submission rather
   than duplicated, so the two cannot drift.
-- `forms/__init__.py:129` gains the third choice.
+- `forms/__init__.py:130` gains the third choice.
 
 ### Templates
 
@@ -175,19 +179,24 @@ question-type decision. This ADR neither proposes it nor forecloses it. The
 interface described above is sufficient for a grader of any kind to be added
 later without a second migration.
 
-## 7. Open Questions for the Reviewer
+## 7. Decisions on Review (2026-08-02)
 
-1. **Upstream first, or fork first?** ADR-1 says upstream. Upstream PR #179 has
-   been open and waiting on the maintainer for some time, so upstream-first
-   carries real schedule risk for anything that depends on this. Options are to
-   accept the wait, or to carry the change on `deploy/now-lms-fixed` while the
-   upstream PR is open and drop it on acceptance. The second is a temporary
-   divergence rather than a permanent one, but it is still divergence, and
-   ADR-1 does not currently describe that case.
-2. **Multiple short answers per evaluation.** Permitted, or capped at one, to
-   bound grading load?
-3. **Partial credit.** The `awarded_points` design supports it. Should the
-   grading UI expose a free score, or fixed bands?
+The three questions this ADR posed were ruled on by the repo owner in the
+2026-08-02 review of PR #37. They are recorded here as decided outcomes.
+
+1. **Upstream first, with a deploy-line carry while the upstream PR is open.**
+   Author against `upstream/main` and PR to `bmosoluciones/now-lms`. Carry the
+   change on `deploy/now-lms-fixed` only while the upstream review is open,
+   and drop the carry on acceptance — the same pattern PR #65 used to bring
+   landed upstream fixes down to the deploy line. This is a temporary
+   divergence ADR-1 already accommodates in practice; **no ADR-1 exception
+   clause is needed.**
+2. **No schema-level cap on short answers per evaluation.** The bound on
+   grading load is authoring guidance, not a constraint: our courses start
+   with one short-answer question per evaluation.
+3. **Partial credit is a free 0–100 score on the graded answer.** Bands, where
+   the grading UI offers them, are presets in that UI — never a storage
+   constraint on `awarded_points`.
 
 ## 8. Verification Plan
 
