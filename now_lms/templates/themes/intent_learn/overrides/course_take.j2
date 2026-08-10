@@ -234,6 +234,30 @@
                             </section>
                             {% endif %}
 
+                            {# The drill had no entry point at all: nothing in the theme or the
+                               platform templates linked to it, so a member could only reach it by
+                               typing the URL. A practice resource nobody can find is not a
+                               resource. #}
+                            <section class="isl-panel">
+                                <div class="isl-panel-head">
+                                    <i class="bi bi-bullseye" aria-hidden="true"></i>
+                                    <h2>{{ _('Practice by domain') }}</h2>
+                                </div>
+                                <div class="isl-panel-body">
+                                    <p class="isl-prose">
+                                        {{ _('Work through every question in one part of the syllabus at a time, '
+                                             'with the answer and the reasoning shown as you go. Nothing is recorded — '
+                                             'this is rehearsal, not a score.') }}
+                                    </p>
+                                    <a
+                                        class="btn btn-primary"
+                                        href="{{ url_for('evaluation.practice_by_domain', course_code=curso.codigo) }}"
+                                    >
+                                        {{ _('Choose a domain to practice') }}
+                                    </a>
+                                </div>
+                            </section>
+
                             <section class="isl-panel">
                                 <div class="isl-panel-head">
                                     <i class="bi bi-list-ul" aria-hidden="true"></i>
