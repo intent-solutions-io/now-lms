@@ -227,7 +227,7 @@ trap 'rm -f "$REPORT_HTML"' EXIT
   echo "<table style=\"$TABLE\">"
   echo "<tr><th style=\"$TH\">Member</th><th style=\"$TH\">Role</th><th style=\"$TH\">Last access</th><th style=\"$TH;text-align:right\">Courses</th></tr>"
   [ -n "$MEMBERS" ] && printf '%s\n' "$MEMBERS" | awk -F'|' -v td="$TD" -v muted="$MUTED" -v zebra="$ZEBRA" '
-    function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);return s}
+    function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);gsub(/"/,"\\&quot;",s);gsub(/'\''/,"\\&#39;",s);return s}
     {bg=(NR%2==0)?"background:" zebra ";":"";
      last=($4=="never")?"<span style=\"color:#b45309\">never</span>":$4;
      printf "<tr style=\"%s\"><td style=\"%s\">%s<div style=\"color:%s;font-size:11px\">%s</div></td><td style=\"%s\">%s</td><td style=\"%s\">%s</td><td style=\"%s;text-align:right\">%s</td></tr>\n",
@@ -239,7 +239,7 @@ trap 'rm -f "$REPORT_HTML"' EXIT
     echo "<table style=\"$TABLE\">"
     echo "<tr><th style=\"$TH\">Member</th><th style=\"$TH\">Course</th><th style=\"$TH\">Progress</th><th style=\"$TH;text-align:right\">Done</th><th style=\"$TH\">Complete</th></tr>"
     printf '%s\n' "$PROGRESS" | awk -F'|' -v td="$TD" -v rule="$RULE" -v zebra="$ZEBRA" '
-      function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);return s}
+      function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);gsub(/"/,"\\&quot;",s);gsub(/'\''/,"\\&#39;",s);return s}
       {bg=(NR%2==0)?"background:" zebra ";":""; pct=$5+0; w=(pct<2&&pct>0)?2:pct;
        bar="<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:120px;background:" rule ";border-radius:3px\"><tr><td style=\"height:7px;width:" w "%;background:#2f6f4e;border-radius:3px;font-size:0;line-height:0\">&nbsp;</td><td style=\"font-size:0;line-height:0\">&nbsp;</td></tr></table>";
        done=($6=="t")?"yes":"no";
@@ -265,7 +265,7 @@ trap 'rm -f "$REPORT_HTML"' EXIT
     # to send precisely when there are MORE than MISSED_TOP rows, which is exactly
     # when it is worth sending. Found by Greptile on PR #81.
     printf '%s\n' "$MISSED" | awk -F'|' -v top="$MISSED_TOP" -v td="$TD" -v muted="$MUTED" -v zebra="$ZEBRA" '
-      function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);return s}
+      function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);gsub(/"/,"\\&quot;",s);gsub(/'\''/,"\\&#39;",s);return s}
       NR>top{next}
       {bg=(NR%2==0)?"background:" zebra ";":""; m=$6+0;
        col=(m>=70)?"#b91c1c":((m>=40)?"#b45309":"#4b5563");
@@ -283,7 +283,7 @@ trap 'rm -f "$REPORT_HTML"' EXIT
     echo "<table style=\"$TABLE\">"
     echo "<tr><th style=\"$TH\">Member</th><th style=\"$TH\">Course</th><th style=\"$TH\">Date</th></tr>"
     printf '%s\n' "$CERTS" | awk -F'|' -v td="$TD" -v zebra="$ZEBRA" '
-      function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);return s}
+      function esc(s){gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);gsub(/"/,"\\&quot;",s);gsub(/'\''/,"\\&#39;",s);return s}
       {bg=(NR%2==0)?"background:" zebra ";":"";
        printf "<tr style=\"%s\"><td style=\"%s\">%s</td><td style=\"%s\">%s</td><td style=\"%s\">%s</td></tr>\n",bg,td,esc($1),td,esc($2),td,esc($3)}'
     echo "</table>"
