@@ -146,7 +146,7 @@ MISSED=$(psql_ro "
                    THEN ans.selected_option_ids END)::jsonb) AS t(v)
     ) sel ON TRUE
     LEFT JOIN LATERAL (
-      SELECT COALESCE(ARRAY_AGG(DISTINCT o.id ORDER BY o.id), '{}'::text[]) AS ids
+      SELECT COALESCE(ARRAY_AGG(DISTINCT o.id::text ORDER BY o.id::text), '{}'::text[]) AS ids
       FROM question_option o WHERE o.question_id = q.id AND o.is_correct
     ) cor ON TRUE
   )
