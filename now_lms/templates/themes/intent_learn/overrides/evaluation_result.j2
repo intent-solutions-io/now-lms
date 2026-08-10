@@ -113,10 +113,64 @@
             .is-meter span.is-short {
                 background: var(--is-short);
             }
+            /* Native <details> rather than a JS accordion: it collapses without
+               scripting, is keyboard-operable and screen-reader-announced for free,
+               and browser find-in-page can open a closed section. */
             .is-q {
                 border-top: 1px solid var(--is-line);
                 padding-top: 1rem;
                 margin-top: 1rem;
+            }
+            .is-q > summary {
+                list-style: none;
+                cursor: pointer;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem 0.75rem;
+                align-items: baseline;
+                justify-content: space-between;
+            }
+            .is-q > summary::-webkit-details-marker {
+                display: none;
+            }
+            .is-q > summary:hover {
+                color: var(--is-accent);
+            }
+            /* Wraps and shrinks: a `flex: 0 0 auto` row here measured 380px inside a
+               316px column at 390px wide and pushed the whole page sideways. */
+            .is-q-meta {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 0.5rem;
+                flex: 0 1 auto;
+                min-width: 0;
+            }
+            .is-q-meta .is-tag {
+                max-width: 100%;
+            }
+            /* The LABELS carry the verdict in colour; the answer text itself stays in
+               the body colour so it reads as content rather than as a judgement. An
+               unanswered question takes the wrong colour, matching its summary badge —
+               it scores as incorrect. Colour is never the only signal: the badge still
+               says Correct, Incorrect or Not answered in words. */
+            .is-answer-right {
+                color: var(--is-pass);
+            }
+            .is-answer-wrong {
+                color: var(--is-short);
+            }
+            .is-q-caret::before {
+                content: "+";
+                font-family: var(--bs-font-monospace, monospace);
+                color: var(--is-muted);
+            }
+            .is-q[open] > summary .is-q-caret::before {
+                content: "\2212";
+            }
+            .is-q-body {
+                padding-top: 0.85rem;
             }
             .is-tag {
                 font-size: 0.6875rem;
@@ -220,16 +274,21 @@
                         {% endif %}
 
                         <div class="is-card p-4">
-                            <h5 class="mb-3" style="color: var(--is-strong)">Every question</h5>
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                <h5 class="mb-0" style="color: var(--is-strong)">Every question</h5>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="is-expand-all">
+                                    Expand all
+                                </button>
+                            </div>
                             {% for question in attempt.evaluation.questions %} {% set answer = (attempt.answers |
                             selectattr("question_id", "equalto", question.id) | list | first) %} {% set correct_ids =
                             question.options | selectattr("is_correct", "equalto", true) | map(attribute="id") | list %} {% set
                             selected_ids = (answer.selected_option_ids | fromjson) if (answer and answer.selected_option_ids)
                             else [] %} {% set is_correct = selected_ids and selected_ids | sort == correct_ids | sort %}
-                            <div class="is-q">
-                                <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
-                                    <div class="is-mono" style="color: var(--is-muted)">Question {{ loop.index }}</div>
-                                    <div class="d-flex align-items-center gap-2">
+                            <details class="is-q">
+                                <summary>
+                                    <span class="is-mono" style="color: var(--is-muted)">Question {{ loop.index }}</span>
+                                    <span class="is-q-meta">
                                         {% if question.domain_name %}
                                         <span class="is-tag">{{ question.domain_name }}</span>
                                         {% endif %} {% if is_correct %}
@@ -239,12 +298,15 @@
                                         {% else %}
                                         <span class="is-verdict is-short" style="font-size: 0.75rem">Incorrect</span>
                                         {% endif %}
-                                    </div>
-                                </div>
+                                        <span class="is-q-caret" aria-hidden="true"></span>
+                                    </span>
+                                </summary>
+
+                                <div class="is-q-body">
                                 <p style="color: var(--is-strong)">{{ question.text }}</p>
 
                                 <div class="small mb-2">
-                                    <div style="color: var(--is-muted)">Your answer</div>
+                                    <div class="{{ 'is-answer-right' if is_correct else 'is-answer-wrong' }}">Your answer</div>
                                     {% if selected_ids %} {% for option in question.options %} {% if option.id in selected_ids %}
                                     <div>{{ option.text }}</div>
                                     {% endif %} {% endfor %} {% else %}
@@ -254,7 +316,7 @@
 
                                 {% if not is_correct %}
                                 <div class="small mb-2">
-                                    <div style="color: var(--is-muted)">Correct answer</div>
+                                    <div class="is-answer-right">Correct answer</div>
                                     {% for option in question.options %} {% if option.is_correct %}
                                     <div>{{ option.text }}</div>
                                     {% endif %} {% endfor %}
@@ -264,7 +326,8 @@
                                     {{ question.explanation }}
                                 </p>
                                 {% endif %}
-                            </div>
+                                </div>
+                            </details>
                             {% endfor %}
                         </div>
 
@@ -284,5 +347,22 @@
                 </div>
             </div>
         </main>
+        <script>
+            (function () {
+                "use strict";
+                var button = document.getElementById("is-expand-all");
+                if (!button) return;
+                var items = Array.prototype.slice.call(document.querySelectorAll("details.is-q"));
+                button.addEventListener("click", function () {
+                    var opening = items.some(function (item) {
+                        return !item.open;
+                    });
+                    items.forEach(function (item) {
+                        item.open = opening;
+                    });
+                    button.textContent = opening ? "Collapse all" : "Expand all";
+                });
+            })();
+        </script>
     </body>
 </html>
