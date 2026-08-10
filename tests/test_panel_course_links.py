@@ -8,7 +8,7 @@ visitor, staff included, so a "See All" beside a list of the user's own courses
 lands them somewhere that cannot contain those courses.
 """
 
-import re
+from html.parser import HTMLParser
 
 import pytest
 
@@ -39,11 +39,38 @@ def login(client, username):
     return client.post("/user/login", data={"usuario": username, "acceso": "pass"})
 
 
+class _ArrowLinkFinder(HTMLParser):
+    """Collect the href of every anchor containing a bi-arrow-right icon.
+
+    Parsed rather than matched with a regex so the assertion survives attribute
+    order, added attributes and whitespace changes in the template.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+        self._open_anchor: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        if tag == "a":
+            self._open_anchor = attributes.get("href")
+        elif tag == "i" and self._open_anchor is not None:
+            if "bi-arrow-right" in (attributes.get("class") or "").split():
+                self.hrefs.append(self._open_anchor)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a":
+            self._open_anchor = None
+
+
 def _see_all_href(html: str) -> str:
     """Return the href of the panel's single arrow-right ("Ver Todos") anchor."""
-    match = re.search(r'<a\s+[^>]*href="([^"]+)"[^>]*>\s*<i class="bi bi-arrow-right', html, re.DOTALL)
-    assert match, "the recent-courses card no longer carries an arrow-right link"
-    return match.group(1)
+    finder = _ArrowLinkFinder()
+    finder.feed(html)
+    assert finder.hrefs, "the recent-courses card no longer carries an arrow-right link"
+    assert len(finder.hrefs) == 1, f"expected one arrow-right link on the panel, found {finder.hrefs}"
+    return finder.hrefs[0]
 
 
 def test_instructor_panel_see_all_reaches_the_instructor_course_list(client, db_session, instructor_user):
