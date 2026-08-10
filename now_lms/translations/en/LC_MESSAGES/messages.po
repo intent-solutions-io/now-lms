@@ -13533,6 +13533,11 @@ msgid ""
 "certification, pricing or partner policy are routed to %(owner)s."
 msgstr ""
 
+#: now_lms/templates/themes/intent_learn/pages/dashboard.html:92
+#, python-format
+msgid "%(done)d of %(total)d required items complete"
+msgstr ""
+
 #~ msgid "Recuperar Contraseña"
 #~ msgstr "Recover Password"
 

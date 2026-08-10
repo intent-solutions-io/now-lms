@@ -6,8 +6,8 @@
 |---|---|
 | **ADR Number** | ADR-9 |
 | **Title** | Serve members a fork-local dashboard instead of the upstream student panel |
-| **Status** | Proposed |
-| **Date** | 2026-08-08 |
+| **Status** | Accepted |
+| **Date** | 2026-08-08 (proposed) · 2026-08-10 (accepted) |
 | **Author** | Filed with the implementation on `feat/member-dashboard` |
 | **Decision needed from** | Repo owner — accept, amend, or reject |
 | **Note on numbering** | ADR-6 is claimed by open PR #37, ADR-7 is `014-AT-ADEC`, ADR-8 is `015-AT-ADEC`. This takes ADR-9 and document number `016`. |

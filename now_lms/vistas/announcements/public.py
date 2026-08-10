@@ -17,7 +17,7 @@ from werkzeug.wrappers import Response
 # ---------------------------------------------------------------------------------------
 from now_lms.cache import cache
 from now_lms.config import DIRECTORIO_PLANTILLAS
-from now_lms.db import MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA, Announcement, Curso, EstudianteCurso, database
+from now_lms.db import MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA, Announcement, Curso, EstudianteCurso, database, utc_now
 from now_lms.i18n import _
 
 public_announcements = Blueprint("public_announcements", __name__, template_folder=DIRECTORIO_PLANTILLAS)
@@ -25,23 +25,45 @@ public_announcements = Blueprint("public_announcements", __name__, template_fold
 
 @public_announcements.route("/dashboard/announcements", methods=["GET"])
 @login_required
-def global_announcements() -> Response:
-    """Redirect to the member dashboard, which now carries global announcements.
+def global_announcements() -> str:
+    """The full archive of active global announcements, paginated.
 
-    FORK-LOCAL. One channel for community communication is a product decision:
-    members should have one place to look, and two readers for the same
-    announcements is two channels no matter how identical their content.
+    FORK-LOCAL NOTE. The member dashboard is the primary door for community
+    communication and carries the newest few announcements inline. This page is
+    the OVERFLOW, not a competing reader: the dashboard links here only when
+    there are more announcements than it shows.
 
-    The native model, the admin and instructor CRUD surfaces, and the per-course
-    announcements page are all untouched — only this second global reader is
-    retired. It redirects rather than 404s so any link already in circulation
-    still lands somewhere useful.
+    An earlier revision of this branch redirected here to the dashboard, on the
+    reasoning that one channel beats two. The reasoning was right and the
+    execution was wrong — the dashboard caps at MAX_ANNOUNCEMENTS, so every
+    announcement past the newest few became unreachable for every authenticated
+    role, silently. A summary with an explicit "view all" is one channel; a
+    summary that quietly drops the rest is a data-loss bug wearing a product
+    decision's clothes. Found by Greptile on PR #79.
 
-    Upstream path: none. This is a product decision for this deployment, not a
-    bug, in the same category as the anonymous-gated-course 302. Re-apply at
-    sync.
+    Timezone: filtered against naive UTC, matching ``Announcement.is_active()``
+    and how ``expires_at`` is stored. The original compared against
+    ``datetime.now()``, which is local time, so on a non-UTC host it retired
+    announcements early or late by the offset.
     """
-    return redirect(url_for("member_dashboard.panel"))
+    ahora = utc_now().replace(tzinfo=None)
+
+    consulta = database.paginate(
+        database.select(Announcement)
+        .filter(
+            Announcement.course_id.is_(None),
+            database.or_(
+                Announcement.expires_at.is_(None),
+                Announcement.expires_at >= ahora,
+            ),
+        )
+        .order_by(Announcement.is_sticky.desc(), Announcement.timestamp.desc()),
+        page=request.args.get("page", default=1, type=int),
+        max_per_page=MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA,
+        count=True,
+    )
+
+    return render_template("announcements/global.html", consulta=consulta)
 
 
 @public_announcements.route("/course/<course_id>/announcements", methods=["GET"])

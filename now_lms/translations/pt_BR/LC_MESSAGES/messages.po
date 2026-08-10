@@ -14588,6 +14588,11 @@ msgstr ""
 "O que você publica aqui é experiência da comunidade, não orientação oficial da %(brand)s. "
 "Perguntas sobre certificação, preços ou política de parceiros são encaminhadas a %(owner)s."
 
+#: now_lms/templates/themes/intent_learn/pages/dashboard.html:92
+#, python-format
+msgid "%(done)d of %(total)d required items complete"
+msgstr "%(done)d de %(total)d itens obrigatórios concluídos"
+
 #~ msgid "Recuperar Contraseña"
 #~ msgstr "Recuperar senha"
 

@@ -67,6 +67,13 @@
                             </div>
                         </div>
                         {% endfor %}
+                        {% if anuncios_totales > anuncios_mostrados %}
+                        <p class="small mb-0">
+                            <a href="{{ url_for('public_announcements.global_announcements') }}">
+                                {{ _('View all %(total)d announcements', total=anuncios_totales) }}
+                            </a>
+                        </p>
+                        {% endif %}
                     </div>
                 </div>
                 {% endif %}
@@ -94,8 +101,8 @@
                                         <div class="progress-bar" style="width: {{ item.porcentaje }}%;"></div>
                                     </div>
                                     <div class="small text-muted mt-1">
-                                        {{ item.recursos_completados }} {{ _('of') }}
-                                        {{ item.recursos_requeridos }} {{ _('required items complete') }}
+                                        {{ _('%(done)d of %(total)d required items complete',
+                                             done=item.recursos_completados, total=item.recursos_requeridos) }}
                                     </div>
                                 </li>
                                 {% endfor %}
@@ -185,7 +192,7 @@
                                 {% for evento in eventos %}
                                 <li class="list-group-item">
                                     <div class="fw-semibold">{{ evento.title }}</div>
-                                    <div class="small text-muted">{{ evento.start_time.strftime('%b %d, %H:%M') }}</div>
+                                    <div class="small text-muted">{{ evento.start_time | datetimeformat('MMM d, HH:mm') }}</div>
                                 </li>
                                 {% endfor %}
                             </ul>
