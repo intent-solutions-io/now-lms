@@ -40,6 +40,7 @@ from now_lms.db import (
 )
 from now_lms.forms import EvaluationReopenRequestForm
 from now_lms.i18n import _
+from now_lms.themes import get_evaluation_result_template
 
 # ---------------------------------------------------------------------------------------
 # Blueprint definition
@@ -260,7 +261,7 @@ def evaluation_result(attempt_id: int) -> str:
     if attempt.user_id != current_user.usuario:
         abort(403)
 
-    return render_template("evaluations/evaluation_result.html", attempt=attempt)
+    return render_template(get_evaluation_result_template(), attempt=attempt)
 
 
 @evaluation.route("/evaluation/<evaluation_id>/request-reopen", methods=["GET", "POST"])

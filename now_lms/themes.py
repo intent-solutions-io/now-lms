@@ -128,6 +128,17 @@ def get_course_take_template() -> str:
     return "learning/curso.html"
 
 
+def get_evaluation_result_template() -> str:
+    """Devuelve la ruta del template del resultado de una evaluación."""
+    THEME = get_current_theme()
+
+    EVALUATION_RESULT = Path(path.join(get_theme_path(), "overrides", "evaluation_result.j2"))
+
+    if EVALUATION_RESULT.exists():
+        return THEMES_DIRECTORY + str(THEME) + "/overrides/evaluation_result.j2"
+    return "evaluations/evaluation_result.html"
+
+
 def get_resource_list_template() -> str:
     """Devuelve la ruta del template de la lista de recursos."""
     THEME = get_current_theme()
