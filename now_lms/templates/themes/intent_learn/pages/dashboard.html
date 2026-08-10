@@ -89,8 +89,8 @@
                                         <div class="progress-bar" style="width: {{ item.porcentaje }}%;"></div>
                                     </div>
                                     <div class="small text-muted mt-1">
-                                        {{ item.recursos_completados }} {{ _('of') }}
-                                        {{ item.recursos_requeridos }} {{ _('required items complete') }}
+                                        {{ _('%(done)d of %(total)d required items complete',
+                                             done=item.recursos_completados, total=item.recursos_requeridos) }}
                                     </div>
                                 </li>
                                 {% endfor %}
@@ -143,7 +143,7 @@
                                 {% for evento in eventos %}
                                 <li class="list-group-item">
                                     <div class="fw-semibold">{{ evento.title }}</div>
-                                    <div class="small text-muted">{{ evento.start_time.strftime('%b %d, %H:%M') }}</div>
+                                    <div class="small text-muted">{{ evento.start_time | datetimeformat('MMM d, HH:mm') }}</div>
                                 </li>
                                 {% endfor %}
                             </ul>
