@@ -2032,8 +2032,14 @@ The pandemic accelerated a trend that was already underway. Online learning is n
     log.debug("Default blog post created successfully.")
 
 
+#: The language the default custom pages fall back to. Named once so the
+#: fallback inside paginas_predeterminadas() and the language reported by
+#: sincronizar_paginas_predeterminadas() cannot drift apart, and so adding a
+#: fourth shipped language is a single edit here.
+IDIOMA_PREDETERMINADO = "en"
+
 #: Languages the default custom pages ship in.
-IDIOMAS_PAGINAS_PREDETERMINADAS = ("en", "es", "pt_BR")
+IDIOMAS_PAGINAS_PREDETERMINADAS = (IDIOMA_PREDETERMINADO, "es", "pt_BR")
 
 
 def paginas_predeterminadas(lang: str = "en") -> Dict[str, Dict[str, str]]:
@@ -2216,12 +2222,12 @@ def paginas_predeterminadas(lang: str = "en") -> Dict[str, Dict[str, str]]:
     # Get content based on system language, fallback to English
     return {
         "about-us": {
-            "title": about_us_titles.get(lang, about_us_titles["en"]),
-            "content": about_us_content.get(lang, about_us_content["en"]),
+            "title": about_us_titles.get(lang, about_us_titles[IDIOMA_PREDETERMINADO]),
+            "content": about_us_content.get(lang, about_us_content[IDIOMA_PREDETERMINADO]),
         },
         "privacy-policy": {
-            "title": privacy_policy_titles.get(lang, privacy_policy_titles["en"]),
-            "content": privacy_policy_content.get(lang, privacy_policy_content["en"]),
+            "title": privacy_policy_titles.get(lang, privacy_policy_titles[IDIOMA_PREDETERMINADO]),
+            "content": privacy_policy_content.get(lang, privacy_policy_content[IDIOMA_PREDETERMINADO]),
         },
     }
 
@@ -2235,7 +2241,7 @@ def crear_paginas_estaticas_predeterminadas() -> None:
 
     # Get system language from configuration
     config = get_configuracion()
-    lang = config.lang if config else "en"
+    lang = config.lang if config else IDIOMA_PREDETERMINADO
 
     for slug, pagina in paginas_predeterminadas(lang).items():
         existente = database.session.execute(
@@ -2294,14 +2300,14 @@ def sincronizar_paginas_predeterminadas(lang: str | None = None, *, aplicar: boo
 
     if lang is None:
         config = get_configuracion()
-        lang = config.lang if config else "en"
+        lang = config.lang if config else IDIOMA_PREDETERMINADO
 
     # paginas_predeterminadas() falls back to English for a language it does not
     # ship, so an unsupported Configuracion.lang must be resolved to the language
     # actually written before it is reported. Reporting the raw code would have
     # the report claim a page is in, say, French, when the row holds the English
     # default, and reporting truthfully is this function's whole job.
-    idioma_efectivo = lang if lang in IDIOMAS_PAGINAS_PREDETERMINADAS else "en"
+    idioma_efectivo = lang if lang in IDIOMAS_PAGINAS_PREDETERMINADAS else IDIOMA_PREDETERMINADO
 
     objetivo = paginas_predeterminadas(lang)
     conocidas = {idioma: paginas_predeterminadas(idioma) for idioma in IDIOMAS_PAGINAS_PREDETERMINADAS}
@@ -2346,6 +2352,12 @@ def sincronizar_paginas_predeterminadas(lang: str | None = None, *, aplicar: boo
                     )
                 )
             else:
+                # Title and content only, deliberately. The insert branch above
+                # sets is_active and mostrar_en_footer because it is creating a
+                # page that does not exist yet; here an administrator may have
+                # hidden this page or taken it out of the footer on purpose, and
+                # a language correction is not a reason to undo that. The
+                # asymmetry with the insert branch is intended, not an omission.
                 fila.title = pagina["title"]
                 fila.content = pagina["content"]
             escrituras += 1

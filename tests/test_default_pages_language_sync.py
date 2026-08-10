@@ -187,6 +187,44 @@ def test_seeding_output_is_unchanged_by_the_refactor(app):
         assert paginas_predeterminadas("fr") == paginas_predeterminadas("en")
 
 
+def test_repairing_a_page_preserves_the_administrator_s_visibility_toggles(app):
+    """A language correction must not silently re-publish a page staff hid.
+
+    The insert branch sets ``is_active`` and ``mostrar_en_footer`` because it is
+    creating a page that does not exist yet. The update branch deliberately does
+    not, since an administrator may have hidden a default page or taken it out of
+    the footer on purpose, and correcting its language is not a reason to undo
+    that. The asymmetry is intentional, so it is pinned here. MiniMax-M3, PR #86.
+    """
+    from now_lms.db import Configuracion, CustomPage, database
+    from now_lms.db.initial_data import sincronizar_paginas_predeterminadas
+
+    with app.app_context():
+        _sembrar("en")
+
+        fila = database.session.execute(
+            database.select(CustomPage).filter(CustomPage.slug == "about-us")
+        ).scalar_one_or_none()
+        fila.is_active = False
+        fila.mostrar_en_footer = False
+        database.session.commit()
+
+        config = database.session.execute(database.select(Configuracion)).scalars().first()
+        config.lang = "es"
+        database.session.commit()
+
+        # Still a byte-identical default, so still repairable.
+        assert _estados()["about-us"]["estado"] == "desactualizada"
+        sincronizar_paginas_predeterminadas(aplicar=True)
+
+        fila = database.session.execute(
+            database.select(CustomPage).filter(CustomPage.slug == "about-us")
+        ).scalar_one_or_none()
+        assert fila.title == ES_TITLES["about-us"], "the language was not corrected"
+        assert fila.is_active is False, "a hidden page was silently re-activated"
+        assert fila.mostrar_en_footer is False, "a page was silently put back in the footer"
+
+
 def test_an_unsupported_language_is_reported_as_the_language_actually_written(app):
     """The report must name the language on disk, not the unsupported code asked for.
 
