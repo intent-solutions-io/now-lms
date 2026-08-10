@@ -231,3 +231,63 @@ def test_a_course_with_no_labelled_questions_returns_nothing(cca_db):
     domains, by_key = _course_questions_by_domain("CCA-DOES-NOT-EXIST", _member())
     assert domains == []
     assert by_key == {}
+
+
+def test_a_limited_attempt_evaluation_is_not_drillable_even_without_the_exam_flag(cca_db):
+    """`is_exam` is not sufficient, and relying on it was the second disclosure path.
+
+    `is_exam` and `max_attempts` are independent fields on the instructor form, so an
+    instructor can create a scored, limited-attempt evaluation without ticking "is an
+    exam". Admitting it into a drill hands out its answer key just the same. A finite
+    attempt limit is what makes an evaluation scored in practice.
+    """
+    from now_lms.db import Evaluation
+
+    section = [_question("Quiz item.", "d-alpha")]
+    member = _member("limited-member")
+    _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P6", section, None))
+    _enroll(member, "CCA-P6")
+
+    # Turn this course's seeded quizzes into scored ones WITHOUT marking them exams.
+    # Scoped by section rather than found by question text: once other tests have
+    # seeded courses, a text lookup picks up whatever else is in the table.
+    from now_lms.db import CursoSeccion
+
+    section_ids = [
+        section.id
+        for section in database.session.execute(database.select(CursoSeccion).filter_by(curso="CCA-P6")).scalars()
+    ]
+    quizzes = list(
+        database.session.execute(
+            database.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))
+        ).scalars()
+    )
+    assert quizzes, "the fixture must have seeded at least one evaluation"
+    for quiz in quizzes:
+        assert quiz.is_exam is False, "the fixture must be an unmarked evaluation"
+        quiz.max_attempts = 2
+    database.session.commit()
+
+    domains, by_key = _course_questions_by_domain("CCA-P6", member)
+    assert domains == [], "a limited-attempt evaluation must not be drillable"
+    assert by_key == {}
+
+
+def test_an_inactive_enrollment_reaches_nothing(cca_db):
+    """`can_user_access_evaluation` never checks `vigente`.
+
+    It verifies the enrollment row exists and that a paid course was paid for, so a
+    withdrawn or suspended learner keeps access through it. Practice adds the check
+    rather than widening that shared helper, which other routes depend on.
+    """
+    from now_lms.db import EstudianteCurso
+
+    section = [_question("Item behind an inactive enrollment.", "d-alpha")]
+    member = _member("inactive-member")
+    _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P7", section, None))
+    database.session.add(EstudianteCurso(usuario=member.usuario, curso="CCA-P7", vigente=False))
+    database.session.commit()
+
+    domains, by_key = _course_questions_by_domain("CCA-P7", member)
+    assert domains == [], "an inactive enrollment must not gather anything"
+    assert by_key == {}

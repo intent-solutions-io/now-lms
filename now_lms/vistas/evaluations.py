@@ -265,6 +265,38 @@ def evaluation_result(attempt_id: int) -> str:
     return render_template(get_evaluation_result_template(), attempt=attempt)
 
 
+def _is_safe_to_drill(evaluation_obj) -> bool:
+    """Whether an evaluation's questions may be shown with their answers.
+
+    `is_exam` is NOT sufficient. It and `max_attempts` are independent fields on the
+    instructor form, so a scored, limited-attempt evaluation can exist without anybody
+    ticking "is an exam" — and admitting it into a drill hands out its answer key just
+    the same. A finite attempt limit is what makes an evaluation scored in practice, so
+    that is the test.
+
+    What remains drillable is the unlimited-attempt practice quiz, which already shows
+    its own answers after any submission. Drilling it discloses nothing new.
+    """
+    return not evaluation_obj.is_exam and evaluation_obj.max_attempts is None
+
+
+def _active_enrollment(course_code: str, usuario: str):
+    """An enrollment that is actually current.
+
+    `can_user_access_evaluation` checks that an EstudianteCurso row exists and that a
+    paid course was paid for, but never checks `vigente` — so a withdrawn or suspended
+    learner keeps access through it. Rather than widen that shared helper, which other
+    routes depend on, practice adds the check it needs.
+    """
+    return (
+        database.session.execute(
+            database.select(EstudianteCurso).filter_by(curso=course_code, usuario=usuario, vigente=True)
+        )
+        .scalars()
+        .first()
+    )
+
+
 def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dict]:
     """Every labelled question in a course, grouped by domain, with the member's standing.
 
@@ -281,6 +313,8 @@ def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dic
     Returns (domains, questions_by_key). Questions carry no ordering guarantee beyond
     the order they were seeded in, which is the bank's own order.
     """
+    active_enrollment = _active_enrollment(course_code, user.usuario) is not None
+
     section_ids = [
         row.id
         for row in database.session.execute(database.select(CursoSeccion).filter_by(curso=course_code)).scalars()
@@ -307,7 +341,7 @@ def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dic
     practice_ids = [
         evaluation.id
         for evaluation in evaluations
-        if not evaluation.is_exam and can_user_access_evaluation(evaluation, user)
+        if _is_safe_to_drill(evaluation) and can_user_access_evaluation(evaluation, user) and active_enrollment
     ]
     evaluation_ids = practice_ids
     if not evaluation_ids:
@@ -402,10 +436,7 @@ def practice_by_domain(course_code: str) -> str | Response:
     can work the same weak domain repeatedly without polluting the exam history their
     result pages are built from. Grading and feedback happen in the page.
     """
-    enrolled = database.session.execute(
-        database.select(EstudianteCurso).filter_by(curso=course_code, usuario=current_user.usuario)
-    ).scalars().first()
-    if not enrolled:
+    if _active_enrollment(course_code, current_user.usuario) is None:
         abort(403)
 
     domains, by_key = _course_questions_by_domain(course_code, current_user)
