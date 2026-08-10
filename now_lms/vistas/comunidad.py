@@ -756,8 +756,22 @@ def reportar(publicacion_id: str) -> Response:
 # ---------------------------------------------------------------------------------------
 # Moderation
 # ---------------------------------------------------------------------------------------
-def _cargar(publicacion_id: str) -> ComunidadPublicacion:
-    """Load a root post, 404 when it is not one."""
+def _cargar(publicacion_id: str, *, permitir_oculta: bool = False) -> ComunidadPublicacion:
+    """Load a root post, 404 when it is not one or when the caller may not see it.
+
+    The moderation boundary lives here rather than at each call site, and it defaults
+    to CLOSED. `ver_publicacion` already 404s a hidden post for anyone but staff and
+    its author, but the mutation routes reloaded the row through this helper without
+    that check, so a member who knew a hidden post's ID could still reply to it, like
+    it or report it — and could distinguish "hidden" from "never existed" by whether
+    the write succeeded. Found by Greptile on PR #82.
+
+    Fail-closed is the point: a new caller gets the boundary without remembering to
+    ask for it. Only the staff moderation actions pass ``permitir_oculta=True``, and
+    every one of them calls ``_exigir_staff()`` before this.
+
+    404 rather than 403, matching the read route: a 403 confirms the post exists.
+    """
     fila = database.session.execute(
         select(ComunidadPublicacion).filter(
             ComunidadPublicacion.id == publicacion_id, ComunidadPublicacion.parent_id.is_(None)
@@ -765,6 +779,9 @@ def _cargar(publicacion_id: str) -> ComunidadPublicacion:
     ).scalars().first()
     if not fila:
         abort(404)
+    if not permitir_oculta and fila.estado_moderacion != "visible":
+        if not (es_staff() or fila.usuario == current_user.usuario):
+            abort(404)
     return fila
 
 
@@ -781,7 +798,7 @@ def _registrar(publicacion_id: str, tipo: str, motivo: str | None = None) -> Non
 def ocultar(publicacion_id: str) -> Response:
     """Hide a post. Reversible, reasoned, and recorded. Nothing is deleted."""
     _exigir_staff()
-    pub = _cargar(publicacion_id)
+    pub = _cargar(publicacion_id, permitir_oculta=True)
     form = ModeracionForm()
     if form.validate_on_submit():
         pub.estado_moderacion = "oculto"
@@ -798,7 +815,7 @@ def ocultar(publicacion_id: str) -> Response:
 def restaurar(publicacion_id: str) -> Response:
     """Reverse a hide and clear the report queue counter."""
     _exigir_staff()
-    pub = _cargar(publicacion_id)
+    pub = _cargar(publicacion_id, permitir_oculta=True)
     if AccionForm().validate_on_submit():
         pub.estado_moderacion = "visible"
         pub.reportes_abiertos = 0
@@ -812,7 +829,7 @@ def restaurar(publicacion_id: str) -> Response:
 def cerrar(publicacion_id: str) -> Response:
     """Close replies. Same `abierto`/`cerrado` vocabulary the native forum uses."""
     _exigir_staff()
-    raiz = _cargar(publicacion_id)
+    raiz = _cargar(publicacion_id, permitir_oculta=True)
     if AccionForm().validate_on_submit():
         raiz.estado = "cerrado"
         _registrar(publicacion_id, "lock")
@@ -825,7 +842,7 @@ def cerrar(publicacion_id: str) -> Response:
 def abrir(publicacion_id: str) -> Response:
     """Reopen replies."""
     _exigir_staff()
-    raiz = _cargar(publicacion_id)
+    raiz = _cargar(publicacion_id, permitir_oculta=True)
     if AccionForm().validate_on_submit():
         raiz.estado = "abierto"
         _registrar(publicacion_id, "unlock")
@@ -839,7 +856,7 @@ def fijar(publicacion_id: str) -> Response:
     """Pin a post above the feed. Admins only."""
     if not (current_user.is_authenticated and current_user.tipo == "admin"):
         abort(403)
-    pub = _cargar(publicacion_id)
+    pub = _cargar(publicacion_id, permitir_oculta=True)
     if AccionForm().validate_on_submit():
         pub.fijado = not pub.fijado
         _registrar(publicacion_id, "pin" if pub.fijado else "unpin")
