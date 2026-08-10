@@ -69,7 +69,18 @@ from now_lms.db import BlogPost, Curso, CursoRecurso, CursoSeccion, EstudianteCu
 # ALSO returns 302, so the smoke check cannot tell the two apart.
 #
 # Bead now-lms-4vf.
-DEMO_COURSE_CODES = ["now", "details", "free", "resources"]
+# Code -> the name upstream seeds it with. The NAME is checked as well as the code,
+# because a course code is editable and reusable: an administrator can repurpose
+# "free" into real content and, if nobody has enrolled yet, an automated cleanup
+# keyed on the code alone would delete it. A code is an address; the name is the
+# only cheap evidence the row is still upstream's sample.
+DEMO_COURSES = {
+    "now": "OnLine Teaching 101",
+    "details": "Course Details",
+    "free": "Free Course",
+    "resources": "Demo Course",
+}
+DEMO_COURSE_CODES = list(DEMO_COURSES)
 
 # Upstream's sample blog post, created by crear_blog_post_predeterminado(). Identified
 # by the slug that function derives from its own title, which is stable.
@@ -78,6 +89,9 @@ DEMO_COURSE_CODES = ["now", "details", "free", "resources"]
 # Administrator", and it is about online learning in general — not about anything
 # Intent does. A stranger evaluating the company reads it as our writing.
 DEMO_BLOG_SLUG = "the-importance-of-online-learning-in-todays-world"
+
+# The first sentence upstream seeds, used as a content fingerprint alongside the slug.
+DEMO_BLOG_OPENING = "The COVID-19 pandemic transformed the way we live, work, and learn."
 
 HOUSE_CORE_NOTE = (
     "All members begin with the shared house core, regardless of track. "
@@ -151,6 +165,13 @@ def remove_demo_blog_post(db) -> None:
     post = db.session.execute(db.select(BlogPost).filter_by(slug=DEMO_BLOG_SLUG)).scalars().first()
     if post is None:
         return
+    # The slug is derived from the title, so rewriting the body leaves it unchanged —
+    # an automated cleanup keyed on the slug alone would delete an administrator's real
+    # article that happens to still sit at that address. Check the body still opens the
+    # way upstream seeded it.
+    if not (post.content or "").lstrip().startswith(DEMO_BLOG_OPENING):
+        print(f"[keep] blog post {DEMO_BLOG_SLUG!r}: body has been rewritten — refusing to delete")
+        return
     if post.comment_count or post.comments:
         count = post.comment_count or len(post.comments)
         print(f"[keep] blog post {DEMO_BLOG_SLUG!r}: {count} comment(s) — refusing to delete")
@@ -162,9 +183,12 @@ def remove_demo_blog_post(db) -> None:
 
 def remove_demo_courses(db) -> None:
     """Delete upstream's demo courses, refusing any that a member is enrolled in."""
-    for code in DEMO_COURSE_CODES:
+    for code, seeded_name in DEMO_COURSES.items():
         curso = db.session.execute(db.select(Curso).filter_by(codigo=code)).scalars().first()
         if curso is None:
+            continue
+        if (curso.nombre or "").strip() != seeded_name:
+            print(f"[keep] {code}: renamed to {curso.nombre!r} — not upstream's sample, refusing to delete")
             continue
         enrolled = (
             db.session.execute(db.select(EstudianteCurso).filter_by(curso=code)).scalars().all()

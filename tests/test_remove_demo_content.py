@@ -180,3 +180,47 @@ def test_removal_is_idempotent(db_session):
     tracks.remove_demo_blog_post(database)
 
     assert database.session.execute(database.select(Curso).filter_by(codigo="details")).scalars().first() is None
+
+
+def test_a_repurposed_course_code_is_not_treated_as_demo(db_session):
+    """A course code is an address, not an identity.
+
+    An administrator can rename "free" into real content. With no enrollments yet, a
+    cleanup keyed on the code alone would delete it on the next deploy — and this now
+    runs automatically, so the blast radius is every deploy rather than one manual run.
+    """
+    curso = _ensure_course("free")
+    curso.nombre = "Prompt Engineering Fundamentals"
+    database.session.commit()
+
+    tracks.remove_demo_courses(database)
+
+    survivor = database.session.execute(database.select(Curso).filter_by(codigo="free")).scalars().first()
+    assert survivor is not None, "a renamed course is not upstream's sample"
+    assert survivor.nombre == "Prompt Engineering Fundamentals"
+
+
+def test_a_rewritten_blog_post_survives(db_session):
+    """The slug comes from the title, so rewriting the body leaves it unchanged."""
+    _ensure_user("lms-admin", "admin@example.invalid", tipo="admin")
+    _ensure_blog_post(comment_count=0, content="Our own article, written from scratch by Intent Solutions.")
+
+    tracks.remove_demo_blog_post(database)
+
+    survivor = (
+        database.session.execute(database.select(BlogPost).filter_by(slug=tracks.DEMO_BLOG_SLUG)).scalars().first()
+    )
+    assert survivor is not None, "a rewritten post must not be deleted"
+
+
+def test_the_seeded_body_is_what_marks_a_post_as_upstreams(db_session):
+    """The positive case, so the guard above cannot pass by simply never deleting."""
+    _ensure_user("lms-admin", "admin@example.invalid", tipo="admin")
+    _ensure_blog_post(comment_count=0, content=tracks.DEMO_BLOG_OPENING + " And the rest of upstream's article.")
+
+    tracks.remove_demo_blog_post(database)
+
+    assert (
+        database.session.execute(database.select(BlogPost).filter_by(slug=tracks.DEMO_BLOG_SLUG)).scalars().first()
+        is None
+    )

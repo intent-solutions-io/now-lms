@@ -145,7 +145,10 @@ done
 # it refuses any course a member is enrolled in, and it refuses a blog post that has
 # comments, so a repeat deploy is a no-op and nothing of a member's is destroyed.
 echo "==> Removing upstream demo content (idempotent; refuses anything in use)"
-docker compose exec -T app python scripts/seed_practice_tracks.py --only-remove-demo
+# /usr/bin/python3.12 explicitly. This image installs python3.12 ONLY and provides no
+# bare `python` on PATH — the Dockerfile says so at the i18n gate for the same reason.
+# With `set -e` a 127 here would abort the deploy before the smoke check ever ran.
+docker compose exec -T app /usr/bin/python3.12 scripts/seed_practice_tracks.py --only-remove-demo
 
 echo "==> Smoke check"
 bash scripts/deploy-smoke.sh
