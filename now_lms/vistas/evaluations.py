@@ -277,7 +277,12 @@ def _is_safe_to_drill(evaluation_obj) -> bool:
     What remains drillable is the unlimited-attempt practice quiz, which already shows
     its own answers after any submission. Drilling it discloses nothing new.
     """
-    return not evaluation_obj.is_exam and evaluation_obj.max_attempts is None
+    if evaluation_obj.is_exam or evaluation_obj.max_attempts is not None:
+        return False
+    # An instructor who sets `available_until` has closed the quiz. The normal attempt
+    # path honours that through `is_evaluation_available`; practice must too, or a
+    # closed quiz keeps handing out its answers and explanations indefinitely.
+    return is_evaluation_available(evaluation_obj)
 
 
 def _active_enrollment(course_code: str, usuario: str):

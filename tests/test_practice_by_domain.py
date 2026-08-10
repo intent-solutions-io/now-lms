@@ -291,3 +291,38 @@ def test_an_inactive_enrollment_reaches_nothing(cca_db):
     domains, by_key = _course_questions_by_domain("CCA-P7", member)
     assert domains == [], "an inactive enrollment must not gather anything"
     assert by_key == {}
+
+
+def test_a_closed_quiz_is_not_drillable(cca_db):
+    """`available_until` in the past means the instructor closed it.
+
+    The normal attempt path honours that through `is_evaluation_available`. Practice
+    omitting the check let a closed quiz keep disclosing its correct answers and
+    explanations to anyone still enrolled.
+    """
+    from datetime import datetime, timedelta
+
+    from now_lms.db import CursoSeccion, Evaluation
+
+    section = [_question("Item in a closed quiz.", "d-alpha")]
+    member = _member("closed-member")
+    _seed_tests.seed._create_course(database, MODELS, _spec("CCA-P8", section, None))
+    _enroll(member, "CCA-P8")
+
+    section_ids = [
+        row.id
+        for row in database.session.execute(database.select(CursoSeccion).filter_by(curso="CCA-P8")).scalars()
+    ]
+    quizzes = list(
+        database.session.execute(
+            database.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))
+        ).scalars()
+    )
+    assert quizzes
+    for quiz in quizzes:
+        quiz.available_until = datetime.now() - timedelta(days=1)
+    database.session.commit()
+
+    domains, by_key = _course_questions_by_domain("CCA-P8", member)
+    assert domains == [], "a closed quiz must not be drillable"
+    assert by_key == {}
