@@ -522,3 +522,44 @@ def test_main_proceeds_with_reset_when_the_exact_ack_flag_is_given(monkeypatch, 
         database.select(EstudianteCurso).filter_by(curso="CCA-RESET4")
     ).scalar_one_or_none()
     assert orphaned_enrollment is None, "the enrollment row must be cascade-deleted, not left orphaned"
+
+
+def test_reset_refuses_when_learner_data_changes_after_the_check(app, db_session, monkeypatch, capsys):
+    """The acknowledged numbers must be enforced at DELETE time, not only at check time.
+
+    `_count_learner_data` reads, then `_delete_course` deletes. Nothing stopped a
+    learner enrolling in between, and that record would have been destroyed without
+    ever appearing in the count the operator acknowledged. Locking the Curso row does
+    not close it either, because a new enrollment inserts into EstudianteCurso, which
+    that lock does not cover.
+
+    Simulated by making the second count return more than the first, which is exactly
+    what a concurrent enrolment looks like from inside this script. Greptile, PR #78.
+    """
+    llamadas = {"n": 0}
+
+    def contando(db, models, code):
+        llamadas["n"] += 1
+        # First pass (the gate) sees 1 enrollment. Second pass (the re-check, inside
+        # the deleting transaction) sees a second learner arrive.
+        return (1, 0) if llamadas["n"] == 1 else (2, 0)
+
+    monkeypatch.setattr(seed, "_count_learner_data", contando)
+
+    borrados = []
+    monkeypatch.setattr(seed, "_delete_course", lambda *a, **k: borrados.append(a) or True)
+
+    monkeypatch.setattr(
+        seed.sys,
+        "argv",
+        ["seed_cca_courses.py", "--reset=CCA-RACE", "--i-know-this-deletes-1-enrollments-and-0-attempts"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        seed.main()
+
+    assert exc_info.value.code == 4, f"expected the delete-time refusal (exit 4), got {exc_info.value.code}"
+    assert borrados == [], "a course was deleted even though the counts had moved"
+    err = capsys.readouterr().err
+    assert "changed between the check and the delete" in err
+    assert "Nothing was deleted" in err
