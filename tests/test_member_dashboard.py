@@ -228,6 +228,7 @@ def test_announcements_beyond_the_dashboard_cap_stay_reachable(dashboard_setup, 
                     title=f"Announcement number {i}",
                     message="body",
                     course_id=None,
+                    created_by_id="dash_student",  # NOT NULL, matching the fixture above
                     is_sticky=False,
                     expires_at=None,
                 )
