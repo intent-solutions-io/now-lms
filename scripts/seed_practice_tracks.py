@@ -51,7 +51,20 @@ import sys
 from datetime import datetime, timezone
 
 from now_lms import lms_app
-from now_lms.db import BlogPost, Curso, CursoRecurso, CursoSeccion, EstudianteCurso, database
+from now_lms.db import (
+    Announcement,
+    BlogPost,
+    Coupon,
+    Curso,
+    CursoRecurso,
+    CursoSeccion,
+    CursoUsuarioAvance,
+    EstudianteCurso,
+    ForoMensaje,
+    Mensaje,
+    Pago,
+    database,
+)
 
 # Upstream's demo seed data. Codes come from now_lms/db/initial_data.py.
 #
@@ -153,6 +166,43 @@ def _stamp(row, who: str = "seed_practice_tracks"):
     return row
 
 
+# Tables holding rows a PERSON owns that hang off a course. Deleting a Curso cascades
+# through all of them silently — 27 foreign keys point at `curso.codigo` and the
+# cascades are declared at the database level, so nothing raises and nothing logs.
+#
+# Checking enrollments alone is not enough, and not hypothetically: `crear_certificacion()`
+# seeds a Certificacion for course "now" against the admin with NO matching
+# EstudianteCurso row, so the FIRST deploy after this lands would have taken that path
+# and destroyed a certification record.
+# Certificacion is deliberately NOT here. Intent Solutions does not issue
+# certifications — these are practice tests (Max, 2026-08-09) — so the only
+# Certificacion rows that exist are upstream's own demo data: `crear_certificacion()`
+# seeds one against course "now" for the admin, with no matching enrollment. Treating
+# that as a member asset would mean the cleanup could never remove `now`, which is
+# exactly the demo course most visible on the front door.
+MEMBER_OWNED = (
+    (EstudianteCurso, "curso", "enrollment"),
+    (Pago, "curso", "payment"),
+    (ForoMensaje, "curso_id", "forum message"),
+    (Mensaje, "curso", "message"),
+    (CursoUsuarioAvance, "curso", "progress record"),
+    (Coupon, "curso", "coupon"),
+    (Announcement, "course_id", "announcement"),
+)
+
+
+def _rows_a_person_owns(db, code: str) -> list:
+    """Every member-owned row that a delete of this course would take with it."""
+    found = []
+    for model, column, label in MEMBER_OWNED:
+        if not hasattr(model, column):
+            continue
+        rows = db.session.execute(db.select(model).filter_by(**{column: code})).scalars().all()
+        if rows:
+            found.append(f"{len(rows)} {label}{'' if len(rows) == 1 else 's'}")
+    return found
+
+
 def remove_demo_blog_post(db) -> None:
     """Delete upstream's sample blog post, refusing anything a person has touched.
 
@@ -190,11 +240,9 @@ def remove_demo_courses(db) -> None:
         if (curso.nombre or "").strip() != seeded_name:
             print(f"[keep] {code}: renamed to {curso.nombre!r} — not upstream's sample, refusing to delete")
             continue
-        enrolled = (
-            db.session.execute(db.select(EstudianteCurso).filter_by(curso=code)).scalars().all()
-        )
-        if enrolled:
-            print(f"[keep] {code}: {len(enrolled)} enrollment(s) — refusing to delete")
+        owned = _rows_a_person_owns(db, code)
+        if owned:
+            print(f"[keep] {code}: {', '.join(owned)} — refusing to delete")
             continue
         for model in (CursoRecurso, CursoSeccion):
             for row in db.session.execute(db.select(model).filter_by(curso=code)).scalars().all():

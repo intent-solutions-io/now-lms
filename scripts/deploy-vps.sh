@@ -137,21 +137,18 @@ for _ in $(seq 1 30); do
     sleep 5
 done
 
-# Upstream's sample content is created by initial_setup() on a fresh database and
-# then simply stays. On 2026-08-09 all four demo courses and the sample blog post
-# were still being served publicly on production, months after the practice tracks
-# replaced them — because the removal existed as a script nobody had a reason to
-# run. Running it here is what makes the removal actually happen: it is idempotent,
-# it refuses any course a member is enrolled in, and it refuses a blog post that has
-# comments, so a repeat deploy is a no-op and nothing of a member's is destroyed.
-echo "==> Removing upstream demo content (idempotent; refuses anything in use)"
-# /usr/bin/python3.12 explicitly. This image installs python3.12 ONLY and provides no
-# bare `python` on PATH — the Dockerfile says so at the i18n gate for the same reason.
-# With `set -e` a 127 here would abort the deploy before the smoke check ever ran.
-docker compose exec -T app /usr/bin/python3.12 scripts/seed_practice_tracks.py --only-remove-demo
-
 echo "==> Smoke check"
 bash scripts/deploy-smoke.sh
+
+# AFTER the smoke check, and non-fatal. This is cosmetic cleanup; the smoke check is
+# the deploy's only proof that the running container, the checkout and the served bytes
+# agree. Run above it under `set -euo pipefail`, any non-zero exit here — a lock fight
+# with live traffic, an OperationalError, a schema lag — aborts the deploy BEFORE that
+# proof runs, while the new image is already serving. The operator would get a failure
+# about demo content and no verification at all.
+echo "==> Removing upstream demo content (idempotent; refuses anything in use)"
+docker compose exec -T app /usr/bin/python3.12 scripts/seed_practice_tracks.py --only-remove-demo \
+    || echo "WARN: demo-content cleanup failed; the deploy itself is verified and stands"
 
 if [ "${BUILD_SHA}" = "${ORIGIN_SHA}" ]; then
     echo "==> Deploy of ${BUILD_SHA} verified (== ${REMOTE_REF})."

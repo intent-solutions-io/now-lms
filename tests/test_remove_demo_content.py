@@ -64,7 +64,9 @@ def _ensure_course(code):
     if existing is not None:
         return existing
     curso = Curso(
-        nombre=f"Demo {code}",
+        # Use the name upstream actually seeds, so the fixture is real demo content
+        # rather than something the identity guard would rightly refuse to touch.
+        nombre=tracks.DEMO_COURSES.get(code, f"Demo {code}"),
         codigo=code,
         descripcion_corta="short",
         descripcion="long",
@@ -82,12 +84,15 @@ def _ensure_course(code):
     return curso
 
 
-def test_a_demo_course_nobody_is_enrolled_in_is_removed(db_session):
-    _ensure_course("now")
+def test_a_demo_course_nobody_is_using_is_removed(db_session):
+    """Uses `resources`, not `now`: upstream seeds a Certificacion against `now`."""
+    _ensure_course("resources")
 
     tracks.remove_demo_courses(database)
 
-    assert database.session.execute(database.select(Curso).filter_by(codigo="now")).scalars().first() is None
+    assert (
+        database.session.execute(database.select(Curso).filter_by(codigo="resources")).scalars().first() is None
+    )
 
 
 def test_a_demo_course_with_an_enrollment_survives(db_session):
@@ -224,3 +229,72 @@ def test_the_seeded_body_is_what_marks_a_post_as_upstreams(db_session):
         database.session.execute(database.select(BlogPost).filter_by(slug=tracks.DEMO_BLOG_SLUG)).scalars().first()
         is None
     )
+
+
+def test_a_seeded_certificate_does_not_protect_a_demo_course(db_session):
+    """Intent Solutions does not issue certifications — these are practice tests.
+
+    `crear_certificacion()` seeds a Certificacion against course "now" for the admin,
+    with no matching enrollment. It is upstream demo data, not a member asset, so it
+    must not block the cleanup — otherwise `now`, the most visible demo course on the
+    front door, could never be removed.
+
+    The enrollment, payment, forum, message and progress guards are unaffected: those
+    are things a real person owns.
+    """
+    _ensure_course("now")
+
+    tracks.remove_demo_courses(database)
+
+    assert database.session.execute(database.select(Curso).filter_by(codigo="now")).scalars().first() is None
+
+
+def test_a_payment_still_protects_a_course(db_session):
+    """The guard that replaced the enrollment-only check still does its job."""
+    from now_lms.db import Pago
+
+    _ensure_course("details")
+    _ensure_user("payer", "payer@example.invalid")
+    database.session.add(
+        Pago(
+            curso="details",
+            usuario="payer",
+            estado="completed",
+            monto=0,
+            nombre="Payer",
+            apellido="Person",
+            correo_electronico="payer@example.invalid",
+        )
+    )
+    database.session.commit()
+
+    tracks.remove_demo_courses(database)
+
+    survivor = database.session.execute(database.select(Curso).filter_by(codigo="details")).scalars().first()
+    assert survivor is not None, "a course with a payment record must not be deleted"
+
+
+def test_modification_time_is_deliberately_not_the_guard(db_session):
+    """`modificado` looks like a stronger identity test than it is.
+
+    An automated reviewer suggested refusing any row whose `modificado` is set. It is
+    tempting — BaseTabla stamps it via `onupdate` on every write — but it is set by
+    ANY update, including the platform's own: the seeder flips course visibility, and
+    simply re-saving a row marks it. Using it would have made this cleanup refuse
+    almost everything on a real database, i.e. a destructive routine that silently
+    never runs, which is the exact defect this PR exists to fix.
+
+    So identity stays content-based (seeded name, seeded opening sentence) and safety
+    stays ownership-based (does anybody own a row hanging off it). This test pins the
+    decision so nobody re-adds the check believing it is free.
+    """
+    from datetime import datetime
+
+    curso = _ensure_course("details")
+    curso.modificado = datetime.now()
+    database.session.commit()
+
+    tracks.remove_demo_courses(database)
+
+    gone = database.session.execute(database.select(Curso).filter_by(codigo="details")).scalars().first()
+    assert gone is None, "a touched-but-unmodified demo course is still demo content"
