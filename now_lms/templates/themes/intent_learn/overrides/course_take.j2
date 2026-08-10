@@ -249,8 +249,12 @@
                                              'with the answer and the reasoning shown as you go. Nothing is recorded — '
                                              'this is rehearsal, not a score.') }}
                                     </p>
+                                    {# `isl-btn`, not Bootstrap's `btn`: this override does not load
+                                       Bootstrap at all, so `btn btn-primary` rendered as plain inline
+                                       text with no background, padding or radius. Verified in the
+                                       browser — the class existed, the rule did not. #}
                                     <a
-                                        class="btn btn-primary"
+                                        class="isl-btn isl-btn-primary"
                                         href="{{ url_for('evaluation.practice_by_domain', course_code=curso.codigo) }}"
                                     >
                                         {{ _('Choose a domain to practice') }}
