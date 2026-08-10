@@ -286,8 +286,8 @@
                                 <div class="d-flex justify-content-between align-items-center mb-2 is-item-meta">
                                     <span class="is-count">Item {{ loop.index }} of {{ evaluation.questions | length }}</span>
                                     <span class="text-secondary">
-                                        {% if question.type == "multiple" and correct_count > 1 %}Select two{% else %}Select
-                                        one{% endif %}
+                                        {% if question.type == "multiple" and correct_count > 1 %}Select
+                                        {{ correct_count }}{% else %}Select one{% endif %}
                                     </span>
                                 </div>
 
@@ -493,8 +493,16 @@
 
                 document.addEventListener("keydown", function (event) {
                     if (event.metaKey || event.ctrlKey || event.altKey) return;
+                    // A focused button keeps its own Enter. Without this, tabbing to
+                    // Previous or Flag and pressing Enter advanced the item instead of
+                    // activating the control, which makes the page unusable by keyboard
+                    // — the very thing these shortcuts exist to support.
+                    if (event.target && event.target.closest("button")) return;
                     if (review.hidden === false) return;
                     var item = items[current];
+                    // An evaluation with no questions has no current item; the numeric
+                    // shortcut below would hand `undefined` to inputsFor and throw.
+                    if (!item) return;
                     if (event.key === "ArrowRight" || event.key === "Enter") {
                         event.preventDefault();
                         if (current === items.length - 1) showReview();
