@@ -245,9 +245,9 @@
                                 </div>
                                 <div class="isl-panel-body">
                                     <p class="isl-prose">
-                                        {{ _('Work through every question in one part of the syllabus at a time, '
-                                             'with the answer and the reasoning shown as you go. Nothing is recorded — '
-                                             'this is rehearsal, not a score.') }}
+                                        {{ _('Practice is organised by certification, not by course. Work through every question in one '
+                                             'part of the syllabus at a time, with the answer and the reasoning shown as you go. '
+                                             'Nothing is recorded — this is rehearsal, not a score.') }}
                                     </p>
                                     {# `isl-btn`, not Bootstrap's `btn`: this override does not load
                                        Bootstrap at all, so `btn btn-primary` rendered as plain inline
@@ -255,9 +255,9 @@
                                        browser — the class existed, the rule did not. #}
                                     <a
                                         class="isl-btn isl-btn-primary"
-                                        href="{{ url_for('evaluation.practice_by_domain', course_code=curso.codigo) }}"
+                                        href="{{ url_for('evaluation.practice') }}"
                                     >
-                                        {{ _('Choose a domain to practice') }}
+                                        {{ _('Practice by certification') }}
                                     </a>
                                 </div>
                             </section>

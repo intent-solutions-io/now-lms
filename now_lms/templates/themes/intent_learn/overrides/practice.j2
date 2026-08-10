@@ -1,6 +1,12 @@
-{# Intent Solutions domain practice.
+{# Intent Solutions practice.
 
-   Two states in one surface: pick a domain, or drill the one you picked.
+   Three states in one surface: pick a certification, pick one of its domains, or
+   drill that domain.
+
+   Practice is its own area of the product, keyed by CERTIFICATION and outside courses
+   entirely (Max, 2026-08-09). Course was the wrong key: CCA-F alone carries questions
+   for two credentials, so a course-scoped view showed 12 mashed-together domains
+   instead of the 5 or 7 belonging to the certification a member is actually sitting.
 
    A drill is rehearsal, not an exam. Nothing is recorded, feedback is immediate,
    and you can work the same weak domain as many times as you like — which is the
@@ -14,7 +20,7 @@
     <head>
         {{ current_theme.headertags() }}
         <title>
-            {% if selected_name %}{{ selected_name }} practice{% else %}Practice by domain{% endif %} - Intent Solutions Learn
+            {% if selected_domain %}{{ selected_domain.name }}{% elif selected_cert %}{{ selected_cert.name }}{% else %}Practice{% endif %} - Intent Solutions Learn
         </title>
         {{ current_theme.local_style() }}
         <style>
@@ -156,9 +162,15 @@
 
         <div class="is-practice-bar">
             <div class="container py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <span class="fw-bold">{% if selected_name %}{{ selected_name }}{% else %}Practice by domain{% endif %}</span>
+                <span class="fw-bold">
+                    {% if selected_domain %}{{ selected_domain.name }}
+                    {% elif selected_cert %}{{ selected_cert.name }}
+                    {% else %}Practice{% endif %}
+                </span>
                 <span class="is-mono" style="color: var(--is-muted)">
-                    {% if selected_key %}Drill &middot; nothing is recorded{% else %}Choose a domain{% endif %}
+                    {% if selected_domain %}Drill &middot; nothing is recorded
+                    {% elif selected_cert %}Choose a domain
+                    {% else %}Choose a certification{% endif %}
                 </span>
             </div>
         </div>
@@ -174,51 +186,77 @@
                                 <li class="breadcrumb-item">
                                     <a class="text-reset text-decoration-none" href="{{ url_for('home.panel') }}">Home</a>
                                 </li>
+                                {% if selected_cert %}
+                                <li class="breadcrumb-item">
+                                    <a class="text-reset text-decoration-none" href="{{ url_for('evaluation.practice') }}">Practice</a>
+                                </li>
+                                {% if selected_domain %}
                                 <li class="breadcrumb-item">
                                     <a
                                         class="text-reset text-decoration-none"
-                                        href="{{ url_for('course.tomar_curso', course_code=course_code) }}"
-                                        >Course</a
+                                        href="{{ url_for('evaluation.practice', certification_key=selected_cert.key) }}"
+                                        >{{ selected_cert.name }}</a
                                     >
                                 </li>
-                                {% if selected_key %}
-                                <li class="breadcrumb-item">
-                                    <a
-                                        class="text-reset text-decoration-none"
-                                        href="{{ url_for('evaluation.practice_by_domain', course_code=course_code) }}"
-                                        >Practice</a
-                                    >
-                                </li>
-                                <li class="breadcrumb-item active" aria-current="page">{{ selected_name }}</li>
+                                <li class="breadcrumb-item active" aria-current="page">{{ selected_domain.name }}</li>
+                                {% else %}
+                                <li class="breadcrumb-item active" aria-current="page">{{ selected_cert.name }}</li>
+                                {% endif %}
                                 {% else %}
                                 <li class="breadcrumb-item active" aria-current="page">Practice</li>
                                 {% endif %}
                             </ol>
                         </nav>
 
-                        {% if not selected_key %}
+                        {% if not selected_cert %}
                         <p class="mb-4" style="color: var(--is-muted)">
-                            Every question in this course, gathered by domain — including the ones inside the full-length
-                            exams. Standing reflects your most recent answer to each question, so a domain you have since
-                            learned is not held down by an early guess.
+                            Practice is organised by certification, not by course — a single course can carry
+                            questions for more than one credential. Nothing here is recorded.
                         </p>
-
-                        {% if domains %}
+                        {% if certifications %}
                         <div class="row g-3">
-                            {% for row in domains %} {% set pct = (row.correct * 100.0 / row.seen) if row.seen else 0 %}
+                            {% for cert in certifications %}
                             <div class="col-md-6">
                                 <a
                                     class="is-card is-domain-card p-3"
-                                    href="{{ url_for('evaluation.practice_by_domain', course_code=course_code, domain=row.key) }}"
+                                    href="{{ url_for('evaluation.practice', certification_key=cert.key) }}"
+                                >
+                                    <div class="fw-semibold mb-1" style="color: var(--is-strong)">{{ cert.name }}</div>
+                                    <div class="is-mono" style="color: var(--is-muted)">
+                                        {{ cert.domains | length }} domain{{ '' if cert.domains | length == 1 else 's' }}
+                                        &middot; {{ cert.total }} question{{ '' if cert.total == 1 else 's' }}
+                                    </div>
+                                </a>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="is-card p-4">
+                            <p class="mb-0">
+                                No questions carry a certification yet. Re-run the course seeder to label them.
+                            </p>
+                        </div>
+                        {% endif %}
+
+                        {% elif not selected_domain %}
+                        <p class="mb-4" style="color: var(--is-muted)">
+                            Every question for this certification, grouped by domain. Standing reflects your most
+                            recent answer to each question, so a domain you have since learned is not held down by an
+                            early guess.
+                        </p>
+                        <div class="row g-3">
+                            {% for row in domains %}
+                            {% set pct = (row.correct * 100.0 / row.seen) if row.seen else 0 %}
+                            <div class="col-md-6">
+                                <a
+                                    class="is-card is-domain-card p-3"
+                                    href="{{ url_for('evaluation.practice', certification_key=selected_cert.key, domain_key=row.key) }}"
                                 >
                                     <div class="fw-semibold mb-1" style="color: var(--is-strong)">{{ row.name }}</div>
                                     <div class="is-mono mb-2" style="color: var(--is-muted)">
-                                        {{ row.total }} question{{ '' if row.total == 1 else 's' }}
-                                        {% if row.seen %}
-                                        &middot; {{ row.correct }}/{{ row.seen }} right
-                                        {% else %}
-                                        &middot; not attempted
-                                        {% endif %}
+                                        {{ row.questions | length }} question{{ '' if row.questions | length == 1 else 's' }}
+                                        {% if row.seen %}&middot; {{ row.correct }}/{{ row.seen }} right
+                                        {% else %}&middot; not attempted{% endif %}
                                     </div>
                                     {% if row.seen %}
                                     <div class="is-meter">
@@ -229,17 +267,11 @@
                             </div>
                             {% endfor %}
                         </div>
-                        {% else %}
-                        <div class="is-card p-4">
-                            <p class="mb-0">
-                                No questions in this course carry a domain yet. Re-run the course seeder to label them.
-                            </p>
-                        </div>
-                        {% endif %} {% else %}
 
+                        {% else %}
                         <div id="is-drill" data-count="{{ questions | length }}">
-                            {% for question in questions %} {% set correct_count = question.options |
-                            selectattr("is_correct", "equalto", true) | list | length %}
+                            {% for question in questions %}
+                            {% set correct_count = question.options | selectattr("is_correct", "equalto", true) | list | length %}
                             <section class="is-drill-item" data-index="{{ loop.index0 }}" {% if not loop.first %}hidden{% endif %}>
                                 <div class="d-flex justify-content-between align-items-center mb-2 is-mono">
                                     <span style="color: var(--is-accent)">
@@ -254,19 +286,15 @@
                                     <p class="is-stem mb-4">{{ question.text }}</p>
 
                                     {% for option in question.options %}
-                                    <button
-                                        type="button"
-                                        class="is-choice"
-                                        data-correct="{{ '1' if option.is_correct else '0' }}"
-                                    >
+                                    <button type="button" class="is-choice" data-correct="{{ '1' if option.is_correct else '0' }}">
                                         <span class="is-key">{{ loop.index }}</span>
                                         <span>{{ option.text }}</span>
                                     </button>
                                     {% endfor %}
 
                                     <div class="is-feedback" hidden>
-                                        {% if question.explanation %}{{ question.explanation }}{% else %}The highlighted option
-                                        is the correct one.{% endif %}
+                                        {% if question.explanation %}{{ question.explanation }}{% else %}The highlighted
+                                        option is the correct one.{% endif %}
                                     </div>
 
                                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
@@ -291,7 +319,7 @@
                             </p>
                             <a
                                 class="btn btn-outline-dark"
-                                href="{{ url_for('evaluation.practice_by_domain', course_code=course_code) }}"
+                                href="{{ url_for('evaluation.practice', certification_key=selected_cert.key) }}"
                                 >Pick another domain</a
                             >
                         </div>

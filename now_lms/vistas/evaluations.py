@@ -266,125 +266,77 @@ def evaluation_result(attempt_id: int) -> str:
     return render_template(get_evaluation_result_template(), attempt=attempt)
 
 
-def _is_drillable(evaluation_obj) -> bool:
-    """Whether an evaluation's questions belong in domain practice.
+def _certification_practice(usuario: str, certification_key: str | None = None):
+    """Every labelled question, grouped by certification and then by domain.
 
-    NOT an answer-key guard, and an earlier version of this function pretended to be
-    one. It excluded exams and limited-attempt evaluations on the theory that showing
-    their correct options before a member sat them handed out the answer key. On this
-    curriculum that was false: the seeder builds each mock exam by re-importing the
-    whole section bank (`"mock_questions": associate`), so every excluded exam question
-    had an identical, drillable twin in a section quiz — the exclusion withheld nothing
-    while claiming to withhold everything.
+    Practice is its own area of the product, not a feature of a course (Max,
+    2026-08-09: "practice tests are their own domain ... outside of courses"). Keying
+    it by course was actively wrong: CCA-F alone carries questions for two credentials,
+    so a member drilling "their" domains saw 12 of them — the 5 for Architect
+    Foundations mashed together with the 7 for Architect Professional.
 
-    It was also working against the point. Matthew Purcell's 60 items and Rick
-    Hightower's 480 exist ONLY inside exam evaluations, so the filter hid the largest
-    body of practice material in the course from the members meant to practise on it.
-
-    Ruled by Max, 2026-08-09: cohort members use these resources to prepare for
-    certification, and practice questions reappearing in a seated practice exam is
-    fine as long as they improve. Intent Solutions issues no certification of its own,
-    so nothing here gates an award.
-
-    What remains is instructor intent: a quiz closed with `available_until` stays
-    closed.
+    De-duplicated by question text for the same reason the course view was: the same
+    bank item is seeded into a section quiz and again into that course's mock exam.
     """
-    return is_evaluation_available(evaluation_obj)
-
-
-def _active_enrollment(course_code: str, usuario: str):
-    """An enrollment that is actually current.
-
-    `can_user_access_evaluation` checks that an EstudianteCurso row exists and that a
-    paid course was paid for, but never checks `vigente` — so a withdrawn or suspended
-    learner keeps access through it. Rather than widen that shared helper, which other
-    routes depend on, practice adds the check it needs.
-    """
-    return (
+    query = database.select(Question).filter(Question.certification_key.isnot(None))
+    if certification_key:
+        query = query.filter(Question.certification_key == certification_key)
+    rows = list(
         database.session.execute(
-            database.select(EstudianteCurso).filter_by(curso=course_code, usuario=usuario, vigente=True)
+            query.options(selectinload(Question.options)).order_by(Question.order, Question.id)
+        ).scalars()
+    )
+
+    seen: set = set()
+    questions = []
+    for question in rows:
+        identity = (question.certification_key, question.text)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        questions.append(question)
+
+    latest = _latest_answers(usuario)
+
+    certifications: dict = {}
+    for question in questions:
+        cert = certifications.setdefault(
+            question.certification_key,
+            {
+                "key": question.certification_key,
+                "name": question.certification_name or question.certification_key,
+                "domains": {},
+                "total": 0,
+            },
         )
-        .scalars()
-        .first()
-    )
+        cert["total"] += 1
+        domain = cert["domains"].setdefault(
+            question.domain_key or "unlabelled",
+            {
+                "key": question.domain_key or "unlabelled",
+                "name": question.domain_name or question.domain_key or "Unlabelled",
+                "questions": [],
+                "seen": 0,
+                "correct": 0,
+            },
+        )
+        domain["questions"].append(question)
+        chosen = latest.get(question.text)
+        if chosen is not None:
+            domain["seen"] += 1
+            if chosen == sorted(option.text for option in question.options if option.is_correct):
+                domain["correct"] += 1
+    return certifications
 
 
-def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dict]:
-    """Every labelled question in a course, grouped by domain, with the member's standing.
+def _latest_answers(usuario: str) -> dict:
+    """The member's most recent answer to each question, keyed by question TEXT.
 
-    Reads across the course's evaluations rather than a single one, because a domain's
-    items are scattered: some sit in that domain's section quiz, others inside a
-    full-length exam that spans every domain at once. Grouping by `domain_key` is the
-    only thing that gathers them.
-
-    Standing is computed from the member's MOST RECENT answer to each question, across
-    every attempt they have made in this course. Their latest thinking is what a
-    "where do I stand" readout should reflect; averaging over old attempts would let a
-    first-run guess drag down a domain they have since learned.
-
-    Returns (domains, questions_by_key). Questions carry no ordering guarantee beyond
-    the order they were seeded in, which is the bank's own order.
+    Text rather than id because the same bank item exists as several rows, and each
+    copy owns its own QuestionOption rows — so comparing ids across copies could only
+    ever say "wrong". Values are sorted option TEXT for the same reason.
     """
-    active_enrollment = _active_enrollment(course_code, user.usuario) is not None
-
-    section_ids = [
-        row.id
-        for row in database.session.execute(database.select(CursoSeccion).filter_by(curso=course_code)).scalars()
-    ]
-    if not section_ids:
-        return [], {}
-
-    evaluations = list(
-        database.session.execute(
-            database.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))
-        ).scalars()
-    )
-
-    # Practice draws from every evaluation in the course the member is entitled to,
-    # exams included — see `_is_drillable` for why the old exam exclusion was both
-    # ineffective and counterproductive.
-    #
-    # Entitlement is a separate question from disclosure and still applies. Access is
-    # delegated to `can_user_access_evaluation` per evaluation rather than re-checked
-    # here: an `EstudianteCurso` row merely existing is a weaker gate than the
-    # platform's, ignoring `pagado`/`pago`, and it never checks `vigente` at all — so
-    # both an unpaid and a withdrawn enrollment could otherwise reach paid content.
-    practice_ids = [
-        evaluation.id
-        for evaluation in evaluations
-        if _is_drillable(evaluation) and can_user_access_evaluation(evaluation, user) and active_enrollment
-    ]
-    evaluation_ids = practice_ids
-    if not evaluation_ids:
-        return [], {}
-
-    # `options` is eager-loaded: standing compares option text per question, so a lazy
-    # relationship here costs one query per question. Measured before this: 310 SQL
-    # statements to render one practice page on a 96-question course, growing by ~190
-    # for every attempt a member records.
-    questions = list(
-        database.session.execute(
-            database.select(Question)
-            .options(selectinload(Question.options))
-            .filter(Question.evaluation_id.in_(evaluation_ids))
-            .filter(Question.domain_key.isnot(None))
-            .order_by(Question.order, Question.id)
-        ).scalars()
-    )
-
-    # Latest answer per question for this member, newest attempt last so it wins.
-    #
-    # Keyed by question TEXT, not id. The same bank item exists as several rows, and
-    # de-duplication below keeps only one of them — so an answer recorded against the
-    # mock-exam copy would never match the surviving section-quiz row, and the card
-    # would report "not attempted" for a question the member has answered. Standing is
-    # about the item, not the row.
-    #
-    # Attempts are read across EVERY evaluation in the course, including exams: the
-    # exam is where most items get answered, and reading a member's own history is not
-    # the disclosure the exam filter above guards against.
-    all_evaluation_ids = [evaluation.id for evaluation in evaluations]
-    latest: dict[str, list] = {}
+    latest: dict = {}
     attempts = list(
         database.session.execute(
             database.select(EvaluationAttempt)
@@ -393,8 +345,7 @@ def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dic
                 .selectinload(Answer.question)
                 .selectinload(Question.options)
             )
-            .filter(EvaluationAttempt.evaluation_id.in_(all_evaluation_ids))
-            .filter_by(user_id=user.usuario)
+            .filter_by(user_id=usuario)
             .order_by(EvaluationAttempt.started_at)
         ).scalars()
     )
@@ -403,75 +354,45 @@ def _course_questions_by_domain(course_code: str, user) -> tuple[list[dict], dic
             if not answer.selected_option_ids or answer.question is None:
                 continue
             chosen = set(json.loads(answer.selected_option_ids))
-            # Stored as option TEXT, not option id. Each duplicated question row owns
-            # its own QuestionOption rows, so the ids of the mock-exam copy never match
-            # the section-quiz copy's — comparing ids across copies can only ever say
-            # "wrong". Text is the identity the seeder copies verbatim from the bank.
             latest[answer.question.text] = sorted(
                 option.text for option in answer.question.options if option.id in chosen
             )
-
-    # The same bank item is seeded more than once on purpose: a course's mock exam
-    # re-imports the whole bank that its section quizzes already cover, so CCA-A holds
-    # 132 labelled rows for 96 distinct questions. Left alone a drill repeats items
-    # within a single sitting, and a repeated question would also be counted twice in
-    # the denominator below. Identity is the question text, which is what the seeder
-    # copies verbatim from the bank; the first row wins so section order is preserved.
-    seen_text: set = set()
-    deduped = []
-    for question in questions:
-        if question.text in seen_text:
-            continue
-        seen_text.add(question.text)
-        deduped.append(question)
-    questions = deduped
-
-    by_key: dict[str, list] = {}
-    stats: dict[str, dict] = {}
-    for question in questions:
-        by_key.setdefault(question.domain_key, []).append(question)
-        row = stats.setdefault(
-            question.domain_key,
-            {"key": question.domain_key, "name": question.domain_name or question.domain_key,
-             "total": 0, "seen": 0, "correct": 0},
-        )
-        row["total"] += 1
-        selected = latest.get(question.text)
-        if selected is not None:
-            row["seen"] += 1
-            correct_texts = sorted(option.text for option in question.options if option.is_correct)
-            if selected == correct_texts:
-                row["correct"] += 1
-
-    domains = sorted(stats.values(), key=lambda row: row["name"])
-    return domains, by_key
+    return latest
 
 
-@evaluation.route("/course/<course_code>/practice")
+@evaluation.route("/practice")
+@evaluation.route("/practice/<certification_key>")
+@evaluation.route("/practice/<certification_key>/<domain_key>")
 @login_required
 @perfil_requerido("student")
-def practice_by_domain(course_code: str) -> str | Response:
-    """Practice one domain of a course, or choose which domain to practice.
+def practice(certification_key: str | None = None, domain_key: str | None = None) -> str | Response:
+    """Practice by certification, then by domain. Outside courses entirely.
 
-    Deliberately NOT an attempt. A drill is rehearsal: it records nothing, so a member
-    can work the same weak domain repeatedly without polluting the exam history their
-    result pages are built from. Grading and feedback happen in the page.
+    Records nothing: a drill is rehearsal, and the exam surface stays the only place a
+    score is earned. No course enrollment is required — practice is its own area, open
+    to any signed-in member.
     """
-    if _active_enrollment(course_code, current_user.usuario) is None:
-        abort(403)
+    certifications = _certification_practice(current_user.usuario)
 
-    domains, by_key = _course_questions_by_domain(course_code, current_user)
-    selected_key = request.args.get("domain") or None
-    if selected_key and selected_key not in by_key:
-        abort(404)
+    selected_cert = None
+    if certification_key:
+        selected_cert = certifications.get(certification_key)
+        if selected_cert is None:
+            abort(404)
+
+    selected_domain = None
+    if domain_key:
+        selected_domain = selected_cert["domains"].get(domain_key)
+        if selected_domain is None:
+            abort(404)
 
     return render_template(
         get_practice_template(),
-        course_code=course_code,
-        domains=domains,
-        selected_key=selected_key,
-        selected_name=next((row["name"] for row in domains if row["key"] == selected_key), None),
-        questions=by_key.get(selected_key, []),
+        certifications=sorted(certifications.values(), key=lambda c: c["name"]),
+        selected_cert=selected_cert,
+        selected_domain=selected_domain,
+        domains=sorted(selected_cert["domains"].values(), key=lambda d: d["name"]) if selected_cert else [],
+        questions=selected_domain["questions"] if selected_domain else [],
     )
 
 

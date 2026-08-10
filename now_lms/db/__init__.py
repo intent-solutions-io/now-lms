@@ -1130,6 +1130,14 @@ class Question(database.Model, BaseTabla):
     # and drilling a single domain across a bank.
     domain_key = database.Column(database.String(50), nullable=True, index=True)
     domain_name = database.Column(database.String(150), nullable=True)
+    # Which certification this question prepares for. Practice is organised by
+    # certification rather than by course: the same course can carry questions for more
+    # than one credential (CCA-F's sections hold both Architect Foundations and
+    # Architect Professional material), so a course is the wrong key for a practice
+    # surface. Nullable for the same reason the domain columns are — a hand-authored
+    # question has no certification.
+    certification_key = database.Column(database.String(50), nullable=True, index=True)
+    certification_name = database.Column(database.String(150), nullable=True)
 
     # Relationships
     evaluation = database.relationship("Evaluation", back_populates="questions")
