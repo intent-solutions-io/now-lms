@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
    route through `_resource_is_viewable()`. `pagina_recurso_alternativo` additionally
    filters on `CursoRecurso.curso == curso_id` so a resource can no longer be rendered in
    the context of an unrelated course. Backported from upstream `c9e674f`.
+ - Return `404` from `external_code` when the resource id does not exist under the
+   supplied course, instead of dereferencing `None` inside `_resource_is_viewable()` and
+   raising a `500` (the sibling `pdf_viewer` route already had this guard). Backported
+   from upstream `d1a7000`.
 
 ### Fixed:
  - **Free-course access**: `verifica_estudiante_asignado_a_curso` required a completed
