@@ -9,6 +9,14 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### Security:
+ - Apply the course gate to the remaining resource routes that still branched on the
+   resource's own `publico` flag: `pagina_recurso_alternativo`, `external_code`, and the
+   meet calendar routes (`/calendar.ics`, `/google-calendar`, `/outlook-calendar`) now
+   route through `_resource_is_viewable()`. `pagina_recurso_alternativo` additionally
+   filters on `CursoRecurso.curso == curso_id` so a resource can no longer be rendered in
+   the context of an unrelated course. Backported from upstream `c9e674f`.
+
 ### Fixed:
  - **Free-course access**: `verifica_estudiante_asignado_a_curso` required a completed
    payment record even on free courses, so every bulk-provisioned member was locked out
