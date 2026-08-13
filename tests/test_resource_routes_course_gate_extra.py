@@ -198,6 +198,22 @@ def test_external_code_returns_404_for_unknown_resource(app, db_session):
     assert resp.status_code == 404
 
 
+def test_recurso_file_returns_404_for_unknown_resource_anonymously(app, db_session):
+    """`recurso_file` is the same missing-null-check defect as `external_code` above,
+    but on a route with no `@login_required`. It dereferenced `doc.base_doc_url` before
+    the authentication branch, so an ANONYMOUS request for a resource id that does not
+    exist under the supplied course raised AttributeError -> 500, while a valid id
+    redirected to the login page. That 500-vs-redirect split is an unauthenticated
+    oracle for which resource ids exist. Upstream added the guard in e81684f.
+    """
+    curso = _crear_curso(db_session, "rf_404")
+
+    with app.test_client() as client:
+        resp = client.get(f"/course/{curso.codigo}/files/does-not-exist")
+
+    assert resp.status_code == 404
+
+
 # --------------------------------------------------------------------------------------
 # pagina_recurso_alternativo
 # --------------------------------------------------------------------------------------

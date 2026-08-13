@@ -20,6 +20,12 @@ All notable changes to this project will be documented in this file.
    supplied course, instead of dereferencing `None` inside `_resource_is_viewable()` and
    raising a `500` (the sibling `pdf_viewer` route already had this guard). Backported
    from upstream `d1a7000`.
+ - Return `404` from `recurso_file` when the resource id does not exist under the supplied
+   course, or when its upload set is unconfigured. The route has no `@login_required` and
+   dereferenced `doc.base_doc_url` before the auth branch, so an anonymous request for an
+   unknown id raised a `500` while a known id redirected to the login page — an
+   unauthenticated oracle for which resource ids exist. Backported from upstream
+   `e81684f`.
 
 ### Fixed:
  - **Free-course access**: `verifica_estudiante_asignado_a_curso` required a completed
