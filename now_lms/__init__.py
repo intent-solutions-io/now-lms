@@ -160,6 +160,8 @@ from now_lms.vistas.profiles.admin import admin_profile
 from now_lms.vistas.profiles.instructor import instructor_profile
 from now_lms.vistas.profiles.moderator import moderator_profile
 from now_lms.vistas.profiles.user import user_profile
+from now_lms.vistas.comunidad import comunidad
+from now_lms.vistas.member_dashboard import member_dashboard
 from now_lms.vistas.prior_credentials import prior_credentials
 from now_lms.vistas.programs import program
 from now_lms.vistas.public_api import public_api
@@ -256,6 +258,8 @@ def registrar_modulos_en_la_aplicacion_principal(flask_app: Flask):
         flask_app.register_blueprint(home)
         flask_app.register_blueprint(msg)
         flask_app.register_blueprint(page_info)
+        flask_app.register_blueprint(comunidad)
+        flask_app.register_blueprint(member_dashboard)
         flask_app.register_blueprint(prior_credentials)
         flask_app.register_blueprint(program)
         flask_app.register_blueprint(public_api)
@@ -684,6 +688,8 @@ application = lms_app
 # ---------------------------------------------------------------------------------------
 def initial_setup(with_examples=False, with_tests=False, flask_app=None):
     """Inicializa una nueva bases de datos."""
+    from contextlib import nullcontext
+
     from flask import current_app, has_app_context
 
     # Use provided app, current app context, or fallback to global lms_app
@@ -694,7 +700,16 @@ def initial_setup(with_examples=False, with_tests=False, flask_app=None):
     else:
         app_to_use = lms_app
 
-    with app_to_use.app_context():
+    # Si el llamador ya abrió un application context para ESTA misma app, se
+    # reutiliza en lugar de anidar otro. Al salir de un context anidado Flask
+    # dispara teardown_appcontext y flask-alembic invalida la conexión que dejó
+    # cacheada alembic.stamp(); contra sqlite:///:memory: esa conexión es la
+    # base de datos entera, así que el esquema recién creado desaparecía a la
+    # mitad del bootstrap.
+    reutilizar_contexto = has_app_context() and current_app._get_current_object() is app_to_use
+    contexto = nullcontext() if reutilizar_contexto else app_to_use.app_context()
+
+    with contexto:
         log.info("Creating database schema.")
 
         # Ensure Flask-Session extension is declared BEFORE create_all so its

@@ -233,20 +233,20 @@
                 <div class="is-exam-id">
                     <span class="is-exam-name">{{ evaluation.title }}</span>
                     <span class="is-exam-state ms-2">
-                        {% if evaluation.is_exam %}Exam in progress{% else %}Practice in progress{% endif %}
+                        {% if evaluation.is_exam %}{{ _('Exam in progress') }}{% else %}{{ _('Practice in progress') }}{% endif %}
                     </span>
                 </div>
                 <div class="is-exam-state">
-                    <span id="is-answered-count">0</span> / {{ evaluation.questions | length }} answered &middot; pass
+                    <span id="is-answered-count">0</span> / {{ evaluation.questions | length }} {{ _('answered') }} &middot; {{ _('pass') }}
                     {{ evaluation.passing_score }}%
                 </div>
             </div>
             <div class="container">
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pb-2">
-                    <div class="is-strip" id="is-strip" role="group" aria-label="Jump to an item"></div>
+                    <div class="is-strip" id="is-strip" role="group" aria-label="{{ _('Jump to an item') }}"></div>
                     <div class="is-legend">
-                        <span class="swatch" style="background: #c9d3ce"></span>Answered
-                        <span class="swatch ms-3" style="background: #e0a500"></span>Flagged
+                        <span class="swatch" style="background: var(--is-cell-done)"></span>{{ _('Answered') }}
+                        <span class="swatch ms-3" style="background: var(--is-flag)"></span>{{ _('Flagged') }}
                     </div>
                 </div>
             </div>
@@ -260,21 +260,27 @@
                     <div class="col-lg-9 col-xl-8 mx-auto">
                         <nav aria-label="breadcrumb">
                             <ol class="breadcrumb small">
-                                <li class="breadcrumb-item">
-                                    <a class="text-reset text-decoration-none" href="{{ url_for('home.panel') }}">Home</a>
-                                </li>
+                                {% if evaluation.section %}<li class="breadcrumb-item">
+                                    <a class="text-reset text-decoration-none" href="{{ url_for('home.panel') }}">{{ _('Home') }}</a>
+                                </li>{% endif %}
                                 <li class="breadcrumb-item">
                                     <a
                                         class="text-reset text-decoration-none"
                                         href="{{ url_for('course.tomar_curso', course_code=evaluation.section.curso) }}"
-                                        >Course</a
+                                        >{{ _('Course') }}</a
                                     >
                                 </li>
                                 <li class="breadcrumb-item active" aria-current="page">{{ evaluation.title }}</li>
                             </ol>
                         </nav>
 
-                        <form method="POST" id="is-exam-form">
+                        <form method="POST" id="is-exam-form"
+                              data-item-label="{{ _('Item %(number)s', number='__N__') }}"
+                              data-flagged-label="{{ _('flagged') }}"
+                              data-unanswered-label="{{ _('unanswered') }}"
+                              data-flag-clear="{{ _('Flagged — click to clear') }}"
+                              data-flag-review="{{ _('Flag for review') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                             {% for question in evaluation.questions %} {% set correct_count = question.options |
                             selectattr("is_correct", "equalto", true) | list | length %}
                             <section
@@ -284,10 +290,9 @@
                                 {% if not loop.first %}hidden{% endif %}
                             >
                                 <div class="d-flex justify-content-between align-items-center mb-2 is-item-meta">
-                                    <span class="is-count">Item {{ loop.index }} of {{ evaluation.questions | length }}</span>
+                                    <span class="is-count">{{ _('Item %(number)s of %(total)s', number=loop.index, total=evaluation.questions | length) }}</span>
                                     <span class="text-secondary">
-                                        {% if question.type == "multiple" and correct_count > 1 %}Select
-                                        {{ correct_count }}{% else %}Select one{% endif %}
+                                        {% if question.type == "multiple" and correct_count > 1 %}{{ _('Select %(count)s', count=correct_count) }}{% else %}{{ _('Select one') }}{% endif %}
                                     </span>
                                 </div>
 
@@ -298,12 +303,12 @@
                                     <label class="is-choice">
                                         <input type="radio" name="question_{{ question.id }}" value="Verdadero" />
                                         <span class="is-key">1</span>
-                                        <span>True</span>
+                                        <span>{{ _('True') }}</span>
                                     </label>
                                     <label class="is-choice">
                                         <input type="radio" name="question_{{ question.id }}" value="Falso" />
                                         <span class="is-key">2</span>
-                                        <span>False</span>
+                                        <span>{{ _('False') }}</span>
                                     </label>
                                     {% elif question.type == "multiple" %} {% for option in question.options %}
                                     <label class="is-choice">
@@ -325,13 +330,13 @@
                                             class="btn btn-sm btn-outline-secondary is-flag"
                                             aria-pressed="false"
                                         >
-                                            Flag for review
+                                            {{ _('Flag for review') }}
                                         </button>
                                         <div class="d-flex gap-2">
                                             <button type="button" class="btn btn-sm btn-outline-secondary is-prev">
-                                                &larr; Previous
+                                                &larr; {{ _('Previous') }}
                                             </button>
-                                            <button type="button" class="btn btn-sm btn-dark is-next">Next &rarr;</button>
+                                            <button type="button" class="btn btn-sm btn-dark is-next">{{ _('Next') }} &rarr;</button>
                                         </div>
                                     </div>
                                 </div>
@@ -339,21 +344,21 @@
                             {% endfor %}
 
                             <section id="is-review" hidden>
-                                <div class="is-item-meta mb-2"><span class="is-count">Review</span></div>
+                                <div class="is-item-meta mb-2"><span class="is-count">{{ _('Review') }}</span></div>
                                 <div class="is-card p-4 mb-3">
-                                    <p class="is-stem mb-3">Check anything you left open, then submit.</p>
-                                    <p class="mb-1"><strong id="is-review-answered">0</strong> answered</p>
+                                    <p class="is-stem mb-3">{{ _('Check anything you left open, then submit.') }}</p>
+                                    <p class="mb-1"><strong id="is-review-answered">0</strong> {{ _('answered') }}</p>
                                     <p class="mb-1">
-                                        <strong id="is-review-unanswered">0</strong> unanswered
-                                        <span class="text-secondary">&mdash; an unanswered item is scored as incorrect.</span>
+                                        <strong id="is-review-unanswered">0</strong> {{ _('unanswered') }}
+                                        <span class="text-secondary">&mdash; {{ _('an unanswered item is scored as incorrect.') }}</span>
                                     </p>
-                                    <p class="mb-3 is-flagged-note"><strong id="is-review-flagged">0</strong> flagged</p>
+                                    <p class="mb-3 is-flagged-note"><strong id="is-review-flagged">0</strong> {{ _('flagged') }}</p>
                                     <div id="is-review-links" class="mb-4"></div>
                                     <div class="d-flex flex-wrap gap-2">
                                         <button type="button" class="btn btn-outline-secondary" id="is-back-to-items">
-                                            Back to the items
+                                            {{ _('Back to the items') }}
                                         </button>
-                                        <button type="submit" class="btn btn-primary">Submit for scoring</button>
+                                        <button type="submit" class="btn btn-primary">{{ _('Submit for scoring') }}</button>
                                     </div>
                                 </div>
                             </section>
@@ -363,7 +368,7 @@
                                     <kbd>1</kbd>&ndash;<kbd>9</kbd> answer &middot; <kbd>F</kbd> flag &middot;
                                     <kbd>&larr;</kbd> <kbd>&rarr;</kbd> move &middot; <kbd>Enter</kbd> next
                                 </p>
-                                <button type="button" class="btn btn-outline-dark" id="is-go-review">Review &amp; submit</button>
+                                <button type="button" class="btn btn-outline-secondary" id="is-go-review">{{ _('Review &amp; submit') }}</button>
                             </div>
                         </form>
                     </div>
@@ -379,6 +384,10 @@
                 var review = document.getElementById("is-review");
                 var strip = document.getElementById("is-strip");
                 var answeredCount = document.getElementById("is-answered-count");
+                var i18n = form.dataset;
+                function itemLabel(number) {
+                    return i18n.itemLabel.replace("__N__", number);
+                }
                 var current = 0;
                 var flagged = items.map(function () {
                     return false;
@@ -396,7 +405,7 @@
                 var cells = items.map(function (item, i) {
                     var cell = document.createElement("button");
                     cell.type = "button";
-                    cell.setAttribute("aria-label", "Item " + (i + 1));
+                    cell.setAttribute("aria-label", itemLabel(i + 1));
                     cell.addEventListener("click", function () {
                         show(i);
                     });
@@ -432,12 +441,17 @@
                     current = i;
                     items[current].hidden = false;
                     review.hidden = true;
+                    inputsFor(items[current]).forEach(function (input) {
+                        input.closest(".is-choice").classList.toggle("is-picked", input.checked);
+                    });
                     var flag = items[current].querySelector(".is-flag");
                     flag.setAttribute("aria-pressed", flagged[current] ? "true" : "false");
-                    flag.textContent = flagged[current] ? "Flagged — click to clear" : "Flag for review";
+                    flag.textContent = flagged[current] ? i18n.flagClear : i18n.flagReview;
                     flag.classList.toggle("btn-warning", flagged[current]);
                     flag.classList.toggle("btn-outline-secondary", !flagged[current]);
                     if (!skipScroll) items[current].scrollIntoView({ block: "start" });
+                    items[current].setAttribute("tabindex", "-1");
+                    items[current].focus({ preventScroll: true });
                     refresh();
                 }
 
@@ -457,7 +471,7 @@
                         var b = document.createElement("button");
                         b.type = "button";
                         b.className = "btn btn-sm btn-outline-secondary me-2 mb-2";
-                        b.textContent = "Item " + (i + 1) + (flagged[i] ? " (flagged)" : " (unanswered)");
+                        b.textContent = itemLabel(i + 1) + (flagged[i] ? " (" + i18n.flaggedLabel + ")" : " (" + i18n.unansweredLabel + ")");
                         b.addEventListener("click", function () {
                             show(i);
                         });
@@ -497,7 +511,7 @@
                     // Previous or Flag and pressing Enter advanced the item instead of
                     // activating the control, which makes the page unusable by keyboard
                     // — the very thing these shortcuts exist to support.
-                    if (event.target && event.target.closest("button")) return;
+                    if (event.target && event.target.closest("button, a, input, select, textarea")) return;
                     if (review.hidden === false) return;
                     var item = items[current];
                     // An evaluation with no questions has no current item; the numeric

@@ -267,10 +267,22 @@ class Curso(database.Model, BaseTabla):
     recertification_required = database.Column(database.Boolean(), default=False)
     recertification_period_years = database.Column(database.Integer(), nullable=True)
 
-    secciones = database.relationship("CursoSeccion", lazy="dynamic", back_populates="rel_curso")
-    recursos = database.relationship("CursoRecurso", lazy="dynamic", back_populates="rel_curso")
-    inscripciones = database.relationship("EstudianteCurso", lazy="dynamic")
-    user_events = database.relationship("UserEvent", back_populates="course")
+    # passive_deletes=True on all four: every child FK here is already
+    # ondelete="CASCADE" at the DB level. Without it, deleting a Curso makes
+    # the ORM try to NULL these FKs on any loaded child instead of trusting
+    # the DB's own cascade — and since EstudianteCurso.curso and
+    # UserEvent.course_id are NOT NULL, that UPDATE fails with an
+    # IntegrityError, so deleting (or --reset-ing) a course that has real
+    # enrollments or calendar events crashes instead of succeeding.
+    secciones = database.relationship("CursoSeccion", lazy="dynamic", back_populates="rel_curso", passive_deletes=True)
+    recursos = database.relationship("CursoRecurso", lazy="dynamic", back_populates="rel_curso", passive_deletes=True)
+    inscripciones = database.relationship("EstudianteCurso", lazy="dynamic", passive_deletes=True)
+    # "all", not True: the three relationships above are lazy="dynamic" and can never be
+    # loaded into the session, so True is enough for them. This one is a plain relationship,
+    # and passive_deletes=True still disassociates children that are ALREADY loaded — which
+    # nulls UserEvent.course_id, a NOT NULL column, and raises IntegrityError on a delete the
+    # database would have cascaded cleanly. Any view that renders a course's calendar loads it.
+    user_events = database.relationship("UserEvent", back_populates="course", passive_deletes="all")
 
     def validar_foro_habilitado(self):
         """Valida que el foro solo pueda habilitarse en cursos no self-paced."""
@@ -1123,6 +1135,21 @@ class Question(database.Model, BaseTabla):
     text = database.Column(database.String(1000), nullable=False)
     explanation = database.Column(database.String(1000), nullable=True)
     order = database.Column(database.Integer(), nullable=False, default=1)
+    # Which part of the syllabus this question examines. Nullable because it is
+    # optional metadata: a question authored by hand in the instructor UI has no
+    # domain, and every question that already exists has none. Indexed because the
+    # only reason to store it is to group by it — per-domain scoring on a result,
+    # and drilling a single domain across a bank.
+    domain_key = database.Column(database.String(50), nullable=True, index=True)
+    domain_name = database.Column(database.String(150), nullable=True)
+    # Which certification this question prepares for. Practice is organised by
+    # certification rather than by course: the same course can carry questions for more
+    # than one credential (CCA-F's sections hold both Architect Foundations and
+    # Architect Professional material), so a course is the wrong key for a practice
+    # surface. Nullable for the same reason the domain columns are — a hand-authored
+    # question has no certification.
+    certification_key = database.Column(database.String(50), nullable=True, index=True)
+    certification_name = database.Column(database.String(150), nullable=True)
 
     # Relationships
     evaluation = database.relationship("Evaluation", back_populates="questions")
@@ -1629,6 +1656,141 @@ class PriorCredential(database.Model, BaseTabla):
     # Explicit foreign_keys: this table has two paths to Usuario, so the join is ambiguous
     # without it.
     reviewed_by_user = database.relationship("Usuario", foreign_keys=[reviewed_by])
+
+
+# ---------------------------------------------------------------------------------------
+# Community Hub — ADR-10 (000-docs/017-AT-ADEC), which supersedes ADR-8.
+#
+# The Hub owns its own content. ADR-8 stored bodies in the native `ForoMensaje` and hung a
+# metadata sidecar off it; ADR-10 reversed that because the table count was identical either
+# way, and the container course it required brought a real blast radius: `ForoMensaje.curso_id`
+# is ondelete=CASCADE, so deleting one fake course row silently deleted every Hub post.
+#
+# `ForoMensaje` is untouched by either design, so course forums are unaffected.
+# ---------------------------------------------------------------------------------------
+
+# Member post types. `announcement` is deliberately absent: staff announcements stay in the
+# native `Announcement` model, which already has global/course scoping, stickiness, expiry
+# and admin CRUD. Two announcement concepts would be two channels for one message.
+COMUNIDAD_TIPOS: tuple[str, ...] = ("question", "build", "success_story")
+
+# Moderation states. Reporting does not hide anything — only a staff action does.
+COMUNIDAD_ESTADOS_MODERACION: tuple[str, ...] = ("visible", "oculto")
+
+# Moderation trail event types, member reports and staff actions in one chronological record.
+COMUNIDAD_EVENTOS: tuple[str, ...] = ("report", "hide", "restore", "lock", "unlock", "pin", "unpin")
+
+
+class ComunidadPublicacion(database.Model, BaseTabla):
+    """A Community Hub post, or a reply to one.
+
+    Self-contained: this table owns the body, the author and the reply relationship, so the
+    Hub depends on no other model for its content. `parent_id` NULL means a root post;
+    non-NULL means a reply to that post.
+
+    `titulo` and `tipo` are nullable because they belong to a root post — a reply has
+    neither. That is the one cost of collapsing the ADR-8 sidecar into this table, and it is
+    cheaper than the container course the sidecar required.
+    """
+
+    __tablename__ = "comunidad_publicacion"
+    __table_args__ = (
+        database.Index("ix_comunidad_publicacion_tipo_estado", "tipo", "estado_moderacion"),
+        database.Index("ix_comunidad_publicacion_parent_fecha", "parent_id", "fecha_creacion"),
+    )
+
+    parent_id = database.Column(
+        database.String(26),
+        database.ForeignKey("comunidad_publicacion.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    usuario = database.Column(
+        database.String(150), database.ForeignKey(LLAVE_FORANEA_USUARIO), nullable=False, index=True
+    )
+    contenido = database.Column(database.Text, nullable=False)
+    fecha_creacion = database.Column(database.DateTime, default=utc_now, nullable=False, index=True)
+
+    # Root-post fields. NULL on replies.
+    titulo = database.Column(database.String(160), nullable=True)
+    tipo = database.Column(database.String(20), nullable=True, index=True)
+    enlace_build = database.Column(database.String(500), nullable=True)
+    fijado = database.Column(database.Boolean(), default=False, nullable=False)
+
+    estado_moderacion = database.Column(database.String(20), default="visible", nullable=False, index=True)
+    # Thread lock, same vocabulary the native forum uses so the concept reads the same.
+    estado = database.Column(database.String(20), default="abierto", nullable=False)
+    # A queue hint for the moderation view. The append-only trail is the authority.
+    reportes_abiertos = database.Column(database.Integer, default=0, nullable=False)
+
+    autor = database.relationship("Usuario", foreign_keys=[usuario])
+    parent = database.relationship("ComunidadPublicacion", remote_side="ComunidadPublicacion.id", back_populates="respuestas")
+    respuestas = database.relationship("ComunidadPublicacion", back_populates="parent")
+
+    def es_raiz(self) -> bool:
+        """True for a top-level post."""
+        return self.parent_id is None
+
+    def es_visible(self) -> bool:
+        """True when not hidden by a moderator."""
+        return self.estado_moderacion == "visible"
+
+
+class ComunidadReaccion(database.Model, BaseTabla):
+    """One member liked one root post.
+
+    The unique constraint is the whole point of this table. One member, one like is a
+    property of a pair, and enforcing it needs a row the database can refuse.
+
+    There is exactly one reaction and it is positive. No polarity column, no type: the owner
+    ruled there is no thumbs-down, so adding one is a schema change and a product change
+    together, not a config flag.
+    """
+
+    __tablename__ = "comunidad_reaccion"
+    __table_args__ = (
+        database.UniqueConstraint("publicacion_id", "usuario", name="uq_comunidad_reaccion_una_por_miembro"),
+    )
+
+    publicacion_id = database.Column(
+        database.String(26),
+        database.ForeignKey("comunidad_publicacion.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    usuario = database.Column(
+        database.String(150),
+        database.ForeignKey(LLAVE_FORANEA_USUARIO, ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class ComunidadEventoModeracion(database.Model, BaseTabla):
+    """Append-only record of everything that happened to a post's moderation state.
+
+    Member reports and staff actions together, chronologically, because they are one
+    concept: how this post came to be in the state it is in. Nothing in the Hub
+    hard-deletes, so the trail is complete by construction.
+    """
+
+    __tablename__ = "comunidad_evento_moderacion"
+    __table_args__ = (
+        database.Index("ix_comunidad_evento_publicacion_fecha", "publicacion_id", "ocurrido_en"),
+    )
+
+    publicacion_id = database.Column(
+        database.String(26),
+        database.ForeignKey("comunidad_publicacion.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tipo = database.Column(database.String(20), nullable=False)
+    actor = database.Column(
+        database.String(150), database.ForeignKey(LLAVE_FORANEA_USUARIO), nullable=False, index=True
+    )
+    motivo = database.Column(database.String(500), nullable=True)
+    ocurrido_en = database.Column(database.DateTime, default=utc_now, nullable=False)
 
 
 # Event listeners for audit field population and validation

@@ -79,6 +79,11 @@ LESSONS_DIR = CONTENT_DIR / "lessons"
 MAX_QUESTION_TEXT = 1000
 MAX_EXPLANATION = 1000
 MAX_OPTION_TEXT = 500
+MAX_DOMAIN_KEY = 50
+MAX_DOMAIN_NAME = 150
+
+# Matthew Purcell's set is one full-length form matched to the live exam's item count.
+MATTHEW_EXAM_ITEMS = 60
 
 
 def _truncate(value: str, limit: int) -> str:
@@ -88,6 +93,26 @@ def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 1].rstrip() + "…"
+
+
+# Which certification each bank prepares for. Only Matthew's bank declares this in its
+# own header; the other five are mapped here rather than by editing them, because the
+# two licensed banks are used unchanged under their authors' reuse grants and the
+# in-house banks predate the field.
+#
+# Practice is organised by certification, not by course (Max, 2026-08-09: "practice
+# tests are their own domain ... outside of courses"). A course is the wrong key: CCA-F
+# alone carries questions for TWO credentials, so grouping practice by course showed a
+# member 12 mashed-together domains instead of the 5 or 7 that belong to the
+# certification they are sitting.
+BANK_CERTIFICATIONS = {
+    "questions-associate.json": ("CCAO-F", "Claude Certified Associate — Foundations"),
+    "matthew-purcell-practice-exams.json": ("CCAO-F", "Claude Certified Associate — Foundations"),
+    "questions-developer.json": ("CCD", "Claude Certified Developer"),
+    "questions.json": ("CCA-F", "Claude Certified Architect — Foundations"),
+    "rick-practice-exams.json": ("CCA-F", "Claude Certified Architect — Foundations"),
+    "questions-architect-professional.json": ("CCA-P", "Claude Certified Architect — Professional"),
+}
 
 
 def _correct_positions(item: dict) -> set[int]:
@@ -145,11 +170,30 @@ def _correct_positions(item: dict) -> set[int]:
 
 
 def _load_bank(filename: str) -> list[dict]:
-    """Load a vendored question bank and return its ``questions`` list."""
+    """Load a vendored question bank and return its ``questions`` list.
+
+    Each item is stamped with the certification its bank prepares for, taken from the
+    bank's own ``certification`` header when it has one and from BANK_CERTIFICATIONS
+    otherwise. Stamping here rather than at each call site means every path that
+    reaches a question — section quiz, mock, extra exam — carries it without having to
+    remember to.
+    """
     path = BANKS_DIR / filename
     with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
-    return data["questions"] if isinstance(data, dict) else data
+    questions = data["questions"] if isinstance(data, dict) else data
+
+    declared = data.get("certification") if isinstance(data, dict) else None
+    if declared and declared.get("code"):
+        key, name = declared["code"], declared.get("name") or declared["code"]
+    else:
+        key, name = BANK_CERTIFICATIONS.get(filename, (None, None))
+
+    if key:
+        for item in questions:
+            item.setdefault("certificationKey", key)
+            item.setdefault("certificationName", name)
+    return questions
 
 
 def _load_bank_optional(filename: str) -> list[dict]:
@@ -322,12 +366,27 @@ def _add_evaluation(db, models, section_id: str, title: str, description: str, i
         rationale = (item.get("rationale") or "").strip()
         source = (item.get("source") or "").strip()
         explanation = rationale + (f"\n\nSource: {source}" if source else "")
+        # Carry the bank's domain onto the row. Every bank item already declares one;
+        # until now the importer read it only to group questions into sections and then
+        # dropped it, so a full-length exam — whose items span every domain inside ONE
+        # evaluation — could not be scored per domain, and no bank could be drilled one
+        # domain at a time. Falling back to the integer `domain` keeps items from an
+        # older bank shape usable rather than silently unlabelled.
+        domain_key = (item.get("domainKey") or "").strip() or None
+        if domain_key is None and item.get("domain") is not None:
+            domain_key = str(item["domain"])
+        domain_name = (item.get("domainName") or "").strip() or None
+
         question = models["Question"](
             evaluation_id=evaluation.id,
             type="multiple",
             text=_truncate(item["text"], MAX_QUESTION_TEXT),
             explanation=_truncate(explanation, MAX_EXPLANATION),
             order=order,
+            domain_key=_truncate(domain_key, MAX_DOMAIN_KEY) or None,
+            domain_name=_truncate(domain_name, MAX_DOMAIN_NAME) or None,
+            certification_key=_truncate(item.get("certificationKey"), MAX_DOMAIN_KEY) or None,
+            certification_name=_truncate(item.get("certificationName"), MAX_DOMAIN_NAME) or None,
         )
         db.session.add(question)
         db.session.commit()  # flush so question.id is available for options
@@ -485,6 +544,47 @@ def _build_specs() -> list[dict]:
     architect = _load_bank("questions-architect-professional.json")
     general = _load_bank("questions.json")
 
+    # Matthew Purcell's authored CCAO-F practice exam (optional, reuse-granted on
+    # condition of credit) -> one full-length exam appended to Course A.
+    #
+    # This bank is the ONLY source of select-TWO items in the curriculum. Until it was
+    # loaded here, `_correct_positions` had correct multi-correct handling that nothing
+    # ever exercised: a real end-to-end seed imported 533 questions from these banks
+    # (539 rows in the database, the difference being upstream's own demo courses),
+    # every one with exactly one correct option and no two-correct group at all.
+    #
+    # Left exam-shaped rather than partitioned through `_weighted_exam_series`, because
+    # the author wrote it as a single full-length form against the published blueprint.
+    # That shape is asserted rather than assumed: the bank's own `examShape.items` is
+    # unreachable here because `_load_bank` returns only the questions list, so the
+    # count is checked directly. A bank that grows to 75 items would otherwise become a
+    # 75-question "full-length" exam with nothing anywhere noticing.
+    matthew = _load_bank_optional("matthew-purcell-practice-exams.json")
+    if matthew and len(matthew) != MATTHEW_EXAM_ITEMS:
+        raise ValueError(
+            f"matthew-purcell-practice-exams.json is exam-shaped at {MATTHEW_EXAM_ITEMS} items; "
+            f"got {len(matthew)}. Update MATTHEW_EXAM_ITEMS deliberately if the author revised it."
+        )
+    associate_extra_exams: list[dict] = []
+    if matthew:
+        associate_extra_exams.append({
+            "nombre": "Practice exam — Matthew Purcell (full-length CCAO-F)",
+            "descripcion": "Full-length practice exam, including select-TWO items. Unlimited attempts.",
+            "lesson": "# Practice exam — Matthew Purcell's CCAO-F set\n\n"
+                      "A full-length, exam-shaped practice test written against the public CCAO-F Exam "
+                      "Guide blueprint by Matthew Purcell, reused with permission. Some items ask you to "
+                      "**select TWO** answers; those are graded all-or-nothing, so a partially correct "
+                      "selection scores zero. Attempts are unlimited. Work the domain quizzes first, then "
+                      "use this to rehearse under exam conditions.\n\n"
+                      "These are ORIGINAL practice questions written against the publicly available "
+                      "CCAO-F Exam Guide v1.0 (July 2026) and its blueprint objectives. They are **not** "
+                      "actual exam content, are **not** drawn from the live item bank, and reproduce no "
+                      "question encountered on the exam. Exam content is confidential. No practice set "
+                      "guarantees a pass; use it alongside hands-on experience and the official "
+                      "documentation.",
+            "questions": matthew,
+        })
+
     specs: list[dict] = []
 
     # --- Course 0: Getting Started (onboarding, no exam) ---
@@ -538,6 +638,7 @@ def _build_specs() -> list[dict]:
             for _num, name, key, qs in _group_by_domain(associate)
         ],
         "mock_questions": associate,
+        "extra_exams": associate_extra_exams,
     })
 
     # --- Course B: Developer ---
@@ -623,11 +724,66 @@ def _build_specs() -> list[dict]:
     return specs
 
 
+def _count_learner_data(db, models, code: str) -> tuple[int, int]:
+    """Count what a ``--reset`` of this course would destroy: enrollments and
+    graded evaluation attempts. Both are real member data — enrollments via
+    ``EstudianteCurso``, attempts via ``EvaluationAttempt`` reached through the
+    course's evaluations (``EvaluationAttempt.evaluation_id`` cascades on
+    delete, so dropping the evaluations silently takes the attempts with them).
+    """
+    from sqlalchemy import func
+
+    EstudianteCurso = models["EstudianteCurso"]
+    EvaluationAttempt = models["EvaluationAttempt"]
+    Evaluation = models["Evaluation"]
+    CursoSeccion = models["CursoSeccion"]
+
+    enrollments = db.session.execute(
+        db.select(func.count()).select_from(EstudianteCurso).filter(EstudianteCurso.curso == code)
+    ).scalar_one()
+
+    evaluation_ids = (
+        db.session.execute(
+            db.select(Evaluation.id).join(CursoSeccion, Evaluation.section_id == CursoSeccion.id).filter(
+                CursoSeccion.curso == code
+            )
+        )
+        .scalars()
+        .all()
+    )
+    attempts = 0
+    if evaluation_ids:
+        attempts = db.session.execute(
+            db.select(func.count())
+            .select_from(EvaluationAttempt)
+            .filter(EvaluationAttempt.evaluation_id.in_(evaluation_ids))
+        ).scalar_one()
+
+    return enrollments, attempts
+
+
+def _required_ack_flag(total_enrollments: int, total_attempts: int) -> str:
+    """The exact flag ``--reset`` requires when it would destroy learner data.
+
+    Naming the counts in the flag forces the operator to have actually seen
+    them (from this function's own prior refusal) rather than muscle-memoried
+    a bare boolean past this gate; a mismatch also catches new enrollments or
+    attempts landing between the check and the re-run.
+    """
+    return f"--i-know-this-deletes-{total_enrollments}-enrollments-and-{total_attempts}-attempts"
+
+
 def _delete_course(db, models, code: str) -> bool:
     """Delete a course and its sections/lessons/evaluations. Returns True if found.
 
-    Used by ``--reset`` to allow re-seeding a course that has no learner data yet
-    (deleting an Evaluation cascades to its questions + options).
+    Used by ``--reset`` to rebuild a course. Callers MUST call
+    ``_count_learner_data`` first and get the operator's explicit
+    acknowledgement before calling this — it does not check itself, so it is
+    only ever called from ``main()`` after that gate has passed.
+
+    Deliberately does NOT commit. The whole reset is one transaction so that a
+    course cannot be dropped while a sibling's re-check is still deciding, and so
+    a failure part-way leaves nothing half-deleted. ``main()`` commits once.
     """
     Curso = models["Curso"]
     curso = db.session.execute(db.select(Curso).filter_by(codigo=code)).scalar_one_or_none()
@@ -641,7 +797,7 @@ def _delete_course(db, models, code: str) -> bool:
             db.session.delete(rec)
         db.session.delete(sec)
     db.session.delete(curso)
-    db.session.commit()
+    db.session.flush()  # surface integrity errors here, still inside the caller's transaction
     return True
 
 
@@ -676,7 +832,9 @@ def main() -> int:
         Curso,
         CursoRecurso,
         CursoSeccion,
+        EstudianteCurso,
         Evaluation,
+        EvaluationAttempt,
         Question,
         QuestionOption,
         database,
@@ -689,20 +847,95 @@ def main() -> int:
         "Evaluation": Evaluation,
         "Question": Question,
         "QuestionOption": QuestionOption,
+        "EstudianteCurso": EstudianteCurso,
+        "EvaluationAttempt": EvaluationAttempt,
     }
 
     # Optional: `--reset=CODE1,CODE2` deletes those courses before seeding so they
-    # can be rebuilt (safe only when they carry no learner data).
+    # can be rebuilt. Refuses when any of them carry learner data (enrollments
+    # or graded evaluation attempts) unless the operator passes the exact
+    # acknowledgement flag this prints — naming the count forces them to have
+    # actually seen it, not just muscle-memoried a boolean flag past this gate.
     reset_codes: list[str] = []
+    ack_flag: str | None = None
     for arg in sys.argv[1:]:
         if arg.startswith("--reset="):
             reset_codes = [c.strip() for c in arg.split("=", 1)[1].split(",") if c.strip()]
+        elif arg.startswith("--i-know-this-deletes-"):
+            ack_flag = arg
 
     with app.app_context():
         print("Seeding CCA-F preliminary prep curriculum...")
-        for code in reset_codes:
-            if _delete_course(database, models, code):
-                print(f"  [reset] deleted course '{code}' for rebuild")
+
+        if reset_codes:
+            per_course: dict[str, tuple[int, int]] = {}
+            total_enrollments = 0
+            total_attempts = 0
+            for code in reset_codes:
+                enrollments, attempts = _count_learner_data(database, models, code)
+                per_course[code] = (enrollments, attempts)
+                total_enrollments += enrollments
+                total_attempts += attempts
+
+            if total_enrollments or total_attempts:
+                required_flag = _required_ack_flag(total_enrollments, total_attempts)
+                if ack_flag != required_flag:
+                    print(
+                        "ERROR: --reset would destroy real member data:",
+                        file=sys.stderr,
+                    )
+                    for code, (enrollments, attempts) in per_course.items():
+                        if enrollments or attempts:
+                            print(
+                                f"  {code}: {enrollments} enrollment(s), {attempts} evaluation attempt(s)",
+                                file=sys.stderr,
+                            )
+                    print(
+                        "\nThis is not a warning to skim past — it is a refusal. Re-run with the "
+                        "exact flag naming what this destroys:\n"
+                        f"    {required_flag}\n"
+                        "If those counts don't match what you expect, STOP: someone enrolled or "
+                        "attempted an evaluation since you last checked, and re-seeding right now "
+                        "would delete their record.",
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(3)
+
+            # Re-count inside the deleting transaction and refuse if anything moved.
+            #
+            # The acknowledgement flag is checked against counts read a moment
+            # earlier, and nothing stopped a learner enrolling or submitting an
+            # attempt in between — that record would then be destroyed without ever
+            # appearing in the number the operator acknowledged. Locking the Curso
+            # row does not help, because a new enrollment inserts into
+            # EstudianteCurso, which that lock does not cover. So the acknowledged
+            # numbers are enforced HERE, at the point of deletion, rather than only
+            # at the point of checking. Greptile, PR #78.
+            ahora_enrollments = 0
+            ahora_attempts = 0
+            for code in reset_codes:
+                e, a = _count_learner_data(database, models, code)
+                ahora_enrollments += e
+                ahora_attempts += a
+
+            if (ahora_enrollments, ahora_attempts) != (total_enrollments, total_attempts):
+                database.session.rollback()
+                print(
+                    "ERROR: learner data changed between the check and the delete.\n"
+                    f"  acknowledged: {total_enrollments} enrollment(s), {total_attempts} attempt(s)\n"
+                    f"  now:          {ahora_enrollments} enrollment(s), {ahora_attempts} attempt(s)\n"
+                    "Nothing was deleted. Someone enrolled or submitted an attempt while this ran, "
+                    "and their record is not covered by the flag you passed. Re-run to see the "
+                    "current numbers.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(4)
+
+            for code in reset_codes:
+                if _delete_course(database, models, code):
+                    print(f"  [reset] deleted course '{code}' for rebuild")
+            database.session.commit()  # one commit for the whole reset
+
         specs = _build_specs()
         for spec in specs:
             _create_course(database, models, spec)

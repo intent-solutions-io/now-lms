@@ -23,14 +23,18 @@ import pathlib
 
 import pytest
 
+from now_lms.auth import proteger_passwd
 from now_lms.db import (
     Certificado,
     Curso,
     CursoRecurso,
     CursoSeccion,
+    EstudianteCurso,
     Evaluation,
+    EvaluationAttempt,
     Question,
     QuestionOption,
+    Usuario,
     database,
 )
 
@@ -57,6 +61,8 @@ MODELS = {
     "Evaluation": Evaluation,
     "Question": Question,
     "QuestionOption": QuestionOption,
+    "EstudianteCurso": EstudianteCurso,
+    "EvaluationAttempt": EvaluationAttempt,
 }
 
 
@@ -213,6 +219,70 @@ def test_build_specs_includes_rick_practice_exams():
     assert len(cca_f["extra_exams"]) >= 1
     for exam in cca_f["extra_exams"]:
         assert len(exam["questions"]) == 60
+
+
+@_content_required
+def test_build_specs_includes_matthew_practice_exam():
+    """When Matthew's bank is vendored, Course A gains his full-length CCAO-F exam."""
+    if not seed._load_bank_optional("matthew-purcell-practice-exams.json"):
+        pytest.skip("Matthew practice-exam bank not vendored in this checkout")
+    cca_a = {s["codigo"]: s for s in seed._build_specs()}["CCA-A"]
+    assert cca_a.get("extra_exams"), "Course A carries no extra exams"
+    assert len(cca_a["extra_exams"]) == 1
+    assert len(cca_a["extra_exams"][0]["questions"]) == 60
+
+
+@_content_required
+def test_every_multi_correct_item_in_the_curriculum_reaches_a_course_spec():
+    """The regression guard for the defect this test was written for.
+
+    ``_correct_positions`` has honoured ``answerIndexes`` since PR #76, and the importer
+    marks both options — both are covered by synthetic fixtures above. What was NEVER
+    covered is whether any bank containing such an item is actually LOADED. It was not:
+    ``_build_specs`` named five banks by hardcoded filename, and the one bank holding
+    every select-TWO item in the curriculum was not among them. A real end-to-end seed
+    produced 539 questions, every one with a single correct answer, and nothing failed
+    or warned — the platform's multi-correct support simply had no data to act on.
+
+    So this asserts the wiring, not the helper: every multi-correct item that exists on
+    disk must appear in at least one course spec. A future bank added to the curriculum
+    but not to ``_build_specs`` fails here instead of shipping silently.
+    """
+    banks_dir = seed.BANKS_DIR
+    on_disk = {}
+    for path in sorted(banks_dir.glob("*.json")):
+        try:
+            items = seed._load_bank(path.name)
+        except (KeyError, TypeError):
+            # Not a question bank. Without this, any other JSON dropped into banks/
+            # makes this test red for a reason that has nothing to do with wiring, and
+            # the failure names the wrong cause.
+            continue
+        for item in items:
+            if len(seed._correct_positions(item)) > 1:
+                # Keyed by (bank, id) rather than text: two banks could legitimately
+                # word an item identically, and text-matching would then let one bank's
+                # inclusion mask another's absence. Every item carries an id.
+                on_disk[(path.name, item.get("id") or item["text"])] = path.name
+    if not on_disk:
+        pytest.skip("no multi-correct items vendored in this checkout")
+
+    def _identity(question):
+        return question.get("id") or question["text"]
+
+    seeded = set()
+    for spec in seed._build_specs():
+        for section in spec.get("sections", []):
+            seeded.update(_identity(q) for q in section.get("questions", []))
+        seeded.update(_identity(q) for q in spec.get("mock_questions", []))
+        for exam in spec.get("extra_exams", []):
+            seeded.update(_identity(q) for q in exam["questions"])
+
+    missing = {key: bank for key, bank in on_disk.items() if key[1] not in seeded}
+    assert not missing, (
+        f"{len(missing)} multi-correct item(s) exist on disk but reach no course spec, "
+        f"so the platform can never grade them. Unreached banks: {sorted(set(missing.values()))}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -396,3 +466,171 @@ def test_create_course_gates_pre_gating_public_course(cca_db, sample_questions):
     assert all(r.publico is False for r in resources)
     secs = database.session.execute(database.select(CursoSeccion).filter_by(curso="CCA-T3")).scalars().all()
     assert len(secs) == 1  # structure untouched — visibility only
+
+
+# --------------------------------------------------------------------------- #
+# --reset destructive-guard (fork finding C1: --reset silently deleted every
+# member's enrollment and evaluation-attempt history with no check and no
+# way to say no)
+# --------------------------------------------------------------------------- #
+
+
+def _make_learner(username):
+    user = Usuario(
+        usuario=username,
+        acceso=proteger_passwd("x"),
+        nombre="Reset",
+        apellido="Guard",
+        correo_electronico=f"{username}@example.com",
+        tipo="student",
+        activo=True,
+        correo_electronico_verificado=True,
+        creado_por="test",
+    )
+    database.session.add(user)
+    database.session.commit()
+    return user
+
+
+def test_count_learner_data_is_zero_for_a_fresh_course(cca_db, sample_questions):
+    seed._create_course(database, MODELS, _spec_for("CCA-RESET1", sample_questions))
+    enrollments, attempts = seed._count_learner_data(database, MODELS, "CCA-RESET1")
+    assert (enrollments, attempts) == (0, 0)
+
+
+def test_count_learner_data_counts_enrollments_and_attempts(cca_db, sample_questions):
+    seed._create_course(database, MODELS, _spec_for("CCA-RESET2", sample_questions))
+    _make_learner("reset-guard-learner")
+    database.session.add(EstudianteCurso(usuario="reset-guard-learner", curso="CCA-RESET2", vigente=True))
+    database.session.commit()
+
+    ev = database.session.execute(
+        database.select(Evaluation).join(CursoSeccion).filter(CursoSeccion.curso == "CCA-RESET2")
+    ).scalar_one()
+    database.session.add(EvaluationAttempt(evaluation_id=ev.id, user_id="reset-guard-learner", score=80.0, passed=True))
+    database.session.add(EvaluationAttempt(evaluation_id=ev.id, user_id="reset-guard-learner", score=60.0, passed=False))
+    database.session.commit()
+
+    enrollments, attempts = seed._count_learner_data(database, MODELS, "CCA-RESET2")
+    assert (enrollments, attempts) == (1, 2)
+
+
+def test_required_ack_flag_names_the_exact_counts():
+    assert seed._required_ack_flag(0, 0) == "--i-know-this-deletes-0-enrollments-and-0-attempts"
+    assert seed._required_ack_flag(3, 7) == "--i-know-this-deletes-3-enrollments-and-7-attempts"
+
+
+def test_main_refuses_reset_with_learner_data_and_no_ack_flag(monkeypatch, cca_db, sample_questions):
+    """The gate the audit asked for, exercised through main() itself: a
+    --reset against a course with learner data must refuse, and must do so
+    BEFORE deleting anything — the course, the enrollment, and the attempt
+    must all still exist afterward."""
+    seed._create_course(database, MODELS, _spec_for("CCA-RESET3", sample_questions))
+    _make_learner("guarded-learner")
+    database.session.add(EstudianteCurso(usuario="guarded-learner", curso="CCA-RESET3", vigente=True))
+    database.session.commit()
+
+    monkeypatch.setattr(seed, "_require_content_dir", lambda: None)
+    monkeypatch.setattr(seed.sys, "argv", ["seed_cca_courses.py", "--reset=CCA-RESET3"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        seed.main()
+    assert exc_info.value.code == 3
+
+    # Nothing was touched: the refusal happens before _delete_course runs.
+    curso = database.session.execute(database.select(Curso).filter_by(codigo="CCA-RESET3")).scalar_one_or_none()
+    assert curso is not None
+    enrollments, _attempts = seed._count_learner_data(database, MODELS, "CCA-RESET3")
+    assert enrollments == 1
+
+
+def test_main_proceeds_with_reset_when_the_exact_ack_flag_is_given(monkeypatch, cca_db, sample_questions):
+    """The other half of the gate: the correctly-named flag lets a real
+    --reset through, the course is actually rebuilt, and both the enrollment
+    and the evaluation attempt are gone afterward (cascaded by the DB, not
+    left orphaned).
+
+    Covers both learner-data shapes in one course: an EstudianteCurso
+    enrollment AND an EvaluationAttempt. Deleting a Curso with an enrolled
+    student used to crash here (Curso.inscripciones had no passive_deletes,
+    so the ORM tried to NULL a NOT NULL FK instead of trusting the DB's own
+    ON DELETE CASCADE) — fixed in now_lms/db/__init__.py; this test is what
+    proves it rather than working around it.
+    """
+    seed._create_course(database, MODELS, _spec_for("CCA-RESET4", sample_questions))
+    _make_learner("acking-learner")
+    database.session.add(EstudianteCurso(usuario="acking-learner", curso="CCA-RESET4", vigente=True))
+    ev = database.session.execute(
+        database.select(Evaluation).join(CursoSeccion).filter(CursoSeccion.curso == "CCA-RESET4")
+    ).scalar_one()
+    database.session.add(EvaluationAttempt(evaluation_id=ev.id, user_id="acking-learner", score=90.0, passed=True))
+    database.session.commit()
+
+    enrollments, attempts = seed._count_learner_data(database, MODELS, "CCA-RESET4")
+    assert (enrollments, attempts) == (1, 1)
+    ack_flag = seed._required_ack_flag(enrollments, attempts)
+
+    # _build_specs() reads the private curriculum content this test env does
+    # not have; stub it to an empty rebuild so the gate is what's under test,
+    # not the content pipeline.
+    monkeypatch.setattr(seed, "_require_content_dir", lambda: None)
+    monkeypatch.setattr(seed, "_build_specs", lambda: [])
+    monkeypatch.setattr(seed.sys, "argv", ["seed_cca_courses.py", "--reset=CCA-RESET4", ack_flag])
+
+    result = seed.main()
+    assert result == 0
+
+    curso = database.session.execute(database.select(Curso).filter_by(codigo="CCA-RESET4")).scalar_one_or_none()
+    assert curso is None, "an acknowledged --reset must actually delete the course"
+    orphaned_enrollment = database.session.execute(
+        database.select(EstudianteCurso).filter_by(curso="CCA-RESET4")
+    ).scalar_one_or_none()
+    assert orphaned_enrollment is None, "the enrollment row must be cascade-deleted, not left orphaned"
+
+
+def test_reset_refuses_when_learner_data_changes_after_the_check(app, db_session, monkeypatch, capsys):
+    """The acknowledged numbers must be enforced at DELETE time, not only at check time.
+
+    `_count_learner_data` reads, then `_delete_course` deletes. Nothing stopped a
+    learner enrolling in between, and that record would have been destroyed without
+    ever appearing in the count the operator acknowledged. Locking the Curso row does
+    not close it either, because a new enrollment inserts into EstudianteCurso, which
+    that lock does not cover.
+
+    Simulated by making the second count return more than the first, which is exactly
+    what a concurrent enrolment looks like from inside this script. Greptile, PR #78.
+    """
+    llamadas = {"n": 0}
+
+    def contando(db, models, code):
+        llamadas["n"] += 1
+        # First pass (the gate) sees 1 enrollment. Second pass (the re-check, inside
+        # the deleting transaction) sees a second learner arrive.
+        return (1, 0) if llamadas["n"] == 1 else (2, 0)
+
+    # main() calls _require_content_dir() first, and content/cca is gitignored
+    # (it lives in the private intent-curriculum repo), so without this the
+    # script exits 2 on the missing directory long before it reaches the
+    # re-check this test exists to exercise. Both sibling tests that drive
+    # main() stub it the same way.
+    monkeypatch.setattr(seed, "_require_content_dir", lambda: None)
+
+    monkeypatch.setattr(seed, "_count_learner_data", contando)
+
+    borrados = []
+    monkeypatch.setattr(seed, "_delete_course", lambda *a, **k: borrados.append(a) or True)
+
+    monkeypatch.setattr(
+        seed.sys,
+        "argv",
+        ["seed_cca_courses.py", "--reset=CCA-RACE", "--i-know-this-deletes-1-enrollments-and-0-attempts"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        seed.main()
+
+    assert exc_info.value.code == 4, f"expected the delete-time refusal (exit 4), got {exc_info.value.code}"
+    assert borrados == [], "a course was deleted even though the counts had moved"
+    err = capsys.readouterr().err
+    assert "changed between the check and the delete" in err
+    assert "Nothing was deleted" in err
