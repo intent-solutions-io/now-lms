@@ -1,7 +1,7 @@
 """Add domain_key and domain_name to question
 
-Revision ID: 20260810_000000
-Revises: 20260730_000000
+Revision ID: 20260810_020000
+Revises: 20260809_010000
 Create Date: 2026-08-10 00:00:00
 
 Records which part of the syllabus each question examines, so a result can be
@@ -23,8 +23,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "20260810_000000"
-down_revision = "20260730_000000"
+revision = "20260810_020000"
+down_revision = "20260809_010000"
 branch_labels = None
 depends_on = None
 

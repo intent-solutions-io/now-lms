@@ -1,7 +1,7 @@
 """Add certification_key and certification_name to question
 
 Revision ID: 20260810_010000
-Revises: 20260810_000000
+Revises: 20260810_020000
 Create Date: 2026-08-10 01:00:00
 
 Records which certification each question prepares for, so practice can be
@@ -26,7 +26,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260810_010000"
-down_revision = "20260810_000000"
+down_revision = "20260810_020000"
 branch_labels = None
 depends_on = None
 
