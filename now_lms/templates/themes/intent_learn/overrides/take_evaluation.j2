@@ -305,7 +305,7 @@
                                 <li class="breadcrumb-item">
                                     <a
                                         class="text-reset text-decoration-none"
-                                        href="{{ url_for('course.tomar_curso', course_code=evaluation.section.curso) }}"
+                                        href="{% if evaluation.section_id %}{{ url_for('course.tomar_curso', course_code=evaluation.section.curso) }}{% else %}{{ url_for('evaluation.practice', certification_key=evaluation.certification_key) }}{% endif %}"
                                         >{{ _('Course') }}</a
                                     >
                                 </li>
@@ -314,11 +314,13 @@
                         </nav>
 
                         <form method="POST" id="is-exam-form"
+                              data-answer-url="{{ url_for('evaluation.save_answer', evaluation_id=evaluation.id) }}"
                               data-item-label="{{ _('Item %(number)s', number='__N__') }}"
                               data-flagged-label="{{ _('flagged') }}"
                               data-unanswered-label="{{ _('unanswered') }}"
                               data-flag-clear="{{ _('Flagged — click to clear') }}"
                               data-flag-review="{{ _('Flag for review') }}">
+                            {% if attempt is defined and attempt %}<input type="hidden" name="attempt_id" value="{{ attempt.id }}" />{% endif %}
                             {% for question in paper %} {% set correct_count = question.options |
                             selectattr("is_correct", "equalto", true) | list | length %}
                             <section
@@ -354,6 +356,7 @@
                                             type="{% if correct_count > 1 %}checkbox{% else %}radio{% endif %}"
                                             name="question_{{ question.id }}"
                                             value="{{ option.id }}"
+                                            {% if option.id in (selections.get(question.id, []) if selections is defined and selections else []) %}checked{% endif %}
                                         />
                                         <span class="is-key">{{ loop.index }}</span>
                                         <span>{{ option.text }}</span>
@@ -453,6 +456,32 @@
                             }
                         }
                     }, 1000);
+                }
+
+                /* Persist each selection as it is made. Answers used to be written only
+                   on the final POST, so a refresh, a crash, a closed tab or the clock
+                   running out while the candidate was away discarded everything they
+                   had chosen. Failures here are swallowed on purpose: the submit is
+                   still authoritative, and an autosave must never interrupt a sitting. */
+                var examForm = document.getElementById("is-exam-form");
+                var answerUrl = examForm && examForm.getAttribute("data-answer-url");
+                if (examForm && answerUrl) {
+                    examForm.addEventListener("change", function (event) {
+                        var input = event.target;
+                        if (!input || !input.name || input.name.indexOf("question_") !== 0) { return; }
+                        var questionId = input.name.slice("question_".length);
+                        var body = new URLSearchParams();
+                        body.append("question_id", questionId);
+                        examForm.querySelectorAll('[name="' + input.name + '"]').forEach(function (peer) {
+                            if (peer.checked) { body.append("option_id", peer.value); }
+                        });
+                        fetch(answerUrl, {
+                            method: "POST",
+                            body: body,
+                            credentials: "same-origin",
+                            keepalive: true,
+                        }).catch(function () { /* the submit still carries everything */ });
+                    });
                 }
 
                 var form = document.getElementById("is-exam-form");

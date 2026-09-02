@@ -12,6 +12,8 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------------------
 # Third-party libraries
 # ---------------------------------------------------------------------------------------
+from urllib.parse import unquote
+
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import OperationalError
@@ -90,11 +92,17 @@ def _safe_next(target: str | None) -> str | None:
     """
     if not target:
         return None
-    if not target.startswith("/") or target.startswith("//") or "\\" in target:
+    # Decode first: a percent-encoded scheme or newline gets through a check that
+    # only looks at the raw string, and `next=/%0d%0aLocation:%20//evil.test/x`
+    # then reached redirect() and raised on the header split.
+    candidate = unquote(unquote(target))
+    if any(ch in candidate for ch in ("\r", "\n", "\t", "\x00")):
         return None
-    if "://" in target:
+    if any(ch in candidate for ch in ("\\",)) or "://" in candidate:
         return None
-    return target
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return None
+    return candidate
 
 
 @user.route("/user/login", methods=["GET", "POST"])

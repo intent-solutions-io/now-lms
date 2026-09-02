@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 - 2026 BMO Soluciones, S.A.
+
 """Tests for the exam form: the draw, the shuffle, and the scale.
 
 These cover the properties an exam has to hold whatever the bank looks like: a
@@ -14,8 +17,10 @@ from now_lms.vistas import exam_forms
 
 
 class FakeOption:
-    def __init__(self, option_id):
+    def __init__(self, option_id, text=None, is_correct=False):
         self.id = option_id
+        self.text = text or f"option {option_id}"
+        self.is_correct = is_correct
 
 
 class FakeQuestion:
@@ -23,7 +28,12 @@ class FakeQuestion:
         self.id = question_id
         self.domain_key = domain_key
         self.domain_name = domain_key.replace("-", " ").title() if domain_key else None
-        self.options = [FakeOption(f"{question_id}-o{i}") for i in range(options)]
+        self.text = f"stem for {question_id}"
+        self.explanation = f"why {question_id}"
+        self.options = [
+            FakeOption(f"{question_id}-o{i}", f"{question_id} option {i}", is_correct=(i == 0))
+            for i in range(options)
+        ]
 
 
 class FakeEvaluation:
@@ -167,23 +177,61 @@ def test_form_questions_without_a_form_returns_the_stored_questions():
     assert [q.id for q in questions] == [q.id for q in pool]
 
 
-def test_a_question_deleted_mid_sitting_is_skipped_not_fatal():
+def test_a_question_deleted_mid_sitting_does_not_change_the_paper():
+    """The paper is what the candidate was shown, not what the bank holds now.
+
+    Skipping a deleted question shortened the paper while the score kept the
+    original denominator, so a candidate who answered every remaining question
+    correctly scored 50 instead of 100.
+    """
     pool = bank({"agentic": 5})
     evaluation = FakeEvaluation(pool)
     form = exam_forms.build_form(pool, evaluation, None, random.Random(1))
     evaluation.questions = pool[:3]
     questions = exam_forms.form_questions(form, evaluation)
-    assert len(questions) == 3
+    assert len(questions) == 5
+    assert all(q.text for q in questions), "a deleted question still renders its stem"
 
 
-def test_an_option_added_mid_sitting_still_renders():
+def test_an_option_added_mid_sitting_does_not_appear():
+    """An option added after the draw was never on the candidate's paper."""
     pool = bank({"agentic": 1})
     evaluation = FakeEvaluation(pool)
     form = exam_forms.build_form(pool, evaluation, None, random.Random(1))
     pool[0].options.append(FakeOption("late-option"))
     question = exam_forms.form_questions(form, evaluation)[0]
-    assert len(question.options) == 5
-    assert question.options[-1].id == "late-option", "an unnamed option sorts last, not away"
+    assert len(question.options) == 4
+    assert "late-option" not in [o.id for o in question.options]
+
+
+def test_editing_an_option_mid_sitting_does_not_change_the_paper():
+    pool = bank({"agentic": 1})
+    evaluation = FakeEvaluation(pool)
+    form = exam_forms.build_form(pool, evaluation, None, random.Random(1))
+    shown = [o.text for o in exam_forms.form_questions(form, evaluation)[0].options]
+    for option in pool[0].options:
+        option.text = "REWRITTEN"
+    assert [o.text for o in exam_forms.form_questions(form, evaluation)[0].options] == shown
+
+
+def test_moving_the_answer_key_mid_sitting_does_not_regrade_the_paper():
+    """Grading reads the key the candidate was shown, not the key as it stands."""
+    pool = bank({"agentic": 1})
+    evaluation = FakeEvaluation(pool)
+    form = exam_forms.build_form(pool, evaluation, None, random.Random(1))
+    was = [o.id for o in exam_forms.form_questions(form, evaluation)[0].options if o.is_correct]
+    for index, option in enumerate(pool[0].options):
+        option.is_correct = index == 3
+    now = [o.id for o in exam_forms.form_questions(form, evaluation)[0].options if o.is_correct]
+    assert now == was
+
+
+def test_a_stem_edited_mid_sitting_does_not_change_the_paper():
+    pool = bank({"agentic": 1})
+    evaluation = FakeEvaluation(pool)
+    form = exam_forms.build_form(pool, evaluation, None, random.Random(1))
+    pool[0].text = "REWRITTEN STEM"
+    assert exam_forms.form_questions(form, evaluation)[0].text != "REWRITTEN STEM"
 
 
 @pytest.mark.parametrize("raw", [None, "", "not json", '{"version": 99, "items": []}', '{"items": "no"}', "[]"])

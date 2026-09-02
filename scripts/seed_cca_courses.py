@@ -56,6 +56,9 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import nullcontext
+
+from flask import has_app_context
 from os import environ
 from pathlib import Path
 
@@ -548,15 +551,6 @@ def _create_course(db, models, spec: dict) -> None:
             "worked through every section's practice quiz.",
         )
         sitting = SITTINGS.get(spec.get("certification"))
-        # A pool smaller than the draw does not fail: it quietly serves everything it
-        # has while the description promises a full-length paper. Refuse instead, the
-        # way _correct_positions refuses an unanswerable question.
-        if sitting and sitting.get("items") and len(spec["mock_questions"]) < sitting["items"]:
-            raise ValueError(
-                f"{spec['codigo']}: mock pool holds {len(spec['mock_questions'])} questions but the "
-                f"{spec['certification']} form draws {sitting['items']}. Seeding it would advertise a "
-                f"{sitting['items']}-question exam and serve fewer."
-            )
         total_questions += _add_evaluation(
             db,
             models,
@@ -882,6 +876,93 @@ def _require_content_dir() -> None:
     raise SystemExit(2)
 
 
+def _backfill_sitting_fields(db, models) -> int:
+    """Give existing mock exams their sitting fields, without touching learner data.
+
+    A course that already exists is skipped wholesale by `_create_course`, so on a
+    seeded production database every mock kept the old shape: no clock, no draw, no
+    scale. This backfills those four columns on the rows that are already there.
+    Idempotent, and it writes nothing but the sitting fields: no course, section,
+    question, attempt or answer is created, changed or deleted.
+    """
+    updated = 0
+    for spec in _build_specs():
+        sitting = SITTINGS.get(spec.get("certification"))
+        if not sitting or not spec.get("mock_questions"):
+            continue
+        title = f"Mock exam — {spec['nombre']}"
+        evaluation = db.session.execute(
+            db.select(models["Evaluation"]).filter_by(title=_truncate(title, 200))
+        ).scalars().first()
+        if evaluation is None:
+            continue
+
+        pool = len(evaluation.questions)
+        if pool < sitting["items"]:
+            print(
+                f"  [skip] '{title}' holds {pool} questions, the {spec['certification']} form "
+                f"draws {sitting['items']} — left as it is rather than advertising more than it has"
+            )
+            continue
+
+        wanted = {
+            "time_limit_minutes": sitting["minutes"],
+            "draw_size": sitting["items"],
+            "scaled_cut": sitting["cut"],
+            "blueprint_json": json.dumps(sitting["blueprint"]) if sitting.get("blueprint") else None,
+        }
+        changed = [f for f, v in wanted.items() if getattr(evaluation, f) != v]
+        if not changed:
+            continue
+        for field, value in wanted.items():
+            setattr(evaluation, field, value)
+        db.session.commit()
+        updated += 1
+        print(f"  [set]  '{title}' — {', '.join(changed)}")
+    return updated
+
+
+def _preflight(specs: list[dict]) -> None:
+    """Refuse every impossible sitting BEFORE the first row is written.
+
+    The pool checks used to run inside `_create_course`, after the course and its
+    sections were already committed. A refusal there left a half-built course
+    behind, and because the seeder skips a course whose code already exists, the
+    corrected re-run then skipped it entirely and the course stayed half-built.
+    Checking everything up front means a bad bank changes nothing at all.
+    """
+    problems = []
+    for spec in specs:
+        sitting = SITTINGS.get(spec.get("certification"))
+        if not sitting or not sitting.get("items"):
+            continue
+        pool = spec.get("mock_questions") or []
+        if len(pool) < sitting["items"]:
+            problems.append(
+                f"{spec['codigo']} ({spec['certification']}): mock pool holds {len(pool)} "
+                f"questions, the form draws {sitting['items']}"
+            )
+
+    for cert_key, sitting in SITTINGS.items():
+        bank: list[dict] = []
+        for filename, (key, _name) in BANK_CERTIFICATIONS.items():
+            if key == cert_key:
+                bank.extend(_load_bank_optional(filename) or [])
+        if not bank:
+            continue
+        if len(bank) < sitting["items"]:
+            problems.append(
+                f"{cert_key} practice sitting: pool holds {len(bank)} questions, "
+                f"the form draws {sitting['items']}"
+            )
+
+    if problems:
+        raise ValueError(
+            "Refusing to seed: a sitting would advertise more questions than its pool can "
+            "fill.\n  - " + "\n  - ".join(problems)
+        )
+
+
 def _seed_practice_sittings(db, models) -> int:
     """One full-length practice sitting per certification, belonging to no course.
 
@@ -906,14 +987,7 @@ def _seed_practice_sittings(db, models) -> int:
             bank.extend(_load_bank_optional(filename) or [])
         if not bank:
             continue
-        if len(bank) < sitting["items"]:
-            # The same refusal the course mocks make: never advertise a
-            # 63-question exam over a pool that cannot fill one.
-            print(
-                f"  [skip] {cert_key} practice sitting — pool holds {len(bank)} of the "
-                f"{sitting['items']} its form draws"
-            )
-            continue
+        # Undersized pools were already refused by _preflight before any write.
 
         title = f"Practice exam — {cert_name}"
         existing = db.session.execute(
@@ -988,7 +1062,12 @@ def main() -> int:
         elif arg.startswith("--i-know-this-deletes-"):
             ack_flag = arg
 
-    with app.app_context():
+    # Reuse a context if the caller already has one. Pushing a second context opens
+    # a second connection, and the test suite runs on `sqlite:///:memory:`, where a
+    # second connection is a different, empty database: every query from inside here
+    # then failed with "no such table". Under a real run there is no outer context
+    # and this behaves exactly as before.
+    with nullcontext() if has_app_context() else app.app_context():
         print("Seeding CCA-F preliminary prep curriculum...")
 
         if reset_codes:
@@ -1061,8 +1140,10 @@ def main() -> int:
             database.session.commit()  # one commit for the whole reset
 
         specs = _build_specs()
+        _preflight(specs)
         for spec in specs:
             _create_course(database, models, spec)
+        _backfill_sitting_fields(database, models)
         _seed_practice_sittings(database, models)
         print("Done.")
     return 0

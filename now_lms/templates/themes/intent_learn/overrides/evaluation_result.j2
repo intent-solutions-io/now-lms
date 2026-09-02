@@ -15,8 +15,14 @@
 #}
 {% set current_theme = current_theme() %} {% set config = config() %}
 
+{# `paper` is the attempt's stored form: the questions this candidate was actually
+   shown, in the order shown. Looping `attempt.evaluation.questions` instead walked
+   the WHOLE pool, so a 60-item sitting drawn from 583 rendered all 583 below and
+   marked the 523 never shown as unanswered — publishing their correct answers to
+   anyone who finished one exam. Never iterate the evaluation here. #}
+{% set paper = paper if paper is defined and paper else attempt.evaluation.questions %}
 {% set ns = namespace(order=[], stats={}) %}
-{% for question in attempt.evaluation.questions %}
+{% for question in paper %}
     {% set label = question.domain_name or question.domain_key %}
     {% if label %}
         {% if label not in ns.stats %}
@@ -269,7 +275,7 @@
                                 <li class="breadcrumb-item">
                                     <a
                                         class="text-reset text-decoration-none"
-                                        href="{{ url_for('course.tomar_curso', course_code=attempt.evaluation.section.curso) }}"
+                                        href="{% if attempt.evaluation.section_id %}{{ url_for('course.tomar_curso', course_code=attempt.evaluation.section.curso) }}{% else %}{{ url_for('evaluation.practice', certification_key=attempt.evaluation.certification_key) }}{% endif %}"
                                         >Course</a
                                     >
                                 </li>
@@ -369,7 +375,7 @@
                                     Expand all
                                 </button>
                             </div>
-                            {% for question in attempt.evaluation.questions %} {% set answer = (attempt.answers |
+                            {% for question in paper %} {% set answer = (attempt.answers |
                             selectattr("question_id", "equalto", question.id) | list | first) %} {% set correct_ids =
                             question.options | selectattr("is_correct", "equalto", true) | map(attribute="id") | list %} {% set
                             selected_ids = (answer.selected_option_ids | fromjson) if (answer and answer.selected_option_ids)
@@ -423,7 +429,7 @@
                         <div class="d-flex flex-wrap gap-2 mt-4">
                             <a
                                 class="btn btn-outline-secondary"
-                                href="{{ url_for('course.tomar_curso', course_code=attempt.evaluation.section.curso) }}"
+                                href="{% if attempt.evaluation.section_id %}{{ url_for('course.tomar_curso', course_code=attempt.evaluation.section.curso) }}{% else %}{{ url_for('evaluation.practice', certification_key=attempt.evaluation.certification_key) }}{% endif %}"
                                 >Back to the course</a
                             >
                             <a

@@ -13,7 +13,7 @@ from __future__ import annotations
 # Standard library
 # ---------------------------------------------------------------------------------------
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------------------------------
 # Third-party libraries
@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from werkzeug.wrappers import Response
 
@@ -71,6 +72,19 @@ NO_AUTHORIZED_MSG = _("No se encuentra autorizado a acceder al recurso solicitad
 # <--------------------------------------------------------------------------> #
 # Blueprint for evaluation management
 evaluation = Blueprint("evaluation", __name__)
+
+
+def _now() -> datetime:
+    """The clock every deadline in this module is measured against.
+
+    UTC, but naive, to match what is actually stored. `utc_now()` returns an AWARE
+    datetime while `EvaluationAttempt.started_at` is a plain DateTime column, so a
+    value read back from the database is naive and comparing the two raises. Using
+    the local clock instead would be worse: a deadline computed from a UTC
+    `started_at` and compared against local time is wrong by the server's offset,
+    which silently shortens or lengthens every sitting on a non-UTC host.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _back_from_evaluation(eval_obj) -> str:
@@ -229,12 +243,38 @@ def _save_question_answers(attempt, evaluation_obj, questions=None) -> None:
             continue
         selected_values = request.form.getlist(answer_key)
         selected_option_ids = _resolve_option_ids(question, selected_values)
-        answer = Answer(
-            attempt_id=attempt.id,
-            question_id=question.id,
-            selected_option_ids=json.dumps(selected_option_ids),
-        )
-        database.session.add(answer)
+        _record_answer(attempt, question.id, selected_option_ids)
+
+
+def _record_answer(attempt, question_id: str, selected_option_ids: list) -> None:
+    """Write one answer, replacing any already stored for that question.
+
+    Answers are now saved as the candidate makes them rather than only at submit,
+    so a refresh, a crash, a closed tab or a device change no longer discards
+    everything they had selected. That means a row may already exist, and a second
+    insert would leave two answers for one question and double-count it.
+    """
+    existing = database.session.execute(
+        database.select(Answer).filter_by(attempt_id=attempt.id, question_id=question_id)
+    ).scalars().first()
+    payload = json.dumps(selected_option_ids)
+    if existing is not None:
+        existing.selected_option_ids = payload
+        return
+    database.session.add(
+        Answer(attempt_id=attempt.id, question_id=question_id, selected_option_ids=payload)
+    )
+
+
+def _stored_selections(attempt) -> dict:
+    """What this attempt has answered so far, as {question_id: [option_id, ...]}."""
+    selections = {}
+    for answer in attempt.answers:
+        try:
+            selections[answer.question_id] = json.loads(answer.selected_option_ids or "[]")
+        except (ValueError, TypeError):
+            selections[answer.question_id] = []
+    return selections
 
 
 def _try_issue_certificate(section) -> None:
@@ -253,24 +293,36 @@ def _try_issue_certificate(section) -> None:
 
 
 def _open_attempt(evaluation_id: str, usuario: str):
-    """The candidate's sitting that is started but not yet submitted, if any."""
+    """The candidate's sitting that is started but not yet submitted, if any.
+
+    OLDEST first, not newest. If two ever exist the earlier one is the real sitting
+    and its clock is the one that has been running; picking the newest would hand a
+    candidate a fresh deadline by opening a second tab.
+    """
     return database.session.execute(
         database.select(EvaluationAttempt)
         .filter_by(evaluation_id=evaluation_id, user_id=usuario, submitted_at=None)
-        .order_by(EvaluationAttempt.started_at.desc())
+        .order_by(EvaluationAttempt.started_at.asc())
     ).scalars().first()
 
 
 def _start_attempt(eval_obj):
-    """Open a sitting and draw its paper.
+    """Open a sitting and draw its paper, at most once per candidate.
 
     The attempt is created HERE, at the start, rather than at submit as this view
     used to. A timed sitting needs a server-side ``started_at`` to measure the
     deadline from, and a drawn sitting needs its paper fixed before the first
     question is rendered. Creating the row at submit could do neither.
+
+    Two GETs racing (a double-click, or two tabs) both saw no open attempt and both
+    created one, leaving the candidate two live papers and a POST that could be
+    graded against whichever the query happened to return. The unique partial index
+    added in the same migration makes a second open row impossible at the database;
+    losing that race is not an error, it means the sitting already started, so the
+    loser reads the winner's attempt back and renders the same paper.
     """
     attempt = EvaluationAttempt(
-        evaluation_id=eval_obj.id, user_id=current_user.usuario, started_at=datetime.now()
+        evaluation_id=eval_obj.id, user_id=current_user.usuario, started_at=_now()
     )
     weights = None
     if eval_obj.blueprint_json:
@@ -285,7 +337,15 @@ def _start_attempt(eval_obj):
             exam_forms.build_form(list(eval_obj.questions), eval_obj, weights)
         )
     database.session.add(attempt)
-    database.session.commit()
+    try:
+        database.session.commit()
+    except IntegrityError:
+        # The other tab won. Its paper is the sitting.
+        database.session.rollback()
+        existing = _open_attempt(eval_obj.id, current_user.usuario)
+        if existing is not None:
+            return existing
+        raise
     return attempt
 
 
@@ -298,7 +358,7 @@ def _deadline(attempt, eval_obj):
 
 def _grade_attempt(attempt, eval_obj, questions) -> None:
     """Score a sitting and close it. Shared by a submit and by the clock."""
-    attempt.submitted_at = datetime.now()
+    attempt.submitted_at = _now()
     attempt.score = calculate_score(attempt)
     attempt.passed = attempt.score >= eval_obj.passing_score
     if eval_obj.scaled_cut:
@@ -332,12 +392,19 @@ def take_evaluation(evaluation_id: int) -> str | Response:
     # elsewhere, and silently discarding it would lose answers they gave.
     if attempt is not None:
         deadline = _deadline(attempt, eval_obj)
-        if deadline and datetime.now() >= deadline:
+        if deadline and _now() >= deadline:
             attempt.was_late = True
             _grade_attempt(attempt, eval_obj, exam_forms.form_questions(
                 exam_forms.load_form(attempt.form_json), eval_obj))
             flash(_("Time ran out, so the sitting was submitted for you."), "warning")
             return redirect(url_for("evaluation.evaluation_result", attempt_id=attempt.id))
+
+    # Availability is checked whether or not a sitting is already open. Gating it on
+    # "no open attempt" let an open legacy attempt outlive its `available_until`,
+    # which is a change in behaviour for every evaluation that predates this work.
+    if not is_evaluation_available(eval_obj):
+        flash(_("Esta evaluación no está disponible."), "warning")
+        return redirect(_back_from_evaluation(eval_obj))
 
     if attempt is None and not can_user_attempt_evaluation(eval_obj, current_user):
         flash(_("No puede realizar más intentos en esta evaluación."), "warning")
@@ -353,10 +420,17 @@ def take_evaluation(evaluation_id: int) -> str | Response:
     questions = exam_forms.form_questions(exam_forms.load_form(attempt.form_json), eval_obj)
 
     if request.method == "POST":
+        # The form carries the id of the attempt it was rendered for. Without it a
+        # submit is just "the newest open attempt", so a stale tab could be graded
+        # against a paper it never showed.
+        submitted_for = request.form.get("attempt_id")
+        if submitted_for and submitted_for != attempt.id:
+            flash(_("That page belonged to an earlier sitting. This is the current one."), "warning")
+            return redirect(url_for("evaluation.take_evaluation", evaluation_id=eval_obj.id))
         _save_question_answers(attempt, eval_obj, questions)
         database.session.flush()
         deadline = _deadline(attempt, eval_obj)
-        attempt.was_late = bool(deadline and datetime.now() > deadline)
+        attempt.was_late = bool(deadline and _now() > deadline)
         _grade_attempt(attempt, eval_obj, questions)
 
         if attempt.passed and eval_obj.section_id:
@@ -373,11 +447,47 @@ def take_evaluation(evaluation_id: int) -> str | Response:
         evaluation=eval_obj,
         questions=questions,
         attempt=attempt,
+        selections=_stored_selections(attempt),
         # Seconds rather than a timestamp: the browser's clock may be wrong, and
         # only the server's view of the deadline is authoritative anyway.
-        seconds_remaining=int((deadline - datetime.now()).total_seconds()) if deadline else None,
+        seconds_remaining=int((deadline - _now()).total_seconds()) if deadline else None,
         scaled_cut=eval_obj.scaled_cut,
     )
+
+
+@evaluation.route("/evaluation/<evaluation_id>/answer", methods=["POST"])
+@login_required
+@perfil_requerido("student")
+def save_answer(evaluation_id: str) -> Response:
+    """Persist one answer mid-sitting. Called as the candidate selects.
+
+    Deliberately forgiving: this fires on every click, and a candidate must never
+    see an error from it or be blocked by it. It writes to the open attempt only,
+    refuses questions outside that attempt's paper, and answers 204 either way.
+    """
+    eval_obj = database.session.get(Evaluation, evaluation_id)
+    if not eval_obj or not can_user_access_evaluation(eval_obj, current_user):
+        return Response(status=403)
+
+    attempt = _open_attempt(eval_obj.id, current_user.usuario)
+    if attempt is None:
+        return Response(status=409)
+
+    deadline = _deadline(attempt, eval_obj)
+    if deadline and _now() >= deadline:
+        # Past the deadline nothing more is accepted; the next GET grades it.
+        return Response(status=409)
+
+    question_id = request.form.get("question_id")
+    paper = exam_forms.form_questions(exam_forms.load_form(attempt.form_json), eval_obj)
+    question = next((q for q in paper if q.id == question_id), None)
+    if question is None:
+        return Response(status=400)
+
+    selected = _resolve_option_ids(question, request.form.getlist("option_id"))
+    _record_answer(attempt, question_id, selected)
+    database.session.commit()
+    return Response(status=204)
 
 
 @evaluation.route("/evaluation/attempt/<attempt_id>/result", methods=["GET"])

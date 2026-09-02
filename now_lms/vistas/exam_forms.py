@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 - 2026 BMO Soluciones, S.A.
+
 """The exam form: drawing a paper, shuffling it, and reading it back.
 
 An evaluation with a ``draw_size`` is a POOL, not a paper. Each attempt draws its
@@ -19,7 +22,7 @@ from __future__ import annotations
 
 import json
 import random
-from typing import Iterable
+from collections.abc import Iterable
 
 FORM_VERSION = 1
 
@@ -117,9 +120,26 @@ def build_form(questions: list, evaluation, weights: dict | None = None, rng=Non
 
     items = []
     for question in drawn:
-        option_ids = [option.id for option in question.options]
-        rng.shuffle(option_ids)
-        items.append({"question_id": question.id, "option_ids": option_ids})
+        options = list(question.options)
+        rng.shuffle(options)
+        items.append({
+            "question_id": question.id,
+            "option_ids": [option.id for option in options],
+            # The paper is FROZEN here, text and keys included. Reading these back
+            # off the live rows meant an instructor editing a question mid-sitting
+            # changed the paper under the candidate: a deleted question shortened
+            # it while the score kept the original denominator, an added option
+            # appeared unannounced, and an edited key regraded work already done.
+            # What was shown is what is graded.
+            "text": question.text,
+            "domain_key": getattr(question, "domain_key", None),
+            "domain_name": getattr(question, "domain_name", None),
+            "explanation": getattr(question, "explanation", None),
+            "options": [
+                {"id": option.id, "text": option.text, "is_correct": bool(option.is_correct)}
+                for option in options
+            ],
+        })
     return {"version": FORM_VERSION, "items": items}
 
 
@@ -149,31 +169,62 @@ def load_form(raw: str | None) -> dict | None:
 
 
 def form_questions(form: dict | None, evaluation) -> list:
-    """The questions of this paper, in this paper's order, with options ordered.
+    """The questions of this paper, exactly as it was shown.
 
-    Returns plain view objects rather than ORM rows so the template renders the
-    stored order without anything writing a reordered list back to the database.
-    A question the form names but the evaluation no longer has is skipped: an
-    instructor deleting a question mid-sitting shortens the paper rather than
-    breaking it.
+    Served from the frozen copy in the form, not from the live rows, so a paper
+    cannot change under a candidate who is sitting it, and a finished attempt
+    reviews the exam they actually took. A form written before the text was frozen
+    falls back to the live rows, which is the behaviour those attempts already had.
     """
-    by_id = {question.id: question for question in evaluation.questions}
     if not form:
         return [_ordered(question, None) for question in evaluation.questions]
 
+    by_id = {question.id: question for question in evaluation.questions}
     ordered = []
     for item in form["items"]:
-        question = by_id.get(item.get("question_id"))
-        if question is None:
+        if item.get("options"):
+            ordered.append(_FrozenQuestion(item))
             continue
-        ordered.append(_ordered(question, item.get("option_ids")))
+        # Pre-freeze form: fall back to the live row, skipping one since deleted.
+        question = by_id.get(item.get("question_id"))
+        if question is not None:
+            ordered.append(_ordered(question, item.get("option_ids")))
     return ordered
+
+
+class _FrozenOption:
+    """An option exactly as the candidate saw it."""
+
+    __slots__ = ("id", "is_correct", "text")
+
+    def __init__(self, raw):
+        self.id = raw.get("id")
+        self.text = raw.get("text") or ""
+        self.is_correct = bool(raw.get("is_correct"))
+
+
+class _FrozenQuestion:
+    """A question exactly as the candidate saw it, options in the order shown."""
+
+    __slots__ = ("domain_key", "domain_name", "explanation", "format", "id", "options", "text", "type")
+
+    def __init__(self, item):
+        self.id = item.get("question_id")
+        self.text = item.get("text") or ""
+        self.domain_key = item.get("domain_key")
+        self.domain_name = item.get("domain_name")
+        self.explanation = item.get("explanation")
+        self.options = [_FrozenOption(o) for o in item.get("options", [])]
+        # Every seeded question is stored as "multiple"; grading compares the full
+        # selected set against the full correct set either way.
+        self.type = "multiple"
+        self.format = "multi" if sum(1 for o in self.options if o.is_correct) > 1 else "single"
 
 
 class _FormQuestion:
     """One question as this paper shows it: the row, with options in form order."""
 
-    __slots__ = ("question", "options")
+    __slots__ = ("options", "question")
 
     def __init__(self, question, options):
         self.question = question
