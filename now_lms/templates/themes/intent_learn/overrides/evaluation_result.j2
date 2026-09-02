@@ -78,6 +78,59 @@
                 line-height: 1;
                 color: var(--is-strong);
             }
+            /* The scaled rail: the whole 100-1000 band, the cut etched into it, and
+               where this sitting landed. It is the one thing on this page a candidate
+               recognises from the real score report, so it leads. */
+            .is-rail {
+                position: relative;
+                height: 10px;
+                margin: 26px 0 34px;
+                background: var(--is-bar);
+                border: 1px solid var(--is-line);
+                border-radius: 5px;
+            }
+            .is-rail-fill {
+                position: absolute;
+                inset: 0 auto 0 0;
+                border-radius: 4px 0 0 4px;
+                background: var(--is-accent);
+                opacity: 0.55;
+            }
+            .is-rail-fill.is-pass { background: #22c55e; }
+            .is-rail-cut {
+                position: absolute;
+                top: -6px;
+                bottom: -6px;
+                width: 2px;
+                background: var(--is-strong);
+            }
+            .is-rail-cut-label,
+            .is-rail-marker {
+                position: absolute;
+                transform: translateX(-50%);
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+            .is-rail-cut-label {
+                top: 14px;
+                font-size: 11px;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: var(--is-muted);
+            }
+            .is-rail-marker {
+                bottom: 18px;
+                font-size: 26px;
+                font-weight: 700;
+                color: var(--is-strong);
+            }
+            .is-rail-ends {
+                display: flex;
+                justify-content: space-between;
+                font-size: 11px;
+                color: var(--is-muted);
+                font-variant-numeric: tabular-nums;
+            }
             .is-verdict {
                 font-weight: 700;
                 letter-spacing: 0.06em;
@@ -224,10 +277,18 @@
                         <div class="is-card p-4 mb-4">
                             <div class="d-flex flex-wrap align-items-end justify-content-between gap-3">
                                 <div>
+                                    {% if scaled %}
+                                    <div class="is-score">{{ scaled.score }}</div>
+                                    <div class="is-mono mt-2" style="color: var(--is-muted)">
+                                        {{ scaled.raw }} of {{ scaled.total }} correct &middot;
+                                        {{ scaled.raw_needed }} needed for {{ scaled.cut }}
+                                    </div>
+                                    {% else %}
                                     <div class="is-score">{{ "%.1f" | format(attempt.score or 0) }}%</div>
                                     <div class="is-mono mt-2" style="color: var(--is-muted)">
                                         Pass mark {{ attempt.evaluation.passing_score }}%
                                     </div>
+                                    {% endif %}
                                 </div>
                                 <div class="text-end">
                                     {% if attempt.passed %}
@@ -244,6 +305,31 @@
                                     {% endif %}
                                 </div>
                             </div>
+
+                            {% if scaled %}
+                            <div class="is-rail" aria-hidden="true">
+                                <span class="is-rail-fill {{ 'is-pass' if attempt.passed else '' }}"
+                                      style="width: {{ scaled.at_percent }}%"></span>
+                                <span class="is-rail-cut" style="left: {{ scaled.cut_percent }}%"></span>
+                                <span class="is-rail-cut-label" style="left: {{ scaled.cut_percent }}%">
+                                    {{ scaled.cut }} &middot; pass
+                                </span>
+                                <span class="is-rail-marker" style="left: {{ scaled.at_percent }}%">
+                                    {{ scaled.score }}
+                                </span>
+                            </div>
+                            <div class="is-rail-ends">
+                                <span>{{ scaled.minimum }}</span>
+                                <span>{{ scaled.maximum }}</span>
+                            </div>
+                            <p class="small mt-3 mb-0" style="color: var(--is-muted)">
+                                This score is a plain linear map of {{ scaled.raw }} correct out of
+                                {{ scaled.total }} onto {{ scaled.minimum }}-{{ scaled.maximum }}, so
+                                {{ scaled.cut }} means {{ scaled.raw_needed }} correct. The real
+                                conversion is not published, so treat this as a study signal rather
+                                than a prediction of your exam result.
+                            </p>
+                            {% endif %}
                         </div>
 
                         {% if ns.order %}

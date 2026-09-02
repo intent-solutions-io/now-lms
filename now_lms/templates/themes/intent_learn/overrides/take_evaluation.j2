@@ -18,6 +18,9 @@
    score zero either way — and the review screen names them before submit.
 #}
 {% set current_theme = current_theme() %} {% set config = config() %}
+{# `questions` is this attempt's drawn paper; an evaluation with no draw
+   passes none and falls back to its stored question list. #}
+{% set paper = questions if questions is defined and questions else evaluation.questions %}
 
 <!doctype html>
 <html lang="{{ current_locale() }}" class="h-100">
@@ -35,9 +38,17 @@
                with it and needs no edit here. */
             :root {
                 --is-accent: var(--bs-primary, #f97316);
-                --is-paper: var(--bs-body-bg, #09090b);
-                --is-ink: var(--bs-body-color, #a1a1aa);
-                --is-strong: var(--bs-emphasis-color, #fafafa);
+                /* The exam room is the one page a candidate sits in for two hours, and
+                   the site ground is #09090b against #fafafa ink: 19.1:1, the harshest
+                   contrast in the product. Pure white on near-black haloes, and haloing
+                   over 120 minutes is fatigue. This page alone lifts the ground and
+                   drops the ink to 14.1:1 — the same contrast the standalone practice
+                   app was built at — while staying unmistakably the same dark product.
+                   Scoped here on purpose: softening the whole theme is a re-skin, and
+                   this is an exam-room change. */
+                --is-paper: #16171a;
+                --is-ink: #b9bcc2;
+                --is-strong: #e4e4e7;
                 --is-muted: var(--bs-secondary-color, #a1a1aa);
                 --is-line: var(--bs-border-color, #27272a);
                 --is-card: var(--bs-secondary-bg, #18181b);
@@ -127,6 +138,22 @@
                 font-size: 0.8125rem;
                 letter-spacing: 0.06em;
                 text-transform: uppercase;
+            }
+            .is-clock {
+                font-variant-numeric: tabular-nums;
+                font-weight: 600;
+                letter-spacing: 0.02em;
+                padding: 2px 10px;
+                border: 1px solid var(--is-line);
+                border-radius: 6px;
+                color: var(--is-strong);
+                background: var(--is-bar);
+            }
+            /* The last ten minutes are the only time the clock earns attention. */
+            .is-clock.is-warn {
+                color: #fca5a5;
+                border-color: rgba(239, 68, 68, 0.5);
+                background: rgba(239, 68, 68, 0.1);
             }
             .is-item-meta .is-count {
                 color: var(--is-accent);
@@ -236,9 +263,18 @@
                         {% if evaluation.is_exam %}{{ _('Exam in progress') }}{% else %}{{ _('Practice in progress') }}{% endif %}
                     </span>
                 </div>
-                <div class="is-exam-state">
-                    <span id="is-answered-count">0</span> / {{ evaluation.questions | length }} {{ _('answered') }} &middot; {{ _('pass') }}
-                    {{ evaluation.passing_score }}%
+                <div class="is-exam-state d-flex align-items-center gap-3">
+                    <span>
+                        <span id="is-answered-count">0</span> / {{ paper | length }} {{ _('answered') }}
+                        {%- if scaled_cut %} &middot; {{ _('pass') }} {{ scaled_cut }}
+                        {%- else %} &middot; {{ _('pass') }} {{ evaluation.passing_score }}%{% endif %}
+                    </span>
+                    {% if seconds_remaining is not none %}
+                    <span class="is-clock" id="is-clock"
+                          data-seconds="{{ seconds_remaining }}"
+                          data-warn-label="{{ _('Ten minutes left') }}"
+                          aria-live="off">--:--</span>
+                    {% endif %}
                 </div>
             </div>
             <div class="container">
@@ -280,8 +316,7 @@
                               data-unanswered-label="{{ _('unanswered') }}"
                               data-flag-clear="{{ _('Flagged — click to clear') }}"
                               data-flag-review="{{ _('Flag for review') }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                            {% for question in evaluation.questions %} {% set correct_count = question.options |
+                            {% for question in paper %} {% set correct_count = question.options |
                             selectattr("is_correct", "equalto", true) | list | length %}
                             <section
                                 class="is-item"
@@ -290,7 +325,7 @@
                                 {% if not loop.first %}hidden{% endif %}
                             >
                                 <div class="d-flex justify-content-between align-items-center mb-2 is-item-meta">
-                                    <span class="is-count">{{ _('Item %(number)s of %(total)s', number=loop.index, total=evaluation.questions | length) }}</span>
+                                    <span class="is-count">{{ _('Item %(number)s of %(total)s', number=loop.index, total=paper | length) }}</span>
                                     <span class="text-secondary">
                                         {% if question.type == "multiple" and correct_count > 1 %}{{ _('Select %(count)s', count=correct_count) }}{% else %}{{ _('Select one') }}{% endif %}
                                     </span>
@@ -379,6 +414,44 @@
         <script>
             (function () {
                 "use strict";
+                /* The clock counts down from a figure the SERVER computed against the
+                   attempt's stored start time. The browser is only rendering it: a
+                   candidate whose machine clock is wrong, or who edits this number,
+                   changes nothing, because the deadline is re-checked server-side on
+                   submit and on the way back in. Reaching zero here submits what has
+                   been answered, which is what the real exam does. */
+                var clock = document.getElementById("is-clock");
+                if (clock) {
+                    var left = parseInt(clock.getAttribute("data-seconds"), 10);
+                    var warned = false;
+                    var paint = function () {
+                        if (left < 0) { left = 0; }
+                        var m = Math.floor(left / 60);
+                        var sec = left % 60;
+                        clock.textContent = (m < 10 ? "0" : "") + m + ":" + (sec < 10 ? "0" : "") + sec;
+                        if (!warned && left <= 600) {
+                            warned = true;
+                            clock.classList.add("is-warn");
+                            clock.setAttribute("aria-live", "polite");
+                        }
+                    };
+                    paint();
+                    var ticker = window.setInterval(function () {
+                        left -= 1;
+                        paint();
+                        if (left <= 0) {
+                            window.clearInterval(ticker);
+                            var examForm = document.getElementById("is-exam-form");
+                            if (examForm) {
+                                /* Past the deadline the server scores it either way, so
+                                   submit rather than leaving the candidate on a dead
+                                   page wondering whether their answers were kept. */
+                                examForm.submit();
+                            }
+                        }
+                    }, 1000);
+                }
+
                 var form = document.getElementById("is-exam-form");
                 var items = Array.prototype.slice.call(form.querySelectorAll(".is-item"));
                 var review = document.getElementById("is-review");

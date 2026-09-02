@@ -13,7 +13,7 @@ from __future__ import annotations
 # Standard library
 # ---------------------------------------------------------------------------------------
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ---------------------------------------------------------------------------------------
 # Third-party libraries
@@ -28,6 +28,7 @@ from werkzeug.wrappers import Response
 # Local resources
 # ---------------------------------------------------------------------------------------
 from now_lms.auth import perfil_requerido
+from now_lms.vistas import exam_forms
 from now_lms.db import (
     Answer,
     Curso,
@@ -155,8 +156,16 @@ def _answer_is_correct(answer) -> bool:
 
 
 def calculate_score(attempt) -> float:
-    """Calculate the score for an evaluation attempt."""
-    total_questions = len(attempt.evaluation.questions)
+    """Calculate the score for an evaluation attempt.
+
+    The denominator is the number of questions on THIS attempt's paper, not the
+    number in the evaluation. Once an evaluation carries a `draw_size` the two
+    differ: a 53-question paper drawn from a 106-question pool would otherwise
+    score a perfect sitting at 50 percent, and an evaluation drawn but not scaled
+    would fail a candidate who answered everything correctly.
+    """
+    form = exam_forms.load_form(getattr(attempt, "form_json", None))
+    total_questions = len(form["items"]) if form else len(attempt.evaluation.questions)
     if total_questions == 0:
         return 0.0
 
@@ -182,9 +191,15 @@ def _resolve_option_ids(question, selected_values: list[str]) -> list[str]:
     return option_ids
 
 
-def _save_question_answers(attempt, evaluation_obj) -> None:
-    """Process and save answers for all questions in an evaluation attempt."""
-    for question in evaluation_obj.questions:
+def _save_question_answers(attempt, evaluation_obj, questions=None) -> None:
+    """Process and save answers for the questions this attempt was actually given.
+
+    ``questions`` is the attempt's drawn paper. It defaults to the evaluation's
+    stored questions so an untimed, undrawn evaluation behaves exactly as before.
+    Grading anything other than the paper the candidate saw would score them on
+    questions that were never on screen.
+    """
+    for question in questions if questions is not None else evaluation_obj.questions:
         answer_key = f"question_{question.id}"
         if answer_key not in request.form:
             continue
@@ -213,11 +228,71 @@ def _try_issue_certificate(section) -> None:
         _emitir_certificado(section.curso, current_user.usuario, curso.plantilla_certificado)
 
 
+def _open_attempt(evaluation_id: str, usuario: str):
+    """The candidate's sitting that is started but not yet submitted, if any."""
+    return database.session.execute(
+        database.select(EvaluationAttempt)
+        .filter_by(evaluation_id=evaluation_id, user_id=usuario, submitted_at=None)
+        .order_by(EvaluationAttempt.started_at.desc())
+    ).scalars().first()
+
+
+def _start_attempt(eval_obj):
+    """Open a sitting and draw its paper.
+
+    The attempt is created HERE, at the start, rather than at submit as this view
+    used to. A timed sitting needs a server-side ``started_at`` to measure the
+    deadline from, and a drawn sitting needs its paper fixed before the first
+    question is rendered. Creating the row at submit could do neither.
+    """
+    attempt = EvaluationAttempt(
+        evaluation_id=eval_obj.id, user_id=current_user.usuario, started_at=datetime.now()
+    )
+    weights = None
+    if eval_obj.blueprint_json:
+        try:
+            weights = json.loads(eval_obj.blueprint_json)
+        except (ValueError, TypeError):
+            # A malformed blueprint draws unweighted rather than refusing to start a
+            # sitting the candidate is entitled to.
+            weights = None
+    if eval_obj.draw_size or eval_obj.time_limit_minutes:
+        attempt.form_json = exam_forms.dump_form(
+            exam_forms.build_form(list(eval_obj.questions), eval_obj, weights)
+        )
+    database.session.add(attempt)
+    database.session.commit()
+    return attempt
+
+
+def _deadline(attempt, eval_obj):
+    """When this sitting closes, or None if it is untimed."""
+    if not eval_obj.time_limit_minutes or not attempt.started_at:
+        return None
+    return attempt.started_at + timedelta(minutes=eval_obj.time_limit_minutes)
+
+
+def _grade_attempt(attempt, eval_obj, questions) -> None:
+    """Score a sitting and close it. Shared by a submit and by the clock."""
+    attempt.submitted_at = datetime.now()
+    attempt.score = calculate_score(attempt)
+    attempt.passed = attempt.score >= eval_obj.passing_score
+    if eval_obj.scaled_cut:
+        total = len(questions)
+        raw = sum(1 for answer in attempt.answers if _answer_is_correct(answer))
+        attempt.scaled_score = exam_forms.scale_score(raw, total)
+        # The scaled score is the reported result when there is one, so the
+        # pass/fail must agree with the number on screen rather than with a
+        # percentage the candidate is never shown.
+        attempt.passed = attempt.scaled_score >= eval_obj.scaled_cut
+    database.session.commit()
+
+
 @evaluation.route("/evaluation/<evaluation_id>/take", methods=["GET", "POST"])
 @login_required
 @perfil_requerido("student")
 def take_evaluation(evaluation_id: int) -> str | Response:
-    """Take an evaluation."""
+    """Take an evaluation, timed and drawn where the evaluation says so."""
     eval_obj = database.session.get(Evaluation, evaluation_id)
     if not eval_obj:
         abort(404)
@@ -226,23 +301,36 @@ def take_evaluation(evaluation_id: int) -> str | Response:
         flash(_("No tiene acceso a esta evaluación."), "warning")
         abort(403)
 
-    if not can_user_attempt_evaluation(eval_obj, current_user):
+    attempt = _open_attempt(eval_obj.id, current_user.usuario)
+
+    # A sitting whose clock ran out while the candidate was away is scored as it
+    # stands, on the way in. Leaving it open would hand back the time they spent
+    # elsewhere, and silently discarding it would lose answers they gave.
+    if attempt is not None:
+        deadline = _deadline(attempt, eval_obj)
+        if deadline and datetime.now() >= deadline:
+            attempt.was_late = True
+            _grade_attempt(attempt, eval_obj, exam_forms.form_questions(
+                exam_forms.load_form(attempt.form_json), eval_obj))
+            flash(_("Time ran out, so the sitting was submitted for you."), "warning")
+            return redirect(url_for("evaluation.evaluation_result", attempt_id=attempt.id))
+
+    if attempt is None and not can_user_attempt_evaluation(eval_obj, current_user):
         flash(_("No puede realizar más intentos en esta evaluación."), "warning")
         section = database.session.get(CursoSeccion, eval_obj.section_id)
         return redirect(url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso))
 
+    if attempt is None:
+        attempt = _start_attempt(eval_obj)
+
+    questions = exam_forms.form_questions(exam_forms.load_form(attempt.form_json), eval_obj)
+
     if request.method == "POST":
-        attempt = EvaluationAttempt(evaluation_id=evaluation_id, user_id=current_user.usuario, started_at=datetime.now())
-        database.session.add(attempt)
+        _save_question_answers(attempt, eval_obj, questions)
         database.session.flush()
-
-        _save_question_answers(attempt, eval_obj)
-
-        attempt.submitted_at = datetime.now()
-        attempt.score = calculate_score(attempt)
-        attempt.passed = attempt.score >= eval_obj.passing_score
-
-        database.session.commit()
+        deadline = _deadline(attempt, eval_obj)
+        attempt.was_late = bool(deadline and datetime.now() > deadline)
+        _grade_attempt(attempt, eval_obj, questions)
 
         if attempt.passed:
             section = database.session.get(CursoSeccion, eval_obj.section_id)
@@ -251,7 +339,17 @@ def take_evaluation(evaluation_id: int) -> str | Response:
         flash(EVALUATION_SUBMITTED, "success")
         return redirect(url_for("evaluation.evaluation_result", attempt_id=attempt.id))
 
-    return render_template(get_take_evaluation_template(), evaluation=eval_obj)
+    deadline = _deadline(attempt, eval_obj)
+    return render_template(
+        get_take_evaluation_template(),
+        evaluation=eval_obj,
+        questions=questions,
+        attempt=attempt,
+        # Seconds rather than a timestamp: the browser's clock may be wrong, and
+        # only the server's view of the deadline is authoritative anyway.
+        seconds_remaining=int((deadline - datetime.now()).total_seconds()) if deadline else None,
+        scaled_cut=eval_obj.scaled_cut,
+    )
 
 
 @evaluation.route("/evaluation/attempt/<attempt_id>/result", methods=["GET"])
@@ -267,7 +365,48 @@ def evaluation_result(attempt_id: int) -> str:
     if attempt.user_id != current_user.usuario:
         abort(403)
 
-    return render_template(get_evaluation_result_template(), attempt=attempt)
+    eval_obj = attempt.evaluation
+    paper = exam_forms.form_questions(exam_forms.load_form(attempt.form_json), eval_obj)
+
+    # Per-domain scoring answers the only question a failed sitting raises: what do I
+    # go and study. It reads from the answers actually given, so a blank counts against
+    # its domain exactly as a wrong answer does.
+    answered = {answer.question_id: answer for answer in attempt.answers}
+    graded = [
+        (question, bool(answered.get(question.id) and _answer_is_correct(answered[question.id])))
+        for question in paper
+    ]
+    domains = exam_forms.domain_breakdown(graded)
+
+    scaled = None
+    if eval_obj.scaled_cut and attempt.scaled_score is not None:
+        total = len(paper)
+        scaled = {
+            "score": attempt.scaled_score,
+            "cut": eval_obj.scaled_cut,
+            "minimum": exam_forms.SCALE_MIN,
+            "maximum": exam_forms.SCALE_MAX,
+            "raw": sum(1 for _question, correct in graded if correct),
+            "total": total,
+            "raw_needed": exam_forms.raw_needed(eval_obj.scaled_cut, total),
+            # Where the marker and the cut sit on the rail, as percentages of its width.
+            "at_percent": round(
+                (attempt.scaled_score - exam_forms.SCALE_MIN)
+                / (exam_forms.SCALE_MAX - exam_forms.SCALE_MIN) * 100, 2),
+            "cut_percent": round(
+                (eval_obj.scaled_cut - exam_forms.SCALE_MIN)
+                / (exam_forms.SCALE_MAX - exam_forms.SCALE_MIN) * 100, 2),
+        }
+
+    return render_template(
+        get_evaluation_result_template(),
+        attempt=attempt,
+        paper=paper,
+        domains=domains,
+        scaled=scaled,
+        # A domain below this is called thin and is what the report tells them to work.
+        thin_threshold=0.70,
+    )
 
 
 def _certification_practice(usuario: str, certification_key: str | None = None):

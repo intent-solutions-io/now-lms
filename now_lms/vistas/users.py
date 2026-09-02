@@ -77,6 +77,26 @@ def _check_rate_limit(limit_key: str, max_attempts: int, window: int = 60) -> bo
     return True
 
 
+def _safe_next(target: str | None) -> str | None:
+    """The ``next`` the caller asked for, if it is safe to send them there.
+
+    Without this the login view drops ``next`` entirely and always lands on the
+    dashboard, so anyone who clicks a members-only link, signs in, and arrives
+    somewhere else has lost the thing they clicked.
+
+    Only same-site relative paths are honoured. A value carrying a scheme, a host,
+    or a leading ``//`` is discarded rather than followed, because a login form
+    that redirects to an arbitrary URL is an open redirect and a phishing lever.
+    """
+    if not target:
+        return None
+    if not target.startswith("/") or target.startswith("//") or "\\" in target:
+        return None
+    if "://" in target:
+        return None
+    return target
+
+
 @user.route("/user/login", methods=["GET", "POST"])
 def inicio_sesion() -> str | Response:
     """Inicio de sesión del usuario."""
@@ -141,6 +161,9 @@ def inicio_sesion() -> str | Response:
                         "warning",
                     )
 
+                destino = _safe_next(request.args.get("next"))
+                if destino:
+                    return redirect(destino)
                 return panel_de_usuario()
 
         flash(_("Inicio de Sesion Incorrecto."), "warning")

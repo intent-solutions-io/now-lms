@@ -1116,6 +1116,32 @@ class Evaluation(database.Model, BaseTabla):
     reopened_for_user_id = database.Column(database.String(150), database.ForeignKey(LLAVE_FORANEA_USUARIO), nullable=True)
     penalty_percent = database.Column(database.Float(), nullable=True, default=0.0)
 
+    # --- Exam-form behaviour. All three are nullable, and null means the behaviour
+    # this table had before them: every question, in stored order, untimed, scored as
+    # a percentage against `passing_score`.
+    #
+    # `time_limit_minutes` turns the evaluation into a timed sitting. The deadline is
+    # derived server-side from the attempt's `started_at`, never from the browser, so
+    # closing the tab does not buy time.
+    #
+    # `draw_size` turns a fixed question list into a pool. Each attempt draws this many
+    # questions, weighted across `Question.domain_key` to the certification blueprint,
+    # so two sittings of the same exam are different papers. Without it a 728-item bank
+    # still serves the same 106 questions in the same order every attempt.
+    #
+    # `scaled_cut` reports the result on a 100-1000 scale against this cut instead of a
+    # raw percentage, which is the scale the real certifications report.
+    #
+    # `blueprint_json` carries the published domain weights the draw aims at, as
+    # {domain_key: percent}. It has to be stored rather than derived: the weights of
+    # the POOL are the bank's shape, not the exam's, and a draw taken from the pool's
+    # own proportions would quietly examine whatever the authors happened to write
+    # most of. Null means an unweighted random draw.
+    time_limit_minutes = database.Column(database.Integer(), nullable=True)
+    draw_size = database.Column(database.Integer(), nullable=True)
+    scaled_cut = database.Column(database.Integer(), nullable=True)
+    blueprint_json = database.Column(database.Text(), nullable=True)
+
     # Relationships
     section = database.relationship("CursoSeccion", foreign_keys=[section_id])
     questions = database.relationship("Question", back_populates="evaluation", cascade=CASCADE_ALL_DELETE_ORPHAN)
@@ -1186,6 +1212,15 @@ class EvaluationAttempt(database.Model, BaseTabla):
     started_at = database.Column(database.DateTime(), default=utc_now)
     submitted_at = database.Column(database.DateTime(), nullable=True)
     was_late = database.Column(database.Boolean(), default=False)
+
+    # The paper this attempt was given: which questions were drawn and what order their
+    # options were shown in, as JSON. Held server-side rather than in the browser so a
+    # refresh, a crash or a move to another device resumes the SAME paper. An attempt
+    # with no form is a pre-draw attempt and renders the evaluation's stored questions,
+    # which is how every attempt taken before this column existed still reads back.
+    form_json = database.Column(database.Text(), nullable=True)
+    # 100-1000 scaled score, set only when the evaluation carries a `scaled_cut`.
+    scaled_score = database.Column(database.Integer(), nullable=True)
 
     # Relationships
     evaluation = database.relationship("Evaluation", back_populates="attempts")

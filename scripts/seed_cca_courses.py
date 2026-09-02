@@ -83,6 +83,37 @@ MAX_DOMAIN_KEY = 50
 MAX_DOMAIN_NAME = 150
 
 # Matthew Purcell's set is one full-length form matched to the live exam's item count.
+# --- Published exam shapes -------------------------------------------------
+# Item count, minutes and domain weights as published in each Exam Guide v1.0
+# (July 2026). These drive the per-attempt draw, so a mock is weighted the way the
+# real paper is rather than the way the bank happens to be stocked. The cut is 720
+# on a 100-1000 scale for all four; the scale itself is ours and is disclosed as
+# such on the result, because Anthropic's real conversion is not published.
+SITTINGS = {
+    "CCA-F": {
+        "items": 60, "minutes": 120, "cut": 720,
+        "blueprint": {"agentic": 27, "claudecode": 20, "prompt": 20, "tools": 18, "context": 15},
+    },
+    "CCAO-F": {
+        "items": 60, "minutes": 120, "cut": 720,
+        "blueprint": {"assoc-evaluation": 21, "assoc-workflow": 16, "assoc-governance": 15,
+                      "assoc-prompting": 14, "assoc-selection": 12, "assoc-config": 12,
+                      "assoc-troubleshoot": 10},
+    },
+    "CCD": {
+        "items": 53, "minutes": 120, "cut": 720,
+        "blueprint": {"dev-integration": 33.1, "dev-modelselect": 16.8, "dev-agents": 14.7,
+                      "dev-promptcontext": 11.0, "dev-tools": 10.6, "dev-security": 8.1,
+                      "dev-claudecode": 3.1, "dev-eval": 2.6},
+    },
+    "CCA-P": {
+        "items": 63, "minutes": 120, "cut": 720,
+        "blueprint": {"archp-integration": 19, "archp-design": 17, "archp-eval": 16,
+                      "archp-governance": 14, "archp-stakeholder": 14, "archp-models": 13,
+                      "archp-devprod": 7},
+    },
+}
+
 MATTHEW_EXAM_ITEMS = 60
 
 
@@ -330,7 +361,7 @@ def _add_lesson_resource(db, models, curso_codigo: str, section_id: str, nombre:
 
 
 def _add_evaluation(db, models, section_id: str, title: str, description: str, is_exam: bool,
-                    passing_score: float, questions: list[dict]) -> int:
+                    passing_score: float, questions: list[dict], sitting: dict | None = None) -> int:
     """Create an evaluation on a section and import its questions.
 
     The correct positions -> the matching options' ``is_correct``; ``rationale`` +
@@ -352,6 +383,17 @@ def _add_evaluation(db, models, section_id: str, title: str, description: str, i
         passing_score=passing_score,
         max_attempts=None,  # unlimited (practice and first-pass mock alike)
     )
+    # A mock exam is a POOL, not a paper: `draw_size` makes each attempt draw its own
+    # blueprint-weighted questions from everything seeded here, so a second sitting is a
+    # different exam. Without it the bank's depth is invisible to a candidate, who would
+    # see the same questions in the same order every time. A domain quiz passes no
+    # sitting and keeps the old behaviour: every question, in order, untimed.
+    if sitting:
+        evaluation.time_limit_minutes = sitting.get("minutes")
+        evaluation.draw_size = sitting.get("items")
+        evaluation.scaled_cut = sitting.get("cut")
+        if sitting.get("blueprint"):
+            evaluation.blueprint_json = json.dumps(sitting["blueprint"])
     db.session.add(evaluation)
     db.session.commit()
 
@@ -503,15 +545,30 @@ def _create_course(db, models, spec: dict) -> None:
             "Passing is **72%**. Take it under exam-like conditions once you have "
             "worked through every section's practice quiz.",
         )
+        sitting = SITTINGS.get(spec.get("certification"))
+        # A pool smaller than the draw does not fail: it quietly serves everything it
+        # has while the description promises a full-length paper. Refuse instead, the
+        # way _correct_positions refuses an unanswerable question.
+        if sitting and sitting.get("items") and len(spec["mock_questions"]) < sitting["items"]:
+            raise ValueError(
+                f"{spec['codigo']}: mock pool holds {len(spec['mock_questions'])} questions but the "
+                f"{spec['certification']} form draws {sitting['items']}. Seeding it would advertise a "
+                f"{sitting['items']}-question exam and serve fewer."
+            )
         total_questions += _add_evaluation(
             db,
             models,
             seccion.id,
             title=f"Mock exam — {spec['nombre']}",
-            description="Final mock exam. Passing score 72%.",
+            description=(
+                f"Final mock exam. {sitting['items']} items drawn to the published blueprint, "
+                f"{sitting['minutes']} minutes, {sitting['cut']} to pass."
+                if sitting else "Final mock exam. Passing score 72%."
+            ),
             is_exam=True,
             passing_score=72.0,
             questions=spec["mock_questions"],
+            sitting=sitting,
         )
         indice += 1
 
@@ -519,15 +576,24 @@ def _create_course(db, models, spec: dict) -> None:
     for exam in spec.get("extra_exams", []):
         seccion = _add_section(db, models, spec["codigo"], indice, exam["nombre"], exam["descripcion"])
         _add_lesson_resource(db, models, spec["codigo"], seccion.id, exam["nombre"], exam["lesson"])
+        # An authored full-length exam IS the paper its author wrote, so it is timed
+        # and scaled but never drawn: sampling 60 of its 60 items would only reorder
+        # someone else's deliberate form, and sampling fewer would silently shorten it.
+        shape = SITTINGS.get(spec.get("certification"))
+        exam_sitting = (
+            {"minutes": shape["minutes"], "cut": shape["cut"], "items": None, "blueprint": None}
+            if shape else None
+        )
         total_questions += _add_evaluation(
             db,
             models,
             seccion.id,
             title=exam["nombre"],
-            description="Full-length practice exam. Passing score 72%; unlimited attempts.",
+            description="Full-length practice exam. Unlimited attempts.",
             is_exam=True,
             passing_score=72.0,
             questions=exam["questions"],
+            sitting=exam_sitting,
         )
         indice += 1
 
@@ -621,6 +687,9 @@ def _build_specs() -> list[dict]:
     # --- Course A: Associate onramp ---
     specs.append({
         "codigo": "CCA-A",
+        # Which credential this course preps for, so its mock draws to that
+        # exam's published shape rather than a generic one.
+        "certification": "CCAO-F",
         "nombre": "Claude Foundations (Associate onramp)",
         "descripcion_corta": "Foundational Claude skills: prompting, evaluation, product selection, workflows, governance.",
         "descripcion": "The associate-level onramp toward the Claude Certified Architect path. Covers "
@@ -637,13 +706,19 @@ def _build_specs() -> list[dict]:
             }
             for _num, name, key, qs in _group_by_domain(associate)
         ],
-        "mock_questions": associate,
+        # Purcell's items join the POOL as well as standing as their own full-length
+        # exam. Without them the pool is 36 items under a 60-item draw, which serves 36
+        # while the description promises 60.
+        "mock_questions": associate + (matthew or []),
         "extra_exams": associate_extra_exams,
     })
 
     # --- Course B: Developer ---
     specs.append({
         "codigo": "CCA-B",
+        # Which credential this course preps for, so its mock draws to that
+        # exam's published shape rather than a generic one.
+        "certification": "CCD",
         "nombre": "Building with Claude (Developer)",
         "descripcion_corta": "Developer-level Claude: agents, integration, Claude Code, eval, tools & MCP, security.",
         "descripcion": "The developer-level course: building agents and workflows, application integration, "
@@ -706,6 +781,9 @@ def _build_specs() -> list[dict]:
 
     specs.append({
         "codigo": "CCA-F",
+        # Which credential this course preps for, so its mock draws to that
+        # exam's published shape rather than a generic one.
+        "certification": "CCA-F",
         "nombre": "Claude Certified Architect — Foundations (CCA-F) prep",
         "descripcion_corta": "Prep for the CCA-F credential: the five official domains + a weighted 60-question mock.",
         "descripcion": "Preliminary preparation toward Anthropic's Claude Certified Architect (CCA) — "
@@ -717,7 +795,10 @@ def _build_specs() -> list[dict]:
         "nivel": 3,
         "duracion": 6,
         "sections": cca_sections,
-        "mock_questions": _weighted_mock(general, cca_f_weights, total=60),
+        # The WHOLE bank, not a pre-selected 60: the mock carries `draw_size`, so each
+        # attempt composes its own weighted paper from the pool. Handing it a form that
+        # was already chosen would leave the draw with nothing to do but reshuffle.
+        "mock_questions": general,
         "extra_exams": extra_exams,
     })
 

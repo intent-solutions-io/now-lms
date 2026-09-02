@@ -103,6 +103,17 @@
                     >
                     {% endif %}
                 </li>
+                {# The practice area is keyed by CERTIFICATION, not by course, because one
+                   course carries questions for more than one credential. It shipped in
+                   PR #90 with no entry point anywhere in the chrome, so the only way to
+                   reach it was to type the URL. #}
+                {% if current_user.is_authenticated %}
+                <li>
+                    <a href="{{ url_for('evaluation.practice') }}" class="nav-link text-light px-2"
+                        ><i class="bi bi-patch-question" aria-hidden="true"></i> {{ _("Practice") }}</a
+                    >
+                </li>
+                {% endif %}
                 {% if is_programs_enabled() %}
                 <li>
                     <a href="{{ url_for('program.lista_programas', page=1) }}" class="nav-link text-light px-2"
