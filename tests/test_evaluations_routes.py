@@ -123,8 +123,19 @@ def test_attempts_count_and_can_attempt(app, db_session, eval_setup):
     assert can_user_attempt_evaluation(ev, student) is True
 
     # Agregar intentos
-    attempt1 = EvaluationAttempt(evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now())
-    attempt2 = EvaluationAttempt(evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now())
+    # Both attempts are SPENT: a candidate who has used two has finished two. They
+    # were created without a submitted_at, which describes two sittings open at once
+    # by one candidate — the state the one-open-attempt index rejects and the
+    # application never produces, since an attempt is created at start and stamped
+    # at submit.
+    attempt1 = EvaluationAttempt(
+        evaluation_id=ev.id, user_id=student.usuario,
+        started_at=datetime.now(), submitted_at=datetime.now(),
+    )
+    attempt2 = EvaluationAttempt(
+        evaluation_id=ev.id, user_id=student.usuario,
+        started_at=datetime.now(), submitted_at=datetime.now(),
+    )
     db_session.add_all([attempt1, attempt2])
     db_session.commit()
 
@@ -224,8 +235,17 @@ def test_routes_request_reopen(client, db_session, eval_setup):
     client.post("/user/login", data={"usuario": "stud_eval", "acceso": "pass"})
 
     # Registrar 2 intentos fallidos para agotar max_attempts
-    attempt1 = EvaluationAttempt(evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(), passed=False, score=20.0)
-    attempt2 = EvaluationAttempt(evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(), passed=False, score=10.0)
+    # Two failed, FINISHED attempts: both are scored and flagged, so both were
+    # submitted. Written without a submitted_at they described two sittings open at
+    # once, which the one-open-attempt index rejects.
+    attempt1 = EvaluationAttempt(
+        evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(),
+        submitted_at=datetime.now(), passed=False, score=20.0,
+    )
+    attempt2 = EvaluationAttempt(
+        evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(),
+        submitted_at=datetime.now(), passed=False, score=10.0,
+    )
     db_session.add_all([attempt1, attempt2])
     db_session.commit()
 

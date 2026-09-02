@@ -13,7 +13,7 @@ from __future__ import annotations
 # Standard library
 # ---------------------------------------------------------------------------------------
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 # ---------------------------------------------------------------------------------------
 # Third-party libraries
@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from werkzeug.wrappers import Response
 
@@ -29,7 +29,6 @@ from werkzeug.wrappers import Response
 # Local resources
 # ---------------------------------------------------------------------------------------
 from now_lms.auth import perfil_requerido
-from now_lms.vistas import exam_forms
 from now_lms.db import (
     Answer,
     Curso,
@@ -49,6 +48,7 @@ from now_lms.themes import (
     get_practice_template,
     get_take_evaluation_template,
 )
+from now_lms.vistas import exam_forms
 
 # ---------------------------------------------------------------------------------------
 # Blueprint definition
@@ -84,7 +84,7 @@ def _now() -> datetime:
     `started_at` and compared against local time is wrong by the server's offset,
     which silently shortens or lengthens every sitting on a non-UTC host.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _back_from_evaluation(eval_obj) -> str:
@@ -149,7 +149,7 @@ def can_user_access_evaluation(evaluation_obj, user) -> bool:
 def is_evaluation_available(evaluation_obj) -> bool:
     """Check if evaluation is currently available."""
     if evaluation_obj.available_until:
-        return datetime.now() <= evaluation_obj.available_until
+        return _now() <= evaluation_obj.available_until
     return True
 
 
@@ -177,8 +177,29 @@ def can_user_attempt_evaluation(evaluation_obj, user) -> bool:
     return True
 
 
+def _selection_is_correct(question, selected_ids) -> bool:
+    """Is this selection right, judged against the options as given.
+
+    `question` is the paper's own copy when the attempt has one, so an instructor
+    moving the key after the paper was drawn cannot regrade work already done. It
+    is the live row only for a legacy attempt that has no stored paper.
+    """
+    if not selected_ids:
+        return False
+    correct_ids = {option.id for option in question.options if option.is_correct}
+    if not correct_ids:
+        return False
+    return set(selected_ids) == correct_ids
+
+
 def _answer_is_correct(answer) -> bool:
-    """Determine whether a submitted answer is correct."""
+    """Legacy path: judge a stored Answer row against the live question.
+
+    Kept for attempts with no stored paper, which is every attempt taken before
+    the exam form existed. Anything with a paper is graded by
+    `_selection_is_correct` against the frozen options instead: reading the live
+    rows here is what let an instructor's edit change a finished score.
+    """
     if not answer.selected_option_ids:
         return False
     selected_ids = json.loads(answer.selected_option_ids)
@@ -193,6 +214,27 @@ def _answer_is_correct(answer) -> bool:
     return False
 
 
+def _graded_paper(attempt, evaluation_obj) -> list:
+    """Every question on this attempt's paper with whether it was answered right.
+
+    One list, built once, used by the percentage score, the scaled score, the
+    per-domain diagnostic and the review. Each question appears exactly once
+    however many Answer rows exist for it, which is what stopped a duplicate row
+    scoring a one-question paper at 200 percent.
+    """
+    form = exam_forms.load_form(attempt.form_json)
+    paper = exam_forms.form_questions(form, evaluation_obj)
+    selections = _stored_selections(attempt)
+    if form:
+        return [(q, _selection_is_correct(q, selections.get(q.id, []))) for q in paper]
+    # No paper: grade the legacy way, one row per question.
+    by_question = {a.question_id: a for a in attempt.answers}
+    return [
+        (q, bool(by_question.get(q.id) and _answer_is_correct(by_question[q.id])))
+        for q in paper
+    ]
+
+
 def calculate_score(attempt) -> float:
     """Calculate the score for an evaluation attempt.
 
@@ -202,14 +244,10 @@ def calculate_score(attempt) -> float:
     score a perfect sitting at 50 percent, and an evaluation drawn but not scaled
     would fail a candidate who answered everything correctly.
     """
-    form = exam_forms.load_form(getattr(attempt, "form_json", None))
-    total_questions = len(form["items"]) if form else len(attempt.evaluation.questions)
-    if total_questions == 0:
+    graded = _graded_paper(attempt, attempt.evaluation)
+    if not graded:
         return 0.0
-
-    correct_answers = sum(_answer_is_correct(answer) for answer in attempt.answers)
-
-    return (correct_answers / total_questions) * 100
+    return (sum(1 for _question, correct in graded if correct) / len(graded)) * 100
 
 
 def _resolve_option_ids(question, selected_values: list[str]) -> list[str]:
@@ -246,28 +284,23 @@ def _save_question_answers(attempt, evaluation_obj, questions=None) -> None:
         _record_answer(attempt, question.id, selected_option_ids)
 
 
-def _record_answer(attempt, question_id: str, selected_option_ids: list) -> None:
-    """Write one answer, replacing any already stored for that question.
-
-    Answers are now saved as the candidate makes them rather than only at submit,
-    so a refresh, a crash, a closed tab or a device change no longer discards
-    everything they had selected. That means a row may already exist, and a second
-    insert would leave two answers for one question and double-count it.
-    """
-    existing = database.session.execute(
-        database.select(Answer).filter_by(attempt_id=attempt.id, question_id=question_id)
-    ).scalars().first()
-    payload = json.dumps(selected_option_ids)
-    if existing is not None:
-        existing.selected_option_ids = payload
-        return
-    database.session.add(
-        Answer(attempt_id=attempt.id, question_id=question_id, selected_option_ids=payload)
-    )
-
-
 def _stored_selections(attempt) -> dict:
-    """What this attempt has answered so far, as {question_id: [option_id, ...]}."""
+    """What this attempt has answered, as {question_id: [option_id, ...]}.
+
+    Read from the attempt's own `answers_json` when it has one. Falling back to the
+    `Answer` rows covers attempts written before that column existed, and those rows
+    are cascade-deleted when a question is deleted, which is precisely why the
+    authoritative copy lives on the attempt.
+    """
+    raw = getattr(attempt, "answers_json", None)
+    if raw:
+        try:
+            stored = json.loads(raw)
+            if isinstance(stored, dict):
+                return {k: list(v) for k, v in stored.items() if isinstance(v, list)}
+        except (ValueError, TypeError):
+            pass
+
     selections = {}
     for answer in attempt.answers:
         try:
@@ -275,6 +308,40 @@ def _stored_selections(attempt) -> dict:
         except (ValueError, TypeError):
             selections[answer.question_id] = []
     return selections
+
+
+def _record_answer(attempt, question_id: str, selected_option_ids: list) -> None:
+    """Record one answer on the attempt, and mirror it to an `Answer` row.
+
+    The attempt's `answers_json` is authoritative: it is a single value on a single
+    row, so two concurrent autosaves cannot leave two answers for one question the
+    way a read-then-insert against `Answer` could, and it survives the deletion of
+    the question it answers.
+
+    The mirror row is best-effort. It keeps anything that reports off `Answer`
+    working, and a failure to write it (a question deleted mid-sitting violates the
+    FK on PostgreSQL) must not cost the candidate their answer.
+    """
+    selections = _stored_selections(attempt)
+    selections[question_id] = list(selected_option_ids)
+    attempt.answers_json = json.dumps(selections)
+
+    payload = json.dumps(selected_option_ids)
+    existing = database.session.execute(
+        database.select(Answer).filter_by(attempt_id=attempt.id, question_id=question_id)
+    ).scalars().first()
+    if existing is not None:
+        existing.selected_option_ids = payload
+        return
+    try:
+        with database.session.begin_nested():
+            database.session.add(
+                Answer(attempt_id=attempt.id, question_id=question_id, selected_option_ids=payload)
+            )
+    except (IntegrityError, SQLAlchemyError):
+        # Lost a race to the unique constraint, or the question is gone. The answer
+        # is already safe on the attempt.
+        pass
 
 
 def _try_issue_certificate(section) -> None:
@@ -362,8 +429,9 @@ def _grade_attempt(attempt, eval_obj, questions) -> None:
     attempt.score = calculate_score(attempt)
     attempt.passed = attempt.score >= eval_obj.passing_score
     if eval_obj.scaled_cut:
-        total = len(questions)
-        raw = sum(1 for answer in attempt.answers if _answer_is_correct(answer))
+        graded = _graded_paper(attempt, eval_obj)
+        total = len(graded) or len(questions)
+        raw = sum(1 for _question, correct in graded if correct)
         attempt.scaled_score = exam_forms.scale_score(raw, total)
         # The scaled score is the reported result when there is one, so the
         # pass/fail must agree with the number on screen rather than with a
@@ -461,16 +529,30 @@ def take_evaluation(evaluation_id: int) -> str | Response:
 def save_answer(evaluation_id: str) -> Response:
     """Persist one answer mid-sitting. Called as the candidate selects.
 
-    Deliberately forgiving: this fires on every click, and a candidate must never
-    see an error from it or be blocked by it. It writes to the open attempt only,
-    refuses questions outside that attempt's paper, and answers 204 either way.
+    Deliberately forgiving toward the candidate: it fires on every click and must
+    never interrupt a sitting. Strict about WHICH sitting: the request names its
+    attempt, and anything that is not that attempt, still open, and theirs is
+    refused rather than written somewhere else.
     """
     eval_obj = database.session.get(Evaluation, evaluation_id)
     if not eval_obj or not can_user_access_evaluation(eval_obj, current_user):
         return Response(status=403)
 
-    attempt = _open_attempt(eval_obj.id, current_user.usuario)
-    if attempt is None:
+    # The tab names the attempt it belongs to. Choosing "whichever attempt is open"
+    # meant a stale tab from a finished sitting could overwrite the next one.
+    attempt_id = request.form.get("attempt_id")
+    if not attempt_id:
+        return Response(status=400)
+
+    attempt = database.session.get(EvaluationAttempt, attempt_id)
+    if (
+        attempt is None
+        or attempt.user_id != current_user.usuario
+        or attempt.evaluation_id != eval_obj.id
+        or attempt.submitted_at is not None
+    ):
+        # A submitted attempt is closed: a late autosave must not change an answer
+        # behind a score that has already been calculated.
         return Response(status=409)
 
     deadline = _deadline(attempt, eval_obj)
@@ -509,11 +591,7 @@ def evaluation_result(attempt_id: int) -> str:
     # Per-domain scoring answers the only question a failed sitting raises: what do I
     # go and study. It reads from the answers actually given, so a blank counts against
     # its domain exactly as a wrong answer does.
-    answered = {answer.question_id: answer for answer in attempt.answers}
-    graded = [
-        (question, bool(answered.get(question.id) and _answer_is_correct(answered[question.id])))
-        for question in paper
-    ]
+    graded = _graded_paper(attempt, eval_obj)
     domains = exam_forms.domain_breakdown(graded)
 
     scaled = None

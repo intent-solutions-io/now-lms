@@ -21,6 +21,8 @@ coverage without touching private content.
 import importlib.util
 import pathlib
 
+from datetime import datetime
+
 import pytest
 
 from now_lms.auth import proteger_passwd
@@ -507,8 +509,22 @@ def test_count_learner_data_counts_enrollments_and_attempts(cca_db, sample_quest
     ev = database.session.execute(
         database.select(Evaluation).join(CursoSeccion).filter(CursoSeccion.curso == "CCA-RESET2")
     ).scalar_one()
-    database.session.add(EvaluationAttempt(evaluation_id=ev.id, user_id="reset-guard-learner", score=80.0, passed=True))
-    database.session.add(EvaluationAttempt(evaluation_id=ev.id, user_id="reset-guard-learner", score=60.0, passed=False))
+    # Both are FINISHED attempts, so both carry a submitted_at. They were scored and
+    # flagged pass/fail without one, which described two simultaneously-open sittings
+    # by the same learner — a state the one-open-attempt index now rejects, and which
+    # the application never produces.
+    database.session.add(
+        EvaluationAttempt(
+            evaluation_id=ev.id, user_id="reset-guard-learner", score=80.0, passed=True,
+            submitted_at=datetime(2026, 1, 1, 9, 0, 0),
+        )
+    )
+    database.session.add(
+        EvaluationAttempt(
+            evaluation_id=ev.id, user_id="reset-guard-learner", score=60.0, passed=False,
+            submitted_at=datetime(2026, 1, 2, 9, 0, 0),
+        )
+    )
     database.session.commit()
 
     enrollments, attempts = seed._count_learner_data(database, MODELS, "CCA-RESET2")

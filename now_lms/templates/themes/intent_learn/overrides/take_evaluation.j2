@@ -341,12 +341,14 @@
 
                                     {% if question.type == "boolean" %}
                                     <label class="is-choice">
-                                        <input type="radio" name="question_{{ question.id }}" value="Verdadero" />
+                                        <input type="radio" name="question_{{ question.id }}" value="Verdadero"
+                                            {% if "Verdadero" in (selections.get(question.id, []) if selections is defined and selections else []) %}checked{% endif %} />
                                         <span class="is-key">1</span>
                                         <span>{{ _('True') }}</span>
                                     </label>
                                     <label class="is-choice">
-                                        <input type="radio" name="question_{{ question.id }}" value="Falso" />
+                                        <input type="radio" name="question_{{ question.id }}" value="Falso"
+                                            {% if "Falso" in (selections.get(question.id, []) if selections is defined and selections else []) %}checked{% endif %} />
                                         <span class="is-key">2</span>
                                         <span>{{ _('False') }}</span>
                                     </label>
@@ -471,6 +473,9 @@
                         if (!input || !input.name || input.name.indexOf("question_") !== 0) { return; }
                         var questionId = input.name.slice("question_".length);
                         var body = new URLSearchParams();
+                        var attemptField = examForm.querySelector('[name="attempt_id"]');
+                        if (!attemptField) { return; }
+                        body.append("attempt_id", attemptField.value);
                         body.append("question_id", questionId);
                         examForm.querySelectorAll('[name="' + input.name + '"]').forEach(function (peer) {
                             if (peer.checked) { body.append("option_id", peer.value); }

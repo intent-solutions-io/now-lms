@@ -63,8 +63,13 @@ EVALUATION_COLUMNS = {
 }
 ATTEMPT_COLUMNS = {
     "form_json": sa.Text(),
+    "answers_json": sa.Text(),
     "scaled_score": sa.Integer(),
 }
+ANSWER = "answer"
+# One answer per question per attempt. Without it two concurrent autosaves could
+# both insert, and the score counted every row: a one-question paper scored 200.
+UNIQUE_ANSWER_INDEX = "uq_answer_one_per_attempt_question"
 
 
 def _column_names(inspector, table: str) -> set:
@@ -104,17 +109,54 @@ def upgrade() -> None:
         if CERTIFICATION_INDEX not in evaluation_indexes:
             op.create_index(CERTIFICATION_INDEX, EVALUATION, ["certification_key"])
 
-    if ATTEMPT in tables:
-        indexes = {index["name"] for index in inspector.get_indexes(ATTEMPT)}
-        if OPEN_ATTEMPT_INDEX not in indexes:
-            op.create_index(
-                OPEN_ATTEMPT_INDEX,
-                ATTEMPT,
-                ["evaluation_id", "user_id"],
-                unique=True,
-                sqlite_where=sa.text("submitted_at IS NULL"),
-                postgresql_where=sa.text("submitted_at IS NULL"),
+    dialect = op.get_bind().dialect.name
+
+    open_index_missing = ATTEMPT in tables and OPEN_ATTEMPT_INDEX not in {
+        index["name"] for index in inspector.get_indexes(ATTEMPT)
+    }
+    if open_index_missing and dialect in ("sqlite", "postgresql"):
+        # Refuse rather than mutate. Every attempt written before this revision was
+        # created and submitted in the same request, so real data should have none of
+        # these; if a database does, the extra rows are somebody's unfinished work and
+        # deciding which to close is not a migration's call.
+        duplicates = op.get_bind().execute(
+            sa.text(
+                f"SELECT COUNT(*) FROM (SELECT evaluation_id, user_id FROM {ATTEMPT} "
+                "WHERE submitted_at IS NULL GROUP BY evaluation_id, user_id "
+                "HAVING COUNT(*) > 1) AS clashes"
             )
+        ).scalar()
+        if duplicates:
+            raise RuntimeError(
+                f"{duplicates} candidate(s) have more than one unsubmitted attempt at the same "
+                "evaluation, so a unique index over open attempts cannot be created. Close or "
+                "remove the extra attempts deliberately, then re-run this migration."
+            )
+        op.create_index(
+            OPEN_ATTEMPT_INDEX,
+            ATTEMPT,
+            ["evaluation_id", "user_id"],
+            unique=True,
+            sqlite_where=sa.text("submitted_at IS NULL"),
+            postgresql_where=sa.text("submitted_at IS NULL"),
+        )
+            # MySQL has no partial index. The same DDL there compiles to a PLAIN
+            # unique index on (evaluation_id, user_id), which does not mean "one
+            # OPEN attempt" — it means one attempt EVER, so a candidate could never
+            # sit a second time. Skipped rather than shipped wrong; the view's
+            # read-then-insert with an IntegrityError fallback still narrows the
+            # race there, and the seeded deployments run PostgreSQL.
+
+    # Fold any existing duplicates together before the constraint can reject them.
+    if ANSWER in tables and UNIQUE_ANSWER_INDEX not in {i["name"] for i in inspector.get_indexes(ANSWER)}:
+        op.get_bind().execute(
+            sa.text(
+                f"DELETE FROM {ANSWER} WHERE id NOT IN "
+                f"(SELECT keep FROM (SELECT MIN(id) AS keep FROM {ANSWER} "
+                "GROUP BY attempt_id, question_id) AS survivors)"
+            )
+        )
+        op.create_index(UNIQUE_ANSWER_INDEX, ANSWER, ["attempt_id", "question_id"], unique=True)
 
 
 def downgrade() -> None:
@@ -130,6 +172,9 @@ def downgrade() -> None:
 
     if ATTEMPT in tables and OPEN_ATTEMPT_INDEX in {i["name"] for i in inspector.get_indexes(ATTEMPT)}:
         op.drop_index(OPEN_ATTEMPT_INDEX, table_name=ATTEMPT)
+
+    if ANSWER in tables and UNIQUE_ANSWER_INDEX in {i["name"] for i in inspector.get_indexes(ANSWER)}:
+        op.drop_index(UNIQUE_ANSWER_INDEX, table_name=ANSWER)
 
     # Before the column, never after: SQLite errors with "no such column" when an
     # index still references what was dropped.

@@ -57,10 +57,10 @@ from __future__ import annotations
 import json
 import sys
 from contextlib import nullcontext
-
-from flask import has_app_context
 from os import environ
 from pathlib import Path
+
+from flask import has_app_context
 
 # The curriculum lives in the private intent-curriculum repo, not here, so the
 # content root is supplied at run time. The fallback to the historical in-repo
@@ -721,14 +721,6 @@ def _build_specs() -> list[dict]:
     })
 
     # --- Course C: CCA-F prep (five official domains from the general bank) ---
-    # CCA-F domain weights (percent) keyed by the general bank's domainKey.
-    cca_f_weights = {
-        "agentic": 27,    # Agentic Architecture
-        "claudecode": 20,  # Claude Code Workflows
-        "prompt": 20,      # Prompt Engineering
-        "tools": 18,       # Tool Design & MCP
-        "context": 15,     # Context Management
-    }
     cca_sections = [
         {
             "nombre": name,
@@ -899,11 +891,14 @@ def _backfill_sitting_fields(db, models) -> int:
 
         pool = len(evaluation.questions)
         if pool < sitting["items"]:
-            print(
-                f"  [skip] '{title}' holds {pool} questions, the {spec['certification']} form "
-                f"draws {sitting['items']} — left as it is rather than advertising more than it has"
+            # Refuse, do not skip. Leaving it alone means an evaluation that already
+            # exists keeps advertising a form its pool cannot fill, which is the
+            # thing the preflight exists to prevent for new ones.
+            raise ValueError(
+                f"{spec['codigo']} ({spec['certification']}): existing '{title}' holds {pool} "
+                f"questions but the form draws {sitting['items']}. Refusing to backfill a "
+                "sitting that would advertise more questions than it can serve."
             )
-            continue
 
         wanted = {
             "time_limit_minutes": sitting["minutes"],
@@ -1070,6 +1065,21 @@ def main() -> int:
     with nullcontext() if has_app_context() else app.app_context():
         print("Seeding CCA-F preliminary prep curriculum...")
 
+        # BEFORE anything is deleted or written. A --reset used to delete and commit
+        # first and hit the pool checks afterwards, so an undersized bank destroyed a
+        # course and then refused to rebuild it.
+        #
+        # Missing content is not a bypass: without banks nothing is seeded either, so
+        # there is no sitting to advertise wrongly. The build is retried below, where
+        # `_require_content_dir` turns it into the operator-facing error it should be
+        # rather than a traceback from in here.
+        try:
+            specs = _build_specs()
+        except (FileNotFoundError, OSError):
+            specs = None
+        if specs:
+            _preflight(specs)
+
         if reset_codes:
             per_course: dict[str, tuple[int, int]] = {}
             total_enrollments = 0
@@ -1139,8 +1149,8 @@ def main() -> int:
                     print(f"  [reset] deleted course '{code}' for rebuild")
             database.session.commit()  # one commit for the whole reset
 
-        specs = _build_specs()
-        _preflight(specs)
+        if specs is None:
+            specs = _build_specs()
         for spec in specs:
             _create_course(database, models, spec)
         _backfill_sitting_fields(database, models)

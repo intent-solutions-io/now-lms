@@ -8,9 +8,8 @@ observed behaviour rather than the rule, because the rule is what the assertion
 already says.
 """
 
-import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -25,8 +24,8 @@ def _revisions():
     found = []
     for path in MIGRATIONS.glob("*.py"):
         source = path.read_text()
-        revision = re.search(r"^revision\s*=\s*[\"']([^\"']+)", source, re.M)
-        down = re.search(r"^down_revision\s*=\s*([\"']([^\"']+)[\"']|None)", source, re.M)
+        revision = re.search(r"^revision\s*=\s*[\"']([^\"']+)", source, re.MULTILINE)
+        down = re.search(r"^down_revision\s*=\s*([\"']([^\"']+)[\"']|None)", source, re.MULTILINE)
         if revision:
             found.append((revision.group(1), down.group(2) if down and down.group(2) else None))
     return found
@@ -64,10 +63,42 @@ def test_the_exam_form_migration_creates_the_open_attempt_index():
 def test_the_downgrade_refuses_rather_than_deleting_sectionless_evaluations():
     source = (MIGRATIONS / "20260902_010000_add_exam_form_columns.py").read_text()
     assert "RuntimeError" in source, "downgrade must refuse when section_id cannot be NOT NULL"
-    # Destructive CALLS, not the word: the refusal message itself says "delete them
-    # deliberately", which a naive substring check reads as a deletion.
+
+    # Scoped to downgrade(). The UPGRADE deliberately deletes duplicate answer rows
+    # before adding the uniqueness constraint they would otherwise violate, so a
+    # whole-file scan flags that legitimate statement.
+    downgrade = source[source.index("def downgrade("):]
     for destructive in ("DELETE FROM", "session.delete", "op.drop_table", "TRUNCATE"):
-        assert destructive not in source, f"downgrade must not {destructive}"
+        assert destructive not in downgrade, f"downgrade must not {destructive}"
+
+
+def test_the_upgrade_dedupes_answers_before_constraining_them():
+    """Adding a unique index over existing duplicates fails the migration outright."""
+    source = (MIGRATIONS / "20260902_010000_add_exam_form_columns.py").read_text()
+    upgrade = source[source.index("def upgrade(") : source.index("def downgrade(")]
+    dedupe = upgrade.index("DELETE FROM")
+    constrain = upgrade.index("UNIQUE_ANSWER_INDEX, ANSWER")
+    assert dedupe < constrain, "duplicates must be folded before the constraint is added"
+    assert "GROUP BY attempt_id, question_id" in upgrade
+    assert "MIN(id)" in upgrade, "keep the earliest row rather than an arbitrary one"
+
+
+def test_the_open_attempt_index_is_not_created_on_a_backend_that_cannot_scope_it():
+    """On MySQL the same DDL compiles to a plain unique (evaluation_id, user_id),
+    which means one attempt EVER rather than one OPEN attempt, and would stop a
+    candidate ever sitting a second time."""
+    source = (MIGRATIONS / "20260902_010000_add_exam_form_columns.py").read_text()
+    assert 'dialect in ("sqlite", "postgresql")' in source
+
+
+def test_the_open_attempt_index_is_declared_on_the_model_too():
+    """A fresh install builds its schema with create_all() and stamps the head, so a
+    constraint that lives only in a migration is missing exactly there."""
+    from now_lms.db import EvaluationAttempt
+
+    names = {index.name: index for index in EvaluationAttempt.__table__.indexes}
+    assert "uq_evaluation_attempt_open_per_user" in names
+    assert names["uq_evaluation_attempt_open_per_user"].unique is True
 
 
 # --- next= ------------------------------------------------------------------
@@ -185,7 +216,7 @@ def test_the_module_clock_is_naive_utc():
 
     now = _now()
     assert now.tzinfo is None
-    drift = abs((now - datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds())
+    drift = abs((now - datetime.now(UTC).replace(tzinfo=None)).total_seconds())
     assert drift < 5, "the clock must be UTC, not local"
 
 
@@ -193,7 +224,7 @@ def test_a_deadline_is_measured_from_the_stored_start():
     from now_lms.vistas.evaluations import _deadline
 
     class _Attempt:
-        started_at = datetime(2026, 1, 1, 10, 0, 0)
+        started_at = datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC)
 
     class _Timed:
         time_limit_minutes = 120

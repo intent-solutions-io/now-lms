@@ -1227,8 +1227,37 @@ class EvaluationAttempt(database.Model, BaseTabla):
     # with no form is a pre-draw attempt and renders the evaluation's stored questions,
     # which is how every attempt taken before this column existed still reads back.
     form_json = database.Column(database.Text(), nullable=True)
+    # What the candidate selected, as {question_id: [option_id, ...]}.
+    #
+    # The attempt owns its answers for the same reason it owns its paper. `Answer`
+    # rows are FK'd to `question` with ON DELETE CASCADE, so an instructor deleting a
+    # question erased the candidate's recorded answer to it while the frozen paper
+    # went on rendering that question, and re-saving then violated the FK. Rows are
+    # still written for anything that reports off them, but grading and review read
+    # from here, which no edit to the bank can reach.
+    answers_json = database.Column(database.Text(), nullable=True)
     # 100-1000 scaled score, set only when the evaluation carries a `scaled_cut`.
     scaled_score = database.Column(database.Integer(), nullable=True)
+
+    # A candidate may have one sitting open at a time. Declared here as well as in
+    # the migration because a fresh install builds its schema with `create_all()` and
+    # then stamps the head, so a constraint that lives only in a migration is absent
+    # on exactly the databases nobody has migrated.
+    #
+    # Partial: it constrains only rows where `submitted_at IS NULL`, so finishing a
+    # sitting frees the candidate to start another. A backend that cannot express a
+    # partial index would turn this into "one attempt ever", which is why the
+    # migration builds it per dialect rather than relying on this alone.
+    __table_args__ = (
+        database.Index(
+            "uq_evaluation_attempt_open_per_user",
+            "evaluation_id",
+            "user_id",
+            unique=True,
+            sqlite_where=database.text("submitted_at IS NULL"),
+            postgresql_where=database.text("submitted_at IS NULL"),
+        ),
+    )
 
     # Relationships
     evaluation = database.relationship("Evaluation", back_populates="attempts")
