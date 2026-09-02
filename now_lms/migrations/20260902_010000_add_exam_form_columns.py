@@ -45,9 +45,34 @@ EVALUATION = "evaluation"
 ATTEMPT = "evaluation_attempt"
 # One sitting per candidate per evaluation may be open at a time. Enforced in the
 # database rather than by a read-then-write in the view, because two requests can
-# both read "no open attempt" and both insert. Partial unique indexes are supported
-# by PostgreSQL and by SQLite since 3.8, which covers every backend this fork runs.
+# both read "no open attempt" and both insert.
+#
+# PostgreSQL and SQLite (Intent's production and test backends — see
+# `docker-compose.yml`) both support partial indexes, so the constraint there is
+# `WHERE submitted_at IS NULL`: a plain predicate on the column that already means
+# "open", not a value application code has to remember to maintain in parallel.
+# Finishing a sitting frees the candidate to start another because the row simply
+# drops out of the index's scope.
 OPEN_ATTEMPT_INDEX = "uq_evaluation_attempt_open_per_user"
+# MySQL has no partial index. The same DDL there compiles to a PLAIN unique index on
+# (evaluation_id, user_id), which does not mean "one OPEN attempt" — it means one
+# attempt EVER, so a candidate could never sit a second time. This migration must
+# never emit that. Instead, on MySQL only, a database-generated discriminator column
+# stands in for the partial predicate: `open_marker` is `1` while `submitted_at IS
+# NULL` and `NULL` once it is set, computed by MySQL itself (`GENERATED ALWAYS AS
+# (...) STORED`) so application code cannot leave it out of sync with `submitted_at`
+# the way a plain maintained column could. A unique index over
+# (evaluation_id, user_id, open_marker) then collides on the shared `1` for a second
+# open row, while NULLs — one per completed attempt — are distinct from each other on
+# MySQL same as everywhere else.
+#
+# Intent's production deployment runs PostgreSQL exclusively (`docker-compose.yml`);
+# this MySQL path is dialect-compile-verified during development (`CreateTable` /
+# `CreateIndex` against the mysql dialect) and behaviourally proven equivalent on
+# real SQLite and PostgreSQL, but has NOT been executed against a live MySQL server.
+# Treat it as a documented, unverified follow-up if this fork is ever deployed there.
+MYSQL_OPEN_MARKER_COLUMN = "open_marker"
+MYSQL_OPEN_ATTEMPT_INDEX = "uq_evaluation_attempt_open_marker"
 # `Evaluation.certification_key` is declared index=True, so a create_all() install
 # builds this index. A migrated database has to build it too, or the two diverge —
 # and the downgrade has to drop it BEFORE the column, because SQLite refuses to drop
@@ -109,11 +134,15 @@ def upgrade() -> None:
         if CERTIFICATION_INDEX not in evaluation_indexes:
             op.create_index(CERTIFICATION_INDEX, EVALUATION, ["certification_key"])
 
+    attempt_indexes = {index["name"] for index in inspector.get_indexes(ATTEMPT)} if ATTEMPT in tables else set()
+    attempt_columns = _column_names(inspector, ATTEMPT) if ATTEMPT in tables else set()
     dialect = op.get_bind().dialect.name
 
-    open_index_missing = ATTEMPT in tables and OPEN_ATTEMPT_INDEX not in {
-        index["name"] for index in inspector.get_indexes(ATTEMPT)
-    }
+    open_index_missing = ATTEMPT in tables and OPEN_ATTEMPT_INDEX not in attempt_indexes
+    mysql_marker_missing = (
+        ATTEMPT in tables and dialect == "mysql" and MYSQL_OPEN_ATTEMPT_INDEX not in attempt_indexes
+    )
+
     if open_index_missing and dialect in ("sqlite", "postgresql"):
         # Refuse rather than mutate. Every attempt written before this revision was
         # created and submitted in the same request, so real data should have none of
@@ -140,12 +169,33 @@ def upgrade() -> None:
             sqlite_where=sa.text("submitted_at IS NULL"),
             postgresql_where=sa.text("submitted_at IS NULL"),
         )
-            # MySQL has no partial index. The same DDL there compiles to a PLAIN
-            # unique index on (evaluation_id, user_id), which does not mean "one
-            # OPEN attempt" — it means one attempt EVER, so a candidate could never
-            # sit a second time. Skipped rather than shipped wrong; the view's
-            # read-then-insert with an IntegrityError fallback still narrows the
-            # race there, and the seeded deployments run PostgreSQL.
+        # MySQL is handled separately below: it has no partial index, so the same
+        # duplicate check and index creation do not apply here.
+
+    if mysql_marker_missing:
+        duplicates = op.get_bind().execute(
+            sa.text(
+                f"SELECT COUNT(*) FROM (SELECT evaluation_id, user_id FROM {ATTEMPT} "
+                "WHERE submitted_at IS NULL GROUP BY evaluation_id, user_id "
+                "HAVING COUNT(*) > 1) AS clashes"
+            )
+        ).scalar()
+        if duplicates:
+            raise RuntimeError(
+                f"{duplicates} candidate(s) have more than one unsubmitted attempt at the same "
+                "evaluation, so a unique key over open attempts cannot be created. Close or "
+                "remove the extra attempts deliberately, then re-run this migration."
+            )
+        if MYSQL_OPEN_MARKER_COLUMN not in attempt_columns:
+            op.execute(
+                sa.text(
+                    f"ALTER TABLE {ATTEMPT} ADD COLUMN {MYSQL_OPEN_MARKER_COLUMN} INTEGER "
+                    "GENERATED ALWAYS AS (CASE WHEN submitted_at IS NULL THEN 1 ELSE NULL END) STORED"
+                )
+            )
+        op.create_index(
+            MYSQL_OPEN_ATTEMPT_INDEX, ATTEMPT, ["evaluation_id", "user_id", MYSQL_OPEN_MARKER_COLUMN], unique=True
+        )
 
     # Fold any existing duplicates together before the constraint can reject them.
     if ANSWER in tables and UNIQUE_ANSWER_INDEX not in {i["name"] for i in inspector.get_indexes(ANSWER)}:
@@ -170,8 +220,13 @@ def downgrade() -> None:
     inspector = sa.inspect(op.get_bind())
     tables = _table_names(inspector)
 
-    if ATTEMPT in tables and OPEN_ATTEMPT_INDEX in {i["name"] for i in inspector.get_indexes(ATTEMPT)}:
+    attempt_indexes = {i["name"] for i in inspector.get_indexes(ATTEMPT)} if ATTEMPT in tables else set()
+    if OPEN_ATTEMPT_INDEX in attempt_indexes:
         op.drop_index(OPEN_ATTEMPT_INDEX, table_name=ATTEMPT)
+    if MYSQL_OPEN_ATTEMPT_INDEX in attempt_indexes:
+        op.drop_index(MYSQL_OPEN_ATTEMPT_INDEX, table_name=ATTEMPT)
+        if MYSQL_OPEN_MARKER_COLUMN in _column_names(inspector, ATTEMPT):
+            op.drop_column(ATTEMPT, MYSQL_OPEN_MARKER_COLUMN)
 
     if ANSWER in tables and UNIQUE_ANSWER_INDEX in {i["name"] for i in inspector.get_indexes(ANSWER)}:
         op.drop_index(UNIQUE_ANSWER_INDEX, table_name=ANSWER)

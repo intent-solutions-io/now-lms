@@ -1,3 +1,8 @@
+{# `selections` is the attempt's own record of what was answered, which is what the
+   score was computed from. Looking the answer up in `attempt.answers` instead read
+   rows that are FK'd to `question` with ON DELETE CASCADE: delete a question and the
+   row vanishes, so a question the score counted as correct was reported here as
+   Not answered, and the per-domain totals below silently lost it too. #}
 {# Intent Solutions result surface.
 
    Adds what the platform result page cannot show: how the member did in each
@@ -29,9 +34,8 @@
             {% set _ = ns.order.append(label) %}
             {% set _ = ns.stats.update({label: {"correct": 0, "total": 0}}) %}
         {% endif %}
-        {% set answer = (attempt.answers | selectattr("question_id", "equalto", question.id) | list | first) %}
         {% set correct_ids = question.options | selectattr("is_correct", "equalto", true) | map(attribute="id") | list %}
-        {% set selected_ids = (answer.selected_option_ids | fromjson) if (answer and answer.selected_option_ids) else [] %}
+        {% set selected_ids = selections.get(question.id, []) if selections else [] %}
         {% set hit = 1 if (selected_ids and selected_ids | sort == correct_ids | sort) else 0 %}
         {% set _ = ns.stats[label].update({"correct": ns.stats[label]["correct"] + hit, "total": ns.stats[label]["total"] + 1}) %}
     {% endif %}
@@ -375,11 +379,9 @@
                                     Expand all
                                 </button>
                             </div>
-                            {% for question in paper %} {% set answer = (attempt.answers |
-                            selectattr("question_id", "equalto", question.id) | list | first) %} {% set correct_ids =
+                            {% for question in paper %} {% set correct_ids =
                             question.options | selectattr("is_correct", "equalto", true) | map(attribute="id") | list %} {% set
-                            selected_ids = (answer.selected_option_ids | fromjson) if (answer and answer.selected_option_ids)
-                            else [] %} {% set is_correct = selected_ids and selected_ids | sort == correct_ids | sort %}
+                            selected_ids = selections.get(question.id, []) if selections else [] %} {% set is_correct = selected_ids and selected_ids | sort == correct_ids | sort %}
                             <details class="is-q">
                                 <summary>
                                     <span class="is-mono" style="color: var(--is-muted)">Question {{ loop.index }}</span>

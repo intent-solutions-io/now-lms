@@ -339,19 +339,25 @@
                                 <div class="is-card p-4 mb-3">
                                     <p class="is-stem mb-4">{{ question.text }}</p>
 
+                                    {# A boolean answer is stored as an option ID, exactly like every other
+                                       question type: the save path resolves Verdadero and Falso through
+                                       `QuestionOption` before writing. Posting and re-checking the WORD meant the
+                                       stored value could never match what this compared it against, so a boolean
+                                       selection came back unchecked on every reload. The word is still accepted
+                                       as a value where a question has no option rows, and is still matched when
+                                       re-checking, because attempts saved before this carry it. #}
                                     {% if question.type == "boolean" %}
+                                    {% set chosen = selections.get(question.id, []) if selections is defined and selections else [] %}
+                                    {% for word, caption, digit in [("Verdadero", _('True'), "1"), ("Falso", _('False'), "2")] %}
+                                    {% set option = (question.options | selectattr("text", "equalto", word) | list | first) %}
                                     <label class="is-choice">
-                                        <input type="radio" name="question_{{ question.id }}" value="Verdadero"
-                                            {% if "Verdadero" in (selections.get(question.id, []) if selections is defined and selections else []) %}checked{% endif %} />
-                                        <span class="is-key">1</span>
-                                        <span>{{ _('True') }}</span>
+                                        <input type="radio" name="question_{{ question.id }}"
+                                            value="{{ option.id if option else word }}"
+                                            {% if (option and option.id in chosen) or word in chosen %}checked{% endif %} />
+                                        <span class="is-key">{{ digit }}</span>
+                                        <span>{{ caption }}</span>
                                     </label>
-                                    <label class="is-choice">
-                                        <input type="radio" name="question_{{ question.id }}" value="Falso"
-                                            {% if "Falso" in (selections.get(question.id, []) if selections is defined and selections else []) %}checked{% endif %} />
-                                        <span class="is-key">2</span>
-                                        <span>{{ _('False') }}</span>
-                                    </label>
+                                    {% endfor %}
                                     {% elif question.type == "multiple" %} {% for option in question.options %}
                                     <label class="is-choice">
                                         <input

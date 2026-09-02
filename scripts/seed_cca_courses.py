@@ -989,6 +989,20 @@ def _seed_practice_sittings(db, models) -> int:
             db.select(models["Evaluation"]).filter_by(certification_key=cert_key, title=title)
         ).scalars().first()
         if existing is not None:
+            # Check what is actually in the database before skipping it. `_preflight`
+            # validates the specs and the banks on disk; nothing validated the pool a
+            # sitting already HAS, so an evaluation seeded against a thin bank went on
+            # advertising a form it could not fill and every later seed skipped past
+            # it reporting success. Refuse, do not skip, exactly as
+            # `_backfill_sitting_fields` does for the course mocks.
+            pool = len(existing.questions)
+            if pool < sitting["items"]:
+                raise ValueError(
+                    f"{cert_key}: existing '{title}' holds {pool} question(s) but the form "
+                    f"draws {sitting['items']}. Refusing to leave a sitting that would "
+                    "advertise more questions than it can serve — reseed its pool, or "
+                    "lower the draw deliberately."
+                )
             print(f"  [skip] {cert_key} practice sitting already exists")
             continue
 
@@ -1073,12 +1087,21 @@ def main() -> int:
         # there is no sitting to advertise wrongly. The build is retried below, where
         # `_require_content_dir` turns it into the operator-facing error it should be
         # rather than a traceback from in here.
+        # Built BEFORE anything is deleted, and a failure to build is fatal here.
+        # Swallowing it left `--reset` free to delete a course and only then discover
+        # it could not be rebuilt: a partial clone, a checkout mid-pull or a bank
+        # renamed upstream all reach this point with the content directory present
+        # and its banks missing, which is precisely when deleting is worst.
         try:
             specs = _build_specs()
-        except (FileNotFoundError, OSError):
-            specs = None
-        if specs:
-            _preflight(specs)
+        except (FileNotFoundError, OSError) as missing:
+            print(
+                f"ERROR: the curriculum could not be loaded from {CONTENT_DIR}: {missing}\n"
+                "Nothing has been changed. Fix the content directory and re-run.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from missing
+        _preflight(specs)
 
         if reset_codes:
             per_course: dict[str, tuple[int, int]] = {}
@@ -1149,8 +1172,6 @@ def main() -> int:
                     print(f"  [reset] deleted course '{code}' for rebuild")
             database.session.commit()  # one commit for the whole reset
 
-        if specs is None:
-            specs = _build_specs()
         for spec in specs:
             _create_course(database, models, spec)
         _backfill_sitting_fields(database, models)

@@ -1248,6 +1248,15 @@ class EvaluationAttempt(database.Model, BaseTabla):
     # sitting frees the candidate to start another. A backend that cannot express a
     # partial index would turn this into "one attempt ever", which is why the
     # migration builds it per dialect rather than relying on this alone.
+    #
+    # Production (Intent) runs PostgreSQL exclusively — see `docker-compose.yml`.
+    # This partial index is native and correct on PostgreSQL and on SQLite (the test
+    # backend). MySQL has no partial index and is not part of this deployment; the
+    # migration deliberately emits nothing there rather than a plain unique over
+    # (evaluation_id, user_id), which would mean one attempt EVER. Full MySQL
+    # enforcement (a database-generated discriminator column, dialect-compile-proven
+    # during this pass but not exercised against a live MySQL server) is deferred as
+    # follow-up if this fork is ever deployed on MySQL.
     __table_args__ = (
         database.Index(
             "uq_evaluation_attempt_open_per_user",
@@ -1269,6 +1278,15 @@ class Answer(database.Model, BaseTabla):
     """A student's answer to a question in an evaluation attempt."""
 
     __tablename__ = "answer"
+
+    # One answer per question per attempt. Declared here and not only in the
+    # migration: a fresh install creates its schema from the models and stamps the
+    # head, so a fresh database was the one place with nothing stopping two rows for
+    # the same question, and the read-then-insert in `_record_answer` had no
+    # constraint to lose its race to.
+    __table_args__ = (
+        database.Index("uq_answer_attempt_question", "attempt_id", "question_id", unique=True),
+    )
 
     attempt_id = database.Column(
         database.String(26), database.ForeignKey("evaluation_attempt.id", ondelete="CASCADE"), nullable=False, index=True

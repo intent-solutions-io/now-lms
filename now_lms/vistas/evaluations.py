@@ -257,6 +257,12 @@ def _resolve_option_ids(question, selected_values: list[str]) -> list[str]:
         if question.type != "boolean":
             option_ids.append(value)
             continue
+        # The form now posts the option's ID for booleans too, so that what is stored
+        # is what the page re-checks against. A page rendered before that change is
+        # still in someone's browser and posts the word, so both are accepted.
+        if any(option.id == value for option in question.options):
+            option_ids.append(value)
+            continue
         option = (
             database.session.execute(database.select(QuestionOption).filter_by(question_id=question.id, text=value))
             .scalars()
@@ -389,7 +395,9 @@ def _start_attempt(eval_obj):
     loser reads the winner's attempt back and renders the same paper.
     """
     attempt = EvaluationAttempt(
-        evaluation_id=eval_obj.id, user_id=current_user.usuario, started_at=_now()
+        evaluation_id=eval_obj.id,
+        user_id=current_user.usuario,
+        started_at=_now(),
     )
     weights = None
     if eval_obj.blueprint_json:
@@ -423,20 +431,65 @@ def _deadline(attempt, eval_obj):
     return attempt.started_at + timedelta(minutes=eval_obj.time_limit_minutes)
 
 
-def _grade_attempt(attempt, eval_obj, questions) -> None:
-    """Score a sitting and close it. Shared by a submit and by the clock."""
-    attempt.submitted_at = _now()
-    attempt.score = calculate_score(attempt)
-    attempt.passed = attempt.score >= eval_obj.passing_score
+def _lock_open_attempt(attempt_id: str):
+    """Take the attempt row for writing, and report whether it is still open.
+
+    Every write to a sitting — an autosave, a submit, an expiry grade — goes through
+    here first, so the read that decides "is this still open" and the write that acts
+    on the answer are inside the same lock. Checking `submitted_at` and then writing
+    without one is a read-modify-write over a row two requests can hold at once: an
+    autosave that passed the check could commit its answer behind a score that had
+    already been computed, and two autosaves could each read the answers blob, add
+    their own question, and write back over each other.
+
+    `FOR UPDATE` is a no-op on SQLite, which serialises writers anyway, and does the
+    real work on PostgreSQL and MySQL.
+    """
+    return database.session.execute(
+        database.select(EvaluationAttempt)
+        .where(EvaluationAttempt.id == attempt_id)
+        .with_for_update()
+    ).scalars().first()
+
+
+def _finalize_attempt(attempt, eval_obj, questions, was_late: bool = False) -> None:
+    """Write this request's answers and the grade they earn, in one transaction.
+
+    The caller has already locked the row and confirmed it open. Everything that
+    follows — the answers, the score, the pass flag, the scaled score, and
+    `submitted_at` — is one commit, so there is no moment at which the attempt is
+    closed but ungraded, and no moment at which the stored answers are not the
+    answers the stored score was computed from.
+
+    The version this replaces committed the grade in its own conditional UPDATE and
+    left the caller's answer writes to a later commit. A submit that lost that race
+    got rowcount 0, correctly declined to write a score, and then committed its
+    answers anyway: the review contradicted the number above it. Ordering alone
+    could not fix that, because the losing request must not commit at all.
+    """
+    _save_question_answers(attempt, eval_obj, questions)
+
+    score = calculate_score(attempt)
+    passed = score >= eval_obj.passing_score
+    scaled = None
     if eval_obj.scaled_cut:
         graded = _graded_paper(attempt, eval_obj)
         total = len(graded) or len(questions)
         raw = sum(1 for _question, correct in graded if correct)
-        attempt.scaled_score = exam_forms.scale_score(raw, total)
-        # The scaled score is the reported result when there is one, so the
-        # pass/fail must agree with the number on screen rather than with a
-        # percentage the candidate is never shown.
-        attempt.passed = attempt.scaled_score >= eval_obj.scaled_cut
+        scaled = exam_forms.scale_score(raw, total)
+        # The scaled score is the reported result when there is one, so pass/fail
+        # must agree with the number on screen rather than with a percentage the
+        # candidate is never shown.
+        passed = scaled >= eval_obj.scaled_cut
+
+    attempt.submitted_at = _now()
+    attempt.score = score
+    attempt.passed = passed
+    attempt.scaled_score = scaled
+    attempt.was_late = was_late
+    # Finishing frees the candidate to sit again: the partial unique index only
+    # constrains rows where `submitted_at IS NULL`, so this row drops out of its
+    # scope the moment it is set.
     database.session.commit()
 
 
@@ -461,11 +514,32 @@ def take_evaluation(evaluation_id: int) -> str | Response:
     if attempt is not None:
         deadline = _deadline(attempt, eval_obj)
         if deadline and _now() >= deadline:
-            attempt.was_late = True
-            _grade_attempt(attempt, eval_obj, exam_forms.form_questions(
-                exam_forms.load_form(attempt.form_json), eval_obj))
+            locked = _lock_open_attempt(attempt.id)
+            if locked is not None and locked.submitted_at is None:
+                _finalize_attempt(
+                    locked,
+                    eval_obj,
+                    exam_forms.form_questions(exam_forms.load_form(locked.form_json), eval_obj),
+                    was_late=True,
+                )
+            else:
+                # A submit closed it between the read and the lock. Its grade stands.
+                database.session.rollback()
             flash(_("Time ran out, so the sitting was submitted for you."), "warning")
             return redirect(url_for("evaluation.evaluation_result", attempt_id=attempt.id))
+
+    # The form carries the id of the attempt it was rendered for. Checked before
+    # anything that could open a new attempt: a stale tab's own sitting may have
+    # already closed (submitted, or expired and graded above), in which case
+    # `attempt` is now None and the old code fell through to `_start_attempt`,
+    # committing a brand-new sitting before this mismatch was ever noticed. Without
+    # this a stale tab's resubmit either graded against a paper it never showed, or
+    # silently started an extra attempt the candidate never asked for.
+    if request.method == "POST":
+        submitted_for = request.form.get("attempt_id")
+        if submitted_for and (attempt is None or submitted_for != attempt.id):
+            flash(_("That page belonged to an earlier sitting. This is the current one."), "warning")
+            return redirect(url_for("evaluation.take_evaluation", evaluation_id=eval_obj.id))
 
     # Availability is checked whether or not a sitting is already open. Gating it on
     # "no open attempt" let an open legacy attempt outlive its `available_until`,
@@ -488,18 +562,21 @@ def take_evaluation(evaluation_id: int) -> str | Response:
     questions = exam_forms.form_questions(exam_forms.load_form(attempt.form_json), eval_obj)
 
     if request.method == "POST":
-        # The form carries the id of the attempt it was rendered for. Without it a
-        # submit is just "the newest open attempt", so a stale tab could be graded
-        # against a paper it never showed.
-        submitted_for = request.form.get("attempt_id")
-        if submitted_for and submitted_for != attempt.id:
-            flash(_("That page belonged to an earlier sitting. This is the current one."), "warning")
-            return redirect(url_for("evaluation.take_evaluation", evaluation_id=eval_obj.id))
-        _save_question_answers(attempt, eval_obj, questions)
-        database.session.flush()
+        # Nothing of this request is written before the row is held. A second submit
+        # of the same sitting — a double click, a restored tab — finds it already
+        # closed here, discards its own answers rather than committing them behind
+        # the grade, and shows the result that was actually recorded.
+        locked = _lock_open_attempt(attempt.id)
+        if locked is None or locked.submitted_at is not None:
+            database.session.rollback()
+            flash(EVALUATION_SUBMITTED, "success")
+            return redirect(url_for("evaluation.evaluation_result", attempt_id=attempt.id))
+
+        attempt = locked
         deadline = _deadline(attempt, eval_obj)
-        attempt.was_late = bool(deadline and _now() > deadline)
-        _grade_attempt(attempt, eval_obj, questions)
+        _finalize_attempt(
+            attempt, eval_obj, questions, was_late=bool(deadline and _now() > deadline)
+        )
 
         if attempt.passed and eval_obj.section_id:
             # Practice earns no certificate: it is rehearsal, and nothing about it
@@ -544,7 +621,13 @@ def save_answer(evaluation_id: str) -> Response:
     if not attempt_id:
         return Response(status=400)
 
-    attempt = database.session.get(EvaluationAttempt, attempt_id)
+    # The row is held for the whole check-and-write. Reading `submitted_at`, deciding
+    # the attempt is open and only then writing leaves a window a submit can land in:
+    # the autosave passed its check, the submit closed and scored the attempt, and
+    # the autosave's write then stood behind a grade computed without it. Two
+    # autosaves had the same problem with each other, each reading the answers blob
+    # and writing back over the other's question.
+    attempt = _lock_open_attempt(attempt_id)
     if (
         attempt is None
         or attempt.user_id != current_user.usuario
@@ -553,17 +636,20 @@ def save_answer(evaluation_id: str) -> Response:
     ):
         # A submitted attempt is closed: a late autosave must not change an answer
         # behind a score that has already been calculated.
+        database.session.rollback()
         return Response(status=409)
 
     deadline = _deadline(attempt, eval_obj)
     if deadline and _now() >= deadline:
         # Past the deadline nothing more is accepted; the next GET grades it.
+        database.session.rollback()
         return Response(status=409)
 
     question_id = request.form.get("question_id")
     paper = exam_forms.form_questions(exam_forms.load_form(attempt.form_json), eval_obj)
     question = next((q for q in paper if q.id == question_id), None)
     if question is None:
+        database.session.rollback()
         return Response(status=400)
 
     selected = _resolve_option_ids(question, request.form.getlist("option_id"))
@@ -586,6 +672,31 @@ def evaluation_result(attempt_id: int) -> str:
         abort(403)
 
     eval_obj = attempt.evaluation
+
+    # An OPEN attempt has no result, and this page shows every correct answer. It
+    # checked ownership and nothing else, so a candidate could open their own live
+    # attempt's result URL mid-sitting and read the key to the paper in front of
+    # them. Ownership was exactly the wrong question: it is their attempt.
+    if attempt.submitted_at is None:
+        deadline = _deadline(attempt, eval_obj)
+        if not deadline or _now() < deadline:
+            flash(_("Esta evaluación aún no ha sido enviada."), "warning")
+            return redirect(url_for("evaluation.take_evaluation", evaluation_id=eval_obj.id))
+
+        # Past its deadline: close and score it here rather than rendering an
+        # ungraded paper with a score of None over it. Under the same lock every
+        # other write takes, so this cannot race a submit that is already grading.
+        locked = _lock_open_attempt(attempt.id)
+        if locked is not None and locked.submitted_at is None:
+            _finalize_attempt(
+                locked,
+                eval_obj,
+                exam_forms.form_questions(exam_forms.load_form(locked.form_json), eval_obj),
+                was_late=True,
+            )
+        else:
+            database.session.rollback()
+        attempt = database.session.get(EvaluationAttempt, attempt.id)
     paper = exam_forms.form_questions(exam_forms.load_form(attempt.form_json), eval_obj)
 
     # Per-domain scoring answers the only question a failed sitting raises: what do I
@@ -620,6 +731,9 @@ def evaluation_result(attempt_id: int) -> str:
         paper=paper,
         domains=domains,
         scaled=scaled,
+        # The attempt's own answers, not its `Answer` rows: those cascade away with a
+        # deleted question while the frozen paper goes on rendering it.
+        selections=_stored_selections(attempt),
         # A domain below this is called thin and is what the report tells them to work.
         thin_threshold=0.70,
     )

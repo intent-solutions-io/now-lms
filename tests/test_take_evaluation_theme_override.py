@@ -59,7 +59,18 @@ def test_the_override_keeps_the_form_contract_the_platform_template_defines(app_
     source = _override_path("intent_learn").read_text(encoding="utf-8")
     assert 'name="question_{{ question.id }}"' in source, "field name must stay question_<id>"
     assert 'value="{{ option.id }}"' in source, "multiple-choice values must stay option ids"
-    assert 'value="Verdadero"' in source and 'value="Falso"' in source, "boolean values are read by text"
+    # Boolean radios post the option id, same as every other question type, once an
+    # option row exists — not the literal word. `_resolve_option_ids` still accepts
+    # the bare word as a fallback for a page rendered before an option row existed,
+    # which is why the loop driving these radios is still keyed on "Verdadero"/
+    # "Falso" as Python values, even though the posted `value` attribute is the id.
+    assert 'value="{{ option.id if option else word }}"' in source, (
+        "boolean values must post the option id, falling back to the legacy word "
+        "only when no option row exists"
+    )
+    assert '"Verdadero"' in source and '"Falso"' in source, (
+        "the legacy word fallback must still be reachable somewhere in the template"
+    )
     assert 'method="POST"' in source
 
     # `required` on a hidden input makes the browser refuse to submit and then fail to
