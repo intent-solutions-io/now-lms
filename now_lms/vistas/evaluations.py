@@ -73,8 +73,32 @@ NO_AUTHORIZED_MSG = _("No se encuentra autorizado a acceder al recurso solicitad
 evaluation = Blueprint("evaluation", __name__)
 
 
+def _back_from_evaluation(eval_obj) -> str:
+    """Where to send someone leaving an evaluation.
+
+    Back to the course for coursework, back to the practice area for a sitting that
+    belongs to no course. Written once because the reopen flow has three of these and
+    every one of them would raise on a section-less evaluation.
+    """
+    if eval_obj.section_id:
+        section = database.session.get(CursoSeccion, eval_obj.section_id)
+        if section:
+            return url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso)
+    return url_for("evaluation.practice", certification_key=eval_obj.certification_key)
+
+
 def can_user_access_evaluation(evaluation_obj, user) -> bool:
-    """Check if user can access evaluation based on course payment status."""
+    """Check if user can access evaluation based on course payment status.
+
+    An evaluation with no section is a practice sitting rather than coursework. It
+    is open to any signed-in member, because it gates nothing: no enrolment, no
+    completion, no certificate. The course checks below exist to stop someone
+    sitting an assessment for a course they have not paid for, and there is no
+    course here to have paid for.
+    """
+    if evaluation_obj.section_id is None:
+        return True
+
     # Get the course from the section
     section = database.session.get(CursoSeccion, evaluation_obj.section_id)
     if not section:
@@ -317,7 +341,10 @@ def take_evaluation(evaluation_id: int) -> str | Response:
 
     if attempt is None and not can_user_attempt_evaluation(eval_obj, current_user):
         flash(_("No puede realizar más intentos en esta evaluación."), "warning")
-        section = database.session.get(CursoSeccion, eval_obj.section_id)
+        section = database.session.get(CursoSeccion, eval_obj.section_id) if eval_obj.section_id else None
+        if section is None:
+            # A practice sitting has no course to send them back to.
+            return redirect(url_for("evaluation.practice", certification_key=eval_obj.certification_key))
         return redirect(url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso))
 
     if attempt is None:
@@ -332,9 +359,10 @@ def take_evaluation(evaluation_id: int) -> str | Response:
         attempt.was_late = bool(deadline and datetime.now() > deadline)
         _grade_attempt(attempt, eval_obj, questions)
 
-        if attempt.passed:
-            section = database.session.get(CursoSeccion, eval_obj.section_id)
-            _try_issue_certificate(section)
+        if attempt.passed and eval_obj.section_id:
+            # Practice earns no certificate: it is rehearsal, and nothing about it
+            # is a completion signal for a course.
+            _try_issue_certificate(database.session.get(CursoSeccion, eval_obj.section_id))
 
         flash(EVALUATION_SUBMITTED, "success")
         return redirect(url_for("evaluation.evaluation_result", attempt_id=attempt.id))
@@ -503,6 +531,112 @@ def _latest_answers(usuario: str) -> dict:
     return latest
 
 
+def _certification_sittings(usuario: str) -> dict:
+    """The full-length mock for each certification, with this member's history.
+
+    The practice area is keyed by certification but an Evaluation belongs to a
+    course section, so the link between them is the questions: a mock is the drawn
+    evaluation whose questions carry that certification. Found by lookup rather
+    than stored, because a course can carry more than one credential and the
+    certification already lives on the question.
+    """
+    sittings: dict = {}
+    # Every timed exam-shaped evaluation, not only the drawn mocks: an authored
+    # full-length paper (Purcell's associate set, Rick's three architect sets) is a
+    # sitting a candidate can take, and the landing has to list it as one.
+    # Course-free sittings only. A course's own mock is coursework: it sits inside
+    # the course, counts toward it, and can issue a certificate. Listing both here
+    # showed a credential twice and made the menu look padded.
+    exams = database.session.execute(
+        database.select(Evaluation)
+        .filter(Evaluation.section_id.is_(None))
+        .filter(database.or_(Evaluation.draw_size.isnot(None), Evaluation.scaled_cut.isnot(None)))
+    ).scalars().all()
+
+    for evaluation_obj in exams:
+        key = evaluation_obj.certification_key
+        if not key:
+            # Fall back to the pool's own labelling for a sitting seeded before the
+            # column existed. A pool spanning two credentials speaks for neither.
+            keys = {q.certification_key for q in evaluation_obj.questions if q.certification_key}
+            if len(keys) != 1:
+                continue
+            key = keys.pop()
+        blueprint = {}
+        if evaluation_obj.blueprint_json:
+            try:
+                blueprint = json.loads(evaluation_obj.blueprint_json)
+            except (ValueError, TypeError):
+                blueprint = {}
+
+        names = {
+            question.domain_key: question.domain_name
+            for question in evaluation_obj.questions
+            if question.domain_key
+        }
+        targets = exam_forms.domain_targets(
+            {d: w for d, w in blueprint.items() if d in names}, evaluation_obj.draw_size or 0
+        )
+        heaviest = max(blueprint.values()) if blueprint else 1
+
+        attempts = database.session.execute(
+            database.select(EvaluationAttempt)
+            .filter_by(evaluation_id=evaluation_obj.id, user_id=usuario)
+            .filter(EvaluationAttempt.submitted_at.isnot(None))
+        ).scalars().all()
+        scored = [a for a in attempts if a.scaled_score is not None]
+        best = max((a.scaled_score for a in scored), default=None)
+
+        entry = {
+            "evaluation": evaluation_obj,
+            "title": evaluation_obj.title,
+            # A drawn mock composes a new paper per attempt; an authored form is the
+            # paper its author wrote and is served whole.
+            "drawn": bool(evaluation_obj.draw_size),
+            # NOT "items": Jinja resolves `sit.items` to dict.items, the bound method,
+            # so every place the paper length was printed came out blank.
+            "length": evaluation_obj.draw_size,
+            "minutes": evaluation_obj.time_limit_minutes,
+            "cut": evaluation_obj.scaled_cut,
+            "pool": len(evaluation_obj.questions),
+            "raw_needed": exam_forms.raw_needed(evaluation_obj.scaled_cut, evaluation_obj.draw_size)
+            if evaluation_obj.scaled_cut and evaluation_obj.draw_size else None,
+            "blueprint": [
+                {
+                    "key": domain,
+                    "name": names.get(domain, domain),
+                    "weight": weight,
+                    "draw": targets.get(domain, 0),
+                    # Bar width relative to the heaviest domain, so the table reads
+                    # as a shape rather than five near-identical bars.
+                    "bar": round(weight / heaviest * 100),
+                }
+                for domain, weight in sorted(blueprint.items(), key=lambda kv: -kv[1])
+            ],
+            "attempts": len(attempts),
+            "best": best,
+            "cleared": bool(best is not None and evaluation_obj.scaled_cut and best >= evaluation_obj.scaled_cut),
+            "open_attempt": _open_attempt(evaluation_obj.id, usuario),
+        }
+        if entry["drawn"]:
+            entry["length"] = evaluation_obj.draw_size
+        else:
+            # An authored form's length is its own question count, not a draw size.
+            entry["length"] = len(evaluation_obj.questions)
+            entry["raw_needed"] = (
+                exam_forms.raw_needed(evaluation_obj.scaled_cut, entry["length"])
+                if evaluation_obj.scaled_cut else None
+            )
+
+        # One sitting per credential. The grouping this used to do existed to list
+        # several papers per certification; the fixed extra papers were removed on
+        # 2026-09-02 because the per-attempt draw makes a better one every time.
+        # A drawn sitting always wins over an authored one if both somehow exist.
+        if key not in sittings or (entry["drawn"] and not sittings[key]["drawn"]):
+            sittings[key] = entry
+    return sittings
+
+
 @evaluation.route("/practice")
 @evaluation.route("/practice/<certification_key>")
 @evaluation.route("/practice/<certification_key>/<domain_key>")
@@ -522,6 +656,9 @@ def practice(certification_key: str | None = None, domain_key: str | None = None
         selected_cert = certifications.get(certification_key)
         if selected_cert is None:
             abort(404)
+    # With no certification named this is the MENU: every certification and every
+    # sitting it offers, side by side. Defaulting to one of them hid the other three
+    # behind a click and made a four-credential product look like a one-exam app.
 
     selected_domain = None
     if domain_key:
@@ -536,6 +673,7 @@ def practice(certification_key: str | None = None, domain_key: str | None = None
         selected_domain=selected_domain,
         domains=sorted(selected_cert["domains"].values(), key=lambda d: d["name"]) if selected_cert else [],
         questions=selected_domain["questions"] if selected_domain else [],
+        sittings=_certification_sittings(current_user.usuario),
     )
 
 
@@ -556,8 +694,7 @@ def request_reopen(evaluation_id: int) -> str | Response:
     attempts_count = get_user_attempts_count(evaluation_id, current_user.usuario)
     if not eval_obj.max_attempts or attempts_count < eval_obj.max_attempts:
         flash(_("Aún tiene intentos disponibles."), "info")
-        section = database.session.get(CursoSeccion, eval_obj.section_id)
-        return redirect(url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso))
+        return redirect(_back_from_evaluation(eval_obj))
 
     # Check if user has passed any attempt
     passed_attempt = (
@@ -572,8 +709,7 @@ def request_reopen(evaluation_id: int) -> str | Response:
 
     if passed_attempt:
         flash(_("Ya ha aprobado esta evaluación."), "info")
-        section = database.session.get(CursoSeccion, eval_obj.section_id)
-        return redirect(url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso))
+        return redirect(_back_from_evaluation(eval_obj))
 
     form = EvaluationReopenRequestForm()
 
@@ -591,8 +727,7 @@ def request_reopen(evaluation_id: int) -> str | Response:
 
         if existing_request:
             flash(_("Ya tiene una solicitud pendiente para esta evaluación."), "warning")
-            section = database.session.get(CursoSeccion, eval_obj.section_id)
-            return redirect(url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso))
+            return redirect(_back_from_evaluation(eval_obj))
 
         reopen_request = EvaluationReopenRequest(
             user_id=current_user.usuario, evaluation_id=evaluation_id, justification_text=form.justification_text.data
@@ -602,8 +737,7 @@ def request_reopen(evaluation_id: int) -> str | Response:
         database.session.commit()
 
         flash(REOPEN_REQUEST_SUBMITTED, "success")
-        section = database.session.get(CursoSeccion, eval_obj.section_id)
-        return redirect(url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso))
+        return redirect(_back_from_evaluation(eval_obj))
 
     return render_template("evaluations/request_reopen.html", evaluation=eval_obj, form=form)
 

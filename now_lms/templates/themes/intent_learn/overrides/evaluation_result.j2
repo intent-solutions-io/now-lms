@@ -37,19 +37,22 @@
         {{ current_theme.headertags() }}
         <title>{{ attempt.evaluation.title }} - Intent Solutions Learn</title>
         {{ current_theme.local_style() }}
+        {# One grammar across all three exam surfaces: the PDF's warm paper at
+           exam-room contrast. Loaded after theme.min.css so it wins. #}
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/exam.css') }}" />
         <style>
             /* Bound to the theme's Bootstrap tokens, never to literal brand hexes:
                theme.min.css overrides brand.css, so the live surface is dark and the
                live accent is --bs-primary. */
             :root {
-                --is-accent: var(--bs-primary, #f97316);
-                --is-paper: var(--bs-body-bg, #09090b);
-                --is-ink: var(--bs-body-color, #a1a1aa);
-                --is-strong: var(--bs-emphasis-color, #fafafa);
-                --is-muted: var(--bs-secondary-color, #a1a1aa);
-                --is-line: var(--bs-border-color, #27272a);
-                --is-card: var(--bs-secondary-bg, #18181b);
-                --is-bar: var(--bs-tertiary-bg, #1f1f23);
+                --is-accent: var(--ex-ember);
+                --is-paper: var(--ex-desk);
+                --is-ink: var(--ex-muted);
+                --is-strong: var(--ex-ink);
+                --is-muted: var(--ex-faint);
+                --is-line: var(--ex-rule);
+                --is-card: var(--ex-sheet);
+                --is-bar: var(--ex-soft);
                 --is-pass: #2f9e6f;
                 --is-short: #b4553a;
             }

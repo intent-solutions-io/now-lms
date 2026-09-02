@@ -23,16 +23,25 @@
             {% if selected_domain %}{{ selected_domain.name }}{% elif selected_cert %}{{ selected_cert.name }}{% else %}Practice{% endif %} - Intent Solutions Learn
         </title>
         {{ current_theme.local_style() }}
+        {# The exam surfaces leave the site's dark front-door palette deliberately: this
+           is the PDF's warm-paper grammar at a contrast a candidate can sit in for two
+           hours. Loaded last so it wins over theme.min.css. #}
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/exam.css') }}" />
         <style>
             :root {
-                --is-accent: var(--bs-primary, #f97316);
-                --is-paper: var(--bs-body-bg, #09090b);
-                --is-ink: var(--bs-body-color, #a1a1aa);
-                --is-strong: var(--bs-emphasis-color, #fafafa);
-                --is-muted: var(--bs-secondary-color, #a1a1aa);
-                --is-line: var(--bs-border-color, #27272a);
-                --is-card: var(--bs-secondary-bg, #18181b);
-                --is-bar: var(--bs-tertiary-bg, #1f1f23);
+                /* Point this page's own tokens at the exam-room paper palette in
+                   exam.css. They used to read the site's Bootstrap variables, which
+                   on this deployment are the dark front-door values, and because this
+                   block is inline it beats the stylesheet no matter what order the
+                   links are in. That is why the paper background did not take. */
+                --is-accent: var(--ex-ember);
+                --is-paper: var(--ex-desk);
+                --is-ink: var(--ex-ink);
+                --is-strong: var(--ex-ink);
+                --is-muted: var(--ex-faint);
+                --is-line: var(--ex-rule);
+                --is-card: var(--ex-sheet);
+                --is-bar: var(--ex-sheet);
                 --is-pass: #2f9e6f;
                 --is-short: #b4553a;
             }
@@ -178,9 +187,9 @@
         <main>
             {{ current_theme.notify() }}
 
-            <div class="container py-4">
+            <div class="ex-sheet">
                 <div class="row">
-                    <div class="col-lg-9 col-xl-8 mx-auto">
+                    <div class="col-12">
                         <nav aria-label="breadcrumb">
                             <ol class="breadcrumb small">
                                 <li class="breadcrumb-item">
@@ -209,64 +218,182 @@
                         </nav>
 
                         {% if not selected_cert %}
-                        <p class="mb-4" style="color: var(--is-muted)">
-                            Practice is organised by certification, not by course — a single course can carry
-                            questions for more than one credential. Nothing here is recorded.
+                        <p class="ex-eyebrow">Intent Solutions &middot; Practice</p>
+                        <h1 class="ex-title">Sit the whole thing, once, with the clock running.</h1>
+                        <p class="ex-lede">
+                            Each certification draws a fresh paper from its bank, weighted to Anthropic's
+                            published domain blueprint, with the clock running and no feedback until you
+                            submit. Or work one domain at a time, untimed, with the answer straight after
+                            each question. Only the full sitting is recorded.
                         </p>
+
                         {% if certifications %}
-                        <div class="row g-3">
-                            {% for cert in certifications %}
-                            <div class="col-md-6">
-                                <a
-                                    class="is-card is-domain-card p-3"
-                                    href="{{ url_for('evaluation.practice', certification_key=cert.key) }}"
-                                >
-                                    <div class="fw-semibold mb-1" style="color: var(--is-strong)">{{ cert.name }}</div>
-                                    <div class="is-mono" style="color: var(--is-muted)">
-                                        {{ cert.domains | length }} domain{{ '' if cert.domains | length == 1 else 's' }}
-                                        &middot; {{ cert.total }} question{{ '' if cert.total == 1 else 's' }}
-                                    </div>
-                                </a>
-                            </div>
+                        <div class="ex-section-head">
+                            <span class="ex-label">Choose a certification</span>
+                            <span class="ex-label">Form &middot; pool</span>
+                        </div>
+                        <div class="ex-menu">
+                            {% for cert in certifications %}{% set sit = sittings.get(cert.key) %}
+                            <a class="ex-menu-card" href="{{ url_for('evaluation.practice', certification_key=cert.key) }}">
+                                <div class="ex-menu-head">
+                                    <span class="ex-menu-code">{{ cert.key }}</span>
+                                    {% if sit and sit.best %}
+                                    <span class="ex-menu-best {{ 'is-clear' if sit.cleared else 'is-short' }}">
+                                        {{ sit.best }}{% if sit.cleared %} &middot; cleared{% endif %}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <div class="ex-menu-name">{{ cert.name }}</div>
+                                {% if sit %}
+                                <div class="ex-menu-facts">
+                                    <span><b>{{ sit.length }}</b> items</span>
+                                    <span><b>{{ sit.minutes }}</b> min</span>
+                                    <span><b>{{ sit.cut }}</b> to pass</span>
+                                </div>
+                                <div class="ex-menu-foot">
+                                    drawn fresh from {{ sit.pool }} &middot; {{ cert.domains | length }} domains
+                                    {%- if sit.attempts %} &middot; {{ sit.attempts }} attempt{{ '' if sit.attempts == 1 else 's' }}{% endif %}
+                                </div>
+                                {% else %}
+                                <div class="ex-menu-facts"><span>{{ cert.domains | length }} domains</span><span>{{ cert.total }} items</span></div>
+                                <div class="ex-menu-foot">Domain practice only, no full-length sitting yet</div>
+                                {% endif %}
+                            </a>
                             {% endfor %}
                         </div>
                         {% else %}
-                        <div class="is-card p-4">
-                            <p class="mb-0">
-                                No questions carry a certification yet. Re-run the course seeder to label them.
-                            </p>
+                        <div class="ex-callout">
+                            <div class="ex-callout-label">Nothing to practise yet</div>
+                            <p class="mb-0">No questions carry a certification. Re-run the course seeder to label them.</p>
                         </div>
                         {% endif %}
 
-                        {% elif not selected_domain %}
-                        <p class="mb-4" style="color: var(--is-muted)">
-                            Every question for this certification, grouped by domain. Standing reflects your most
-                            recent answer to each question, so a domain you have since learned is not held down by an
-                            early guess.
+                        <p class="ex-disclosure">
+                            <strong>What this is, exactly.</strong> Practice is organised by certification
+                            rather than by course, because one course can carry questions for more than one
+                            credential. Every item is original, written against Anthropic's published exam
+                            guides; none is reproduced from a real exam. A domain drill records nothing. A
+                            full sitting is scored on a synthetic 100-1000 scale of our own, because the real
+                            conversion is not published, so treat the number as a study signal rather than a
+                            prediction.
                         </p>
-                        <div class="row g-3">
-                            {% for row in domains %}
-                            {% set pct = (row.correct * 100.0 / row.seen) if row.seen else 0 %}
-                            <div class="col-md-6">
-                                <a
-                                    class="is-card is-domain-card p-3"
-                                    href="{{ url_for('evaluation.practice', certification_key=selected_cert.key, domain_key=row.key) }}"
-                                >
-                                    <div class="fw-semibold mb-1" style="color: var(--is-strong)">{{ row.name }}</div>
-                                    <div class="is-mono mb-2" style="color: var(--is-muted)">
-                                        {{ row.questions | length }} question{{ '' if row.questions | length == 1 else 's' }}
-                                        {% if row.seen %}&middot; {{ row.correct }}/{{ row.seen }} right
-                                        {% else %}&middot; not attempted{% endif %}
-                                    </div>
-                                    {% if row.seen %}
-                                    <div class="is-meter">
-                                        <span class="{{ 'is-pass' if pct >= 72 else 'is-short' }}" style="width: {{ pct }}%"></span>
-                                    </div>
-                                    {% endif %}
-                                </a>
+
+                        {% elif not selected_domain %}
+                        {% set sit = sittings.get(selected_cert.key) %}
+                        <p class="ex-eyebrow">{{ selected_cert.name }}</p>
+                        <h1 class="ex-title">Sit the whole thing, once, with the clock running.</h1>
+                        <p class="ex-lede">
+                            {% if sit %}{{ sit.length }} items drawn to Anthropic&rsquo;s published domain blueprint,
+                            {{ sit.minutes }} minutes, and no feedback until you submit. You get a study score on a
+                            synthetic {{ 100 }}&ndash;{{ 1000 }} scale measured against a {{ sit.cut }} target, then every item
+                            back with the reasoning. The scale is ours, not Anthropic&rsquo;s.
+                            {% else %}This certification has no full-length mock yet. Work its domains below; a drill
+                            is untimed and records nothing.{% endif %}
+                        </p>
+
+                        {% if sit %}
+                        <div class="ex-spec">
+                            <div class="ex-spec-cell">
+                                <div class="ex-label">Items</div>
+                                <div class="ex-spec-v">{{ sit.length }}</div>
+                                <div class="ex-spec-note">drawn from {{ sit.pool }}</div>
+                            </div>
+                            <div class="ex-spec-cell">
+                                <div class="ex-label">Time</div>
+                                <div class="ex-spec-v">{{ sit.minutes }}:00</div>
+                                <div class="ex-spec-note">auto-submits at zero</div>
+                            </div>
+                            <div class="ex-spec-cell">
+                                <div class="ex-label">Study target</div>
+                                <div class="ex-spec-v">{{ sit.cut }}</div>
+                                <div class="ex-spec-note">{{ sit.raw_needed }} of {{ sit.length }} correct</div>
+                            </div>
+                            <div class="ex-spec-cell">
+                                <div class="ex-label">Best so far</div>
+                                <div class="ex-spec-v {{ 'is-clear' if sit.cleared else ('is-short' if sit.best else '') }}">
+                                    {% if sit.best %}{{ sit.best }}{% else %}&mdash;{% endif %}
+                                </div>
+                                <div class="ex-spec-note">
+                                    {% if sit.attempts %}{{ sit.attempts }} attempt{{ '' if sit.attempts == 1 else 's' }}
+                                    &middot; {% if sit.cleared %}cleared{% else %}{{ sit.cut - sit.best }} short{% endif %}
+                                    {% else %}no attempts yet{% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if sit.open_attempt %}
+                        <div class="ex-callout">
+                            <div class="ex-callout-label">Sitting in progress</div>
+                            <p class="mb-3">You started this sitting and have not submitted it. The clock has been running since.</p>
+                            <a class="ex-btn ex-btn-primary" href="{{ url_for('evaluation.take_evaluation', evaluation_id=sit.evaluation.id) }}">Resume the sitting</a>
+                        </div>
+                        {% endif %}
+
+                        <div class="ex-section-head">
+                            <span class="ex-label">What this sitting draws</span>
+                            <span class="ex-label">Weight &middot; items</span>
+                        </div>
+                        <div class="ex-bp">
+                            {% for row in sit.blueprint %}
+                            <div class="ex-bp-row">
+                                <div class="ex-bp-name">{{ row.name }}</div>
+                                <div class="ex-bp-bar"><span style="width: {{ row.bar }}%"></span></div>
+                                <div class="ex-bp-n">{{ row.weight }}% &middot; {{ row.draw }}</div>
                             </div>
                             {% endfor %}
                         </div>
+
+                        <div class="ex-actions">
+                            <a class="ex-btn ex-btn-primary ex-btn-lg" href="{{ url_for('evaluation.take_evaluation', evaluation_id=sit.evaluation.id) }}">
+                                {% if sit.open_attempt %}Resume the sitting{% else %}Begin the sitting{% endif %}
+                            </a>
+                            <span class="ex-spec-note" style="margin: 0">Unlimited attempts. Every sitting draws a new paper.</span>
+                        </div>
+                        {% endif %}
+
+                        <div class="ex-section-head">
+                            <span class="ex-label">Or practice one domain at a time</span>
+                            <span class="ex-label">Pool &middot; standing</span>
+                        </div>
+                        <p class="ex-lede" style="font-size: 15px; margin-top: 14px">
+                            No clock, and the answer comes back the moment you choose it, with the reasoning.
+                            Nothing here is recorded, so a domain you have since learned is not held down by an early guess.
+                        </p>
+                        <div class="ex-picklist">
+                            {% for row in domains %}{% set pct = (row.correct * 100.0 / row.seen) if row.seen else 0 %}
+                            <a class="ex-domain" href="{{ url_for('evaluation.practice', certification_key=selected_cert.key, domain_key=row.key) }}">
+                                <span class="ex-domain-name">{{ row.name }}</span>
+                                <span class="ex-domain-n">
+                                    {{ row.questions | length }} item{{ '' if row.questions | length == 1 else 's' }}
+                                    {% if row.seen %}&middot; {{ row.correct }}/{{ row.seen }} right{% endif %}
+                                </span>
+                            </a>
+                            {% endfor %}
+                        </div>
+
+                        <p class="ex-disclosure">
+                            <strong>What this is, exactly.</strong> Every item is original, written against
+                            Anthropic&rsquo;s published exam guide for this certification; none is reproduced from a
+                            real exam or from a commercial prep bank. Each sitting draws a new paper from the pool, so
+                            two attempts are two different exams. A domain drill records nothing. A full sitting is
+                            scored on a synthetic scale of our own, because the real conversion is proprietary and is
+                            not modelled here, so treat the number as a study signal rather than a prediction of your
+                            exam result.
+                        </p>
+                        {# The reuse grants for both contributed banks are conditional on credit. With
+                           their items pooled rather than standing as separately named exams, this is
+                           where that credit is visible; each item also carries its author in its own
+                           source field. #}
+                        <p class="ex-disclosure" style="margin-top: 14px; padding-top: 0; border-top: 0">
+                            <strong>With thanks.</strong> This bank includes contributed work, used with
+                            permission and credited at the authors&rsquo; request.
+                            <a href="https://linkedin.com/in/purcellmatthew" rel="noopener">Matthew Purcell</a>,
+                            who sat and passed the Associate exam, wrote the first full-length Associate practice
+                            set when the official guide shipped only three sample questions.
+                            Rick Hightower wrote the scenario-based Architect Foundations set. Option wording on
+                            some of their items was revised by Intent Solutions to remove an answer-length cue;
+                            no stem and no answer key was changed.
+                        </p>
 
                         {% else %}
                         <div id="is-drill" data-count="{{ questions | length }}">

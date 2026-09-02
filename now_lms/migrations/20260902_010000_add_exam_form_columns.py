@@ -4,7 +4,9 @@ Revision ID: 20260902_010000
 Revises: 20260810_020000
 Create Date: 2026-09-02 01:00:00
 
-Four columns on ``evaluation`` and two on ``evaluation_attempt`` turn a fixed
+Five columns on ``evaluation`` and two on ``evaluation_attempt``, plus
+``evaluation.section_id`` becoming nullable so a practice sitting can exist
+without a course, turn a fixed
 question list into a timed, drawn, scaled sitting. Every one is nullable, and
 null means exactly the behaviour the tables had before this revision: all
 questions, in stored order, untimed, scored as a percentage.
@@ -44,6 +46,7 @@ EVALUATION_COLUMNS = {
     "draw_size": sa.Integer(),
     "scaled_cut": sa.Integer(),
     "blueprint_json": sa.Text(),
+    "certification_key": sa.String(50),
 }
 ATTEMPT_COLUMNS = {
     "form_json": sa.Text(),
@@ -63,6 +66,15 @@ def upgrade() -> None:
     """Add the columns, skipping any that a create_all() install already built."""
     inspector = sa.inspect(op.get_bind())
     tables = _table_names(inspector)
+
+    # A practice sitting belongs to no course, so an evaluation may now have no
+    # section. Batch mode because SQLite cannot ALTER a column's nullability in
+    # place and rebuilds the table instead.
+    if EVALUATION in tables:
+        nullable = {c["name"]: c["nullable"] for c in inspector.get_columns(EVALUATION)}
+        if nullable.get("section_id") is False:
+            with op.batch_alter_table(EVALUATION) as batch:
+                batch.alter_column("section_id", existing_type=sa.String(26), nullable=True)
 
     for table, columns in ((EVALUATION, EVALUATION_COLUMNS), (ATTEMPT, ATTEMPT_COLUMNS)):
         if table not in tables:

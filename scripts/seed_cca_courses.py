@@ -360,8 +360,9 @@ def _add_lesson_resource(db, models, curso_codigo: str, section_id: str, nombre:
     db.session.commit()
 
 
-def _add_evaluation(db, models, section_id: str, title: str, description: str, is_exam: bool,
-                    passing_score: float, questions: list[dict], sitting: dict | None = None) -> int:
+def _add_evaluation(db, models, section_id: str | None, title: str, description: str, is_exam: bool,
+                    passing_score: float, questions: list[dict], sitting: dict | None = None,
+                    certification_key: str | None = None) -> int:
     """Create an evaluation on a section and import its questions.
 
     The correct positions -> the matching options' ``is_correct``; ``rationale`` +
@@ -382,6 +383,7 @@ def _add_evaluation(db, models, section_id: str, title: str, description: str, i
         is_exam=is_exam,
         passing_score=passing_score,
         max_attempts=None,  # unlimited (practice and first-pass mock alike)
+        certification_key=certification_key,
     )
     # A mock exam is a POOL, not a paper: `draw_size` makes each attempt draw its own
     # blueprint-weighted questions from everything seeded here, so a second sitting is a
@@ -631,26 +633,12 @@ def _build_specs() -> list[dict]:
             f"matthew-purcell-practice-exams.json is exam-shaped at {MATTHEW_EXAM_ITEMS} items; "
             f"got {len(matthew)}. Update MATTHEW_EXAM_ITEMS deliberately if the author revised it."
         )
+    # Matthew Purcell's 60 items stay in the associate POOL and are drawn from like
+    # any other. His separate named exam is gone (Max, 2026-09-02): all 60 are in the
+    # pool already, so it was a fixed copy of what the draw composes. The reuse grant
+    # is conditional on credit, which is carried by each item's own `source` field and
+    # by the named credit in the practice page's disclosure.
     associate_extra_exams: list[dict] = []
-    if matthew:
-        associate_extra_exams.append({
-            "nombre": "Practice exam — Matthew Purcell (full-length CCAO-F)",
-            "descripcion": "Full-length practice exam, including select-TWO items. Unlimited attempts.",
-            "lesson": "# Practice exam — Matthew Purcell's CCAO-F set\n\n"
-                      "A full-length, exam-shaped practice test written against the public CCAO-F Exam "
-                      "Guide blueprint by Matthew Purcell, reused with permission. Some items ask you to "
-                      "**select TWO** answers; those are graded all-or-nothing, so a partially correct "
-                      "selection scores zero. Attempts are unlimited. Work the domain quizzes first, then "
-                      "use this to rehearse under exam conditions.\n\n"
-                      "These are ORIGINAL practice questions written against the publicly available "
-                      "CCAO-F Exam Guide v1.0 (July 2026) and its blueprint objectives. They are **not** "
-                      "actual exam content, are **not** drawn from the live item bank, and reproduce no "
-                      "question encountered on the exam. Exam content is confidential. No practice set "
-                      "guarantees a pass; use it alongside hands-on experience and the official "
-                      "documentation.",
-            "questions": matthew,
-        })
-
     specs: list[dict] = []
 
     # --- Course 0: Getting Started (onboarding, no exam) ---
@@ -765,19 +753,13 @@ def _build_specs() -> list[dict]:
     })
     # Rick Hightower's authored practice-exam pool (optional, reuse-granted) →
     # up to 3 full-length weighted practice exams appended to Course C.
-    rick = _load_bank_optional("rick-practice-exams.json")
-    extra_exams = []
-    for i, exam_qs in enumerate(_weighted_exam_series(rick, cca_f_weights, per_exam=60, max_exams=3), start=1):
-        extra_exams.append({
-            "nombre": f"Practice exam {i} — Rick Hightower (scenario-based)",
-            "descripcion": "Full-length 60-question weighted practice exam, unlimited attempts.",
-            "lesson": f"# Practice exam {i} — Rick Hightower's CCA-F set\n\n"
-                      "A full-length, exam-shaped practice test (~60 questions weighted across the five "
-                      "domains) drawn from Rick Hightower's scenario-based question set — reused with "
-                      "permission. Passing is **72%**; attempts are unlimited. Work the domain quizzes "
-                      "first, then use these to rehearse under exam conditions.",
-            "questions": exam_qs,
-        })
+    # Rick Hightower's 480 items live in the certification's pooled sitting, which
+    # draws a fresh weighted paper every attempt. The three fixed exams that used to
+    # be cut from them here are gone (Max, 2026-09-02): `_weighted_exam_series` was
+    # partitioning his pool with the same blueprint the draw uses, so they were three
+    # memorisable copies of what the draw produces anew each time. Nothing is lost:
+    # every one of those items is still drawn from.
+    extra_exams: list[dict] = []
 
     specs.append({
         "codigo": "CCA-F",
@@ -900,6 +882,67 @@ def _require_content_dir() -> None:
     raise SystemExit(2)
 
 
+def _seed_practice_sittings(db, models) -> int:
+    """One full-length practice sitting per certification, belonging to no course.
+
+    Practice is its own area of the product, outside courses (Max, 2026-08-09), and
+    since 2026-09-02 an Evaluation may carry no section so a sitting can say that in
+    the schema rather than by convention. This is what a course-shaped seeder could
+    not do: CCA-P has a bank and a certification but no course, so it had no
+    full-length exam at all while its 126 items sat reachable only as drills.
+
+    Keyed by certification, idempotent on (certification_key, title). The pool is
+    every question in the bank for that credential, so the draw composes a fresh
+    paper each attempt.
+    """
+    created = 0
+    for cert_key, sitting in SITTINGS.items():
+        bank: list[dict] = []
+        cert_name = None
+        for filename, (key, name) in BANK_CERTIFICATIONS.items():
+            if key != cert_key:
+                continue
+            cert_name = name
+            bank.extend(_load_bank_optional(filename) or [])
+        if not bank:
+            continue
+        if len(bank) < sitting["items"]:
+            # The same refusal the course mocks make: never advertise a
+            # 63-question exam over a pool that cannot fill one.
+            print(
+                f"  [skip] {cert_key} practice sitting — pool holds {len(bank)} of the "
+                f"{sitting['items']} its form draws"
+            )
+            continue
+
+        title = f"Practice exam — {cert_name}"
+        existing = db.session.execute(
+            db.select(models["Evaluation"]).filter_by(certification_key=cert_key, title=title)
+        ).scalars().first()
+        if existing is not None:
+            print(f"  [skip] {cert_key} practice sitting already exists")
+            continue
+
+        imported = _add_evaluation(
+            db,
+            models,
+            None,  # no section: this sitting belongs to no course
+            title=title,
+            description=(
+                f"{sitting['items']} items drawn to the published blueprint, "
+                f"{sitting['minutes']} minutes, {sitting['cut']} to pass. Unlimited attempts."
+            ),
+            is_exam=True,
+            passing_score=72.0,
+            questions=bank,
+            sitting=sitting,
+            certification_key=cert_key,
+        )
+        created += 1
+        print(f"  [ok]   {cert_key} practice sitting — {imported} questions in the pool")
+    return created
+
+
 def main() -> int:
     """Seed all four courses inside the app context. Returns a shell exit code."""
     _require_content_dir()
@@ -1020,6 +1063,7 @@ def main() -> int:
         specs = _build_specs()
         for spec in specs:
             _create_course(database, models, spec)
+        _seed_practice_sittings(database, models)
         print("Done.")
     return 0
 

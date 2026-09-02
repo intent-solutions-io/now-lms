@@ -28,6 +28,9 @@
         {{ current_theme.headertags() }}
         <title>{{ evaluation.title }} - Intent Solutions Learn</title>
         {{ current_theme.local_style() }}
+        {# One grammar across all three exam surfaces: the PDF's warm paper at
+           exam-room contrast. Loaded after theme.min.css so it wins. #}
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/exam.css') }}" />
         <style>
             /* Bind to the theme's own Bootstrap tokens rather than restating a
                palette. `theme.min.css` loads after `brand.css` and overrides it — the
@@ -37,7 +40,7 @@
                below follows the theme, so a future light/dark change carries this page
                with it and needs no edit here. */
             :root {
-                --is-accent: var(--bs-primary, #f97316);
+                --is-accent: var(--ex-ember);
                 /* The exam room is the one page a candidate sits in for two hours, and
                    the site ground is #09090b against #fafafa ink: 19.1:1, the harshest
                    contrast in the product. Pure white on near-black haloes, and haloing
@@ -46,14 +49,14 @@
                    app was built at — while staying unmistakably the same dark product.
                    Scoped here on purpose: softening the whole theme is a re-skin, and
                    this is an exam-room change. */
-                --is-paper: #16171a;
-                --is-ink: #b9bcc2;
-                --is-strong: #e4e4e7;
-                --is-muted: var(--bs-secondary-color, #a1a1aa);
-                --is-line: var(--bs-border-color, #27272a);
-                --is-card: var(--bs-secondary-bg, #18181b);
-                --is-bar: var(--bs-tertiary-bg, #1f1f23);
-                --is-cell: var(--bs-border-color, #27272a);
+                --is-paper: var(--ex-desk);
+                --is-ink: var(--ex-muted);
+                --is-strong: var(--ex-ink);
+                --is-muted: var(--ex-faint);
+                --is-line: var(--ex-rule);
+                --is-card: var(--ex-sheet);
+                --is-bar: var(--ex-soft);
+                --is-cell: var(--ex-rule);
                 --is-cell-done: var(--bs-secondary-color, #a1a1aa);
                 --is-flag: #e0a500;
             }

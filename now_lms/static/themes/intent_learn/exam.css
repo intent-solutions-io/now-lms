@@ -1,0 +1,485 @@
+/* The typefaces, lifted from the PDF itself.
+ *
+ * These are the exact woff2 payloads embedded in
+ * intent-solutions-structure-and-checkpoints-2026-08-15-v7, unpacked to files so the
+ * screen renders in the same faces as the document rather than falling back to
+ * system-ui. Both are variable, which is why one file covers a weight range: the PDF
+ * shipped Syne at 700 and 800 and Inter at 400, 500 and 600 as byte-identical blobs.
+ *
+ * Self-hosted deliberately. A Google Fonts link would put a third-party request on
+ * the one page a candidate cannot afford to have hang, and would fail entirely on a
+ * deployment without egress.
+ */
+@font-face {
+    font-family: "Syne";
+    src: url("fonts/syne.woff2") format("woff2");
+    font-weight: 400 800;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Inter";
+    src: url("fonts/inter.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Intent Solutions — the exam surfaces.
+ *
+ * One stylesheet for the three pages a candidate meets while testing: the practice
+ * landing, the sitting, and the score report. Loaded AFTER theme.min.css so it wins,
+ * because those pages deliberately leave the site's dark front-door palette.
+ *
+ * THE GRAMMAR IS THE PDF. Type scale, rules, fills, labels and spacing are lifted
+ * mechanically from intent-solutions-structure-and-checkpoints-2026-08-15-v7:
+ * Syne 700/800 for headings and labels, Inter for body at 1.571 line-height, hairline
+ * 0.8pt rules in #e4e1da, soft fills in #f6f5f3, ember #f26205 reserved for labels and
+ * decision points and never used as body text.
+ *
+ * THE CONTRAST IS THE EXAM ROOM. The PDF sets near-black #09090b on white, which is
+ * 19.9:1 — fine for a document someone reads for four minutes, punishing for a paper
+ * someone sits for a hundred and twenty. Ink is softened to #26282e on the PDF's own
+ * warm ground, measuring 13.5:1, which is where the standalone practice app was built
+ * and is the lowest-drama contrast of anything measured. Muted text holds 7.6:1, past
+ * AAA. Nothing else about the grammar moves.
+ *
+ * The room reads the way the PDF's own screen view does: a white sheet on a warm desk.
+ */
+
+:root,
+body.is-exam,
+body.is-result {
+    /* White-ish paper, an intentional break from the site's dark theme (Max,
+       2026-09-02). The PDF prints on #fff with #f6f5f3 fills; the page keeps a
+       trace of that warmth rather than going pure white, because #fff at full
+       brightness is the glariest surface available and this is a page someone
+       sits in front of for two hours. */
+    --ex-desk: #faf9f7;
+    --ex-sheet: #ffffff;
+    --ex-soft: #f4f2ef;
+
+    /* ink, softened from the PDF's #09090b: 14.0:1 here against the PDF's own
+       19.9:1, and within a rounding error of the standalone practice app */
+    --ex-ink: #26282e;
+    --ex-muted: #4a4e58;
+    /* darkened from the PDF's grey so small print still clears AA on a light
+       ground: 5.2:1 rather than the 4.0:1 the PDF value would have given */
+    --ex-faint: #666a73;
+
+    /* rules, at the PDF's weights */
+    --ex-rule: #e4e1da;
+    --ex-rule-firm: #cfcbc2;
+
+    /* ember: labels, rails, and the moment a decision is made. never body text */
+    --ex-ember: #f26205;
+    --ex-ember-ink: #b8480a;
+    --ex-ember-wash: rgba(242, 98, 5, 0.07);
+    --ex-ember-line: rgba(242, 98, 5, 0.38);
+
+    /* the two verdicts */
+    --ex-clear: #1f7a4d;
+    --ex-clear-wash: rgba(31, 122, 77, 0.08);
+    --ex-short: #a8412a;
+    --ex-short-wash: rgba(168, 65, 42, 0.07);
+
+    /* the dark card, straight from the PDF's cover block */
+    --ex-dark: #09090b;
+
+    --ex-display: "Syne", system-ui, -apple-system, sans-serif;
+    --ex-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --ex-mono: ui-monospace, Menlo, "SF Mono", monospace;
+}
+
+body.is-exam,
+body.is-result,
+body.is-practice {
+    background: var(--ex-desk);
+    color: var(--ex-ink);
+    font-family: var(--ex-body);
+    font-size: 16px;
+    line-height: 1.571;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── the sheet ─────────────────────────────────────────────────────────── */
+.ex-sheet {
+    max-width: 8.5in;
+    margin: 0 auto;
+    padding: 44px 0 52px;
+}
+@media (max-width: 720px) {
+    .ex-sheet { padding: 26px 18px 32px; }
+}
+
+/* ── type, at the PDF's scale ──────────────────────────────────────────── */
+.ex-eyebrow {
+    font-family: var(--ex-display);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ex-ember-ink);
+    line-height: 1;
+    margin-bottom: 12px;
+}
+.ex-title {
+    font-family: var(--ex-display);
+    font-size: clamp(26px, 3.4vw, 34px);
+    font-weight: 800;
+    line-height: 1.14;
+    letter-spacing: -0.01em;
+    color: var(--ex-ink);
+    margin: 0 0 14px;
+}
+.ex-h3 {
+    font-family: var(--ex-display);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ex-ink);
+    margin: 0 0 6px;
+}
+.ex-lede {
+    font-size: 16px;
+    line-height: 1.571;
+    color: var(--ex-muted);
+    max-width: 62ch;
+    margin: 0 0 8px;
+}
+.ex-label {
+    font-family: var(--ex-display);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ex-faint);
+    line-height: 1;
+}
+.ex-mono {
+    font-family: var(--ex-mono);
+    font-variant-numeric: tabular-nums;
+}
+.ex-rule {
+    height: 1px;
+    background: var(--ex-rule);
+    border: 0;
+    margin: 30px 0;
+}
+.ex-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--ex-rule);
+    margin-top: 38px;
+}
+
+/* ── the certification picker ──────────────────────────────────────────── */
+.ex-picks {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 30px;
+}
+@media (max-width: 820px) { .ex-picks { grid-template-columns: repeat(2, 1fr); } }
+.ex-pick {
+    display: block;
+    text-decoration: none;
+    padding: 13px 14px;
+    background: var(--ex-soft);
+    border: 1px solid var(--ex-rule);
+    border-radius: 6px;
+    color: var(--ex-muted);
+    transition: border-color 120ms ease, background 120ms ease;
+}
+.ex-pick:hover { border-color: var(--ex-rule-firm); background: #fff; color: var(--ex-ink); }
+.ex-pick.on {
+    border-color: var(--ex-ember-line);
+    background: var(--ex-ember-wash);
+    color: var(--ex-ink);
+}
+.ex-pick-code {
+    font-family: var(--ex-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--ex-faint);
+    display: block;
+}
+.ex-pick.on .ex-pick-code { color: var(--ex-ember-ink); }
+.ex-pick-name { font-size: 13.5px; line-height: 1.32; display: block; margin-top: 3px; }
+.ex-pick-meta {
+    font-family: var(--ex-mono);
+    font-size: 11px;
+    color: var(--ex-faint);
+    display: block;
+    margin-top: 4px;
+}
+
+/* ── the spec strip ────────────────────────────────────────────────────── */
+.ex-spec {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--ex-rule);
+    border-radius: 6px;
+    background: var(--ex-soft);
+    margin: 28px 0 4px;
+}
+@media (max-width: 720px) { .ex-spec { grid-template-columns: repeat(2, 1fr); } }
+.ex-spec-cell {
+    padding: 15px 18px;
+    border-right: 1px solid var(--ex-rule);
+}
+.ex-spec-cell:last-child { border-right: 0; }
+@media (max-width: 720px) {
+    .ex-spec-cell:nth-child(2n) { border-right: 0; }
+    .ex-spec-cell:nth-child(-n + 2) { border-bottom: 1px solid var(--ex-rule); }
+}
+.ex-spec-v {
+    font-family: var(--ex-mono);
+    font-size: 23px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    color: var(--ex-ink);
+    margin-top: 7px;
+    line-height: 1;
+}
+.ex-spec-v.is-clear { color: var(--ex-clear); }
+.ex-spec-v.is-short { color: var(--ex-short); }
+.ex-spec-note { font-size: 12.5px; color: var(--ex-faint); margin-top: 5px; }
+
+/* ── the blueprint table, at the PDF's table weights ───────────────────── */
+.ex-bp { margin-top: 14px; }
+.ex-bp-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 90px;
+    align-items: center;
+    gap: 16px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--ex-rule);
+}
+.ex-bp-row:last-child { border-bottom: 0; }
+.ex-bp-name { font-size: 14.5px; color: var(--ex-muted); }
+.ex-bp-bar { height: 7px; background: #eceae5; border-radius: 2px; overflow: hidden; }
+.ex-bp-bar span { display: block; height: 100%; background: var(--ex-rule-firm); border-radius: 2px; }
+.ex-bp-n {
+    font-family: var(--ex-mono);
+    font-size: 13px;
+    color: var(--ex-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+@media (max-width: 620px) {
+    .ex-bp-row { grid-template-columns: 1fr 80px; }
+    .ex-bp-bar { display: none; }
+}
+
+/* ── buttons: one decision point, ember; everything else quiet ─────────── */
+.ex-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--ex-rule-firm);
+    background: #fff;
+    color: var(--ex-ink);
+    font-family: var(--ex-body);
+    font-size: 14.5px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease;
+}
+.ex-btn:hover { border-color: var(--ex-ink); color: var(--ex-ink); }
+.ex-btn-primary {
+    background: var(--ex-ember);
+    border-color: var(--ex-ember);
+    color: #fff;
+    font-weight: 600;
+}
+.ex-btn-primary:hover { background: var(--ex-ember-ink); border-color: var(--ex-ember-ink); color: #fff; }
+.ex-btn-lg { padding: 14px 26px; font-size: 15.5px; }
+.ex-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.ex-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 30px; }
+
+/* ── the callout, straight from the PDF ────────────────────────────────── */
+.ex-callout {
+    background: var(--ex-soft);
+    border-left: 3px solid var(--ex-ember);
+    border-radius: 0 6px 6px 0;
+    padding: 15px 19px;
+    margin: 22px 0;
+}
+.ex-callout-label {
+    font-family: var(--ex-display);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ex-ember-ink);
+    line-height: 1;
+    margin-bottom: 8px;
+}
+.ex-callout p:last-child { margin-bottom: 0; }
+
+/* ── the disclosure: small, honest, always last ────────────────────────── */
+.ex-disclosure {
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid var(--ex-rule);
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--ex-faint);
+    max-width: 74ch;
+}
+.ex-disclosure strong { color: var(--ex-muted); font-weight: 600; }
+
+/* ── the dark card, the PDF's cover block ──────────────────────────────── */
+.ex-dark {
+    background: var(--ex-dark);
+    border-radius: 7px;
+    padding: 26px 26px 24px;
+    color: #d6d5d2;
+}
+.ex-dark .ex-callout-label { color: var(--ex-ember); }
+.ex-dark .ex-h3 { color: #fff; }
+
+/* ── domain drill picker ───────────────────────────────────────────────── */
+.ex-picklist { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.ex-domain {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 15px;
+    border: 1px solid var(--ex-rule);
+    border-radius: 6px;
+    background: var(--ex-soft);
+    color: var(--ex-muted);
+    text-decoration: none;
+    transition: border-color 120ms ease, background 120ms ease;
+}
+.ex-domain:hover { border-color: var(--ex-rule-firm); background: #fff; color: var(--ex-ink); }
+.ex-domain-name { flex: 1; min-width: 0; font-size: 14.5px; }
+.ex-domain-n {
+    font-family: var(--ex-mono);
+    font-size: 12px;
+    color: var(--ex-faint);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+
+/* ── the break from the site theme ──────────────────────────────────────
+ * These three pages leave the dark front-door palette deliberately (Max,
+ * 2026-09-02: "intentional break"). The site chrome still has to sit on top of
+ * them, so it is re-tinted rather than hidden: a candidate must still be able to
+ * navigate out, and a dark bar over white paper is the jolt this break exists to
+ * avoid.
+ */
+body.is-exam .navbar,
+body.is-result .navbar,
+body.is-practice .navbar {
+    background: var(--ex-sheet) !important;
+    border-bottom: 1px solid var(--ex-rule);
+}
+body.is-exam .navbar .nav-link,
+body.is-result .navbar .nav-link,
+body.is-practice .navbar .nav-link,
+body.is-exam .navbar .navbar-brand,
+body.is-result .navbar .navbar-brand,
+body.is-practice .navbar .navbar-brand {
+    color: var(--ex-muted) !important;
+}
+body.is-exam .navbar .nav-link:hover,
+body.is-result .navbar .nav-link:hover,
+body.is-practice .navbar .nav-link:hover { color: var(--ex-ink) !important; }
+body.is-exam .navbar-toggler-icon,
+body.is-result .navbar-toggler-icon,
+body.is-practice .navbar-toggler-icon { filter: invert(1) grayscale(100%) brightness(0.4); }
+
+/* the thin state bar above the content */
+body.is-practice .is-practice-bar,
+body.is-exam .is-exam-bar,
+body.is-result .is-result-bar {
+    background: var(--ex-sheet);
+    border-bottom: 1px solid var(--ex-rule);
+    color: var(--ex-muted);
+}
+
+/* breadcrumbs and stray Bootstrap text on the paper */
+body.is-practice .breadcrumb,
+body.is-practice .breadcrumb a,
+body.is-exam .breadcrumb,
+body.is-result .breadcrumb,
+body.is-result .breadcrumb a { color: var(--ex-faint); }
+body.is-practice .breadcrumb a:hover { color: var(--ex-ember-ink); }
+
+
+/* ── the landing menu: every certification, with its sitting on the card ──
+ * The picker used to show a name and a count, so a four-credential product read
+ * as a list of links. A candidate deciding what to sit wants the shape of the
+ * paper and where they stand on it, without a click.
+ */
+.ex-menu { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 18px; }
+@media (max-width: 780px) { .ex-menu { grid-template-columns: 1fr; } }
+.ex-menu-card {
+    display: block;
+    text-decoration: none;
+    padding: 20px 22px 18px;
+    background: var(--ex-soft);
+    border: 1px solid var(--ex-rule);
+    border-radius: 7px;
+    color: var(--ex-muted);
+    transition: border-color 120ms ease, background 120ms ease;
+}
+.ex-menu-card:hover { border-color: var(--ex-ember-line); background: #fff; color: var(--ex-ink); }
+.ex-menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ex-menu-code {
+    font-family: var(--ex-display);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ex-ember-ink);
+}
+.ex-menu-best {
+    font-family: var(--ex-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--ex-rule-firm);
+}
+.ex-menu-best.is-clear { color: var(--ex-clear); border-color: rgba(31, 122, 77, 0.4); background: var(--ex-clear-wash); }
+.ex-menu-best.is-short { color: var(--ex-short); border-color: rgba(168, 65, 42, 0.35); background: var(--ex-short-wash); }
+.ex-menu-name {
+    font-family: var(--ex-display);
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--ex-ink);
+    margin: 9px 0 12px;
+}
+.ex-menu-facts {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    border-top: 1px solid var(--ex-rule);
+    font-size: 13px;
+    color: var(--ex-faint);
+}
+.ex-menu-facts b {
+    font-family: var(--ex-mono);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--ex-ink);
+    font-variant-numeric: tabular-nums;
+    margin-right: 3px;
+}
+.ex-menu-foot { margin-top: 10px; font-size: 12.5px; color: var(--ex-faint); }

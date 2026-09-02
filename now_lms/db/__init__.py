@@ -1103,9 +1103,17 @@ class Evaluation(database.Model, BaseTabla):
 
     __tablename__ = "evaluation"
 
+    # NULLABLE since 2026-09-02: a practice sitting is its own thing and does not
+    # belong to a course (Max, 2026-08-09: "practice tests are their own domain ...
+    # outside of courses"). Requiring a section forced every mock to be attached to
+    # a course that happened to exist, which is why the architect-professional bank
+    # had no full-length exam at all: it has a certification but no course.
     section_id = database.Column(
-        database.String(26), database.ForeignKey(LLAVE_FORANEA_SECCION, ondelete="CASCADE"), nullable=False, index=True
+        database.String(26), database.ForeignKey(LLAVE_FORANEA_SECCION, ondelete="CASCADE"), nullable=True, index=True
     )
+    # Which credential a course-free sitting prepares for. Set only on practice
+    # sittings; an evaluation inside a course takes its identity from the course.
+    certification_key = database.Column(database.String(50), nullable=True, index=True)
     title = database.Column(database.String(200), nullable=False)
     description = database.Column(database.String(1000), nullable=True)
     is_exam = database.Column(database.Boolean(), default=False)
