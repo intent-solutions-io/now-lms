@@ -91,9 +91,12 @@ def test_front_door_expresses_the_selective_practice_doctrine() -> None:
     template = _template()
 
     required_language = (
-        "Selective AI implementation practice",
-        "model-agnostic room for serious practitioners",
-        "Intent Solutions house method",
+        "Separate practice · shared proof standard",
+        "Learn the method.",
+        "Prove the work.",
+        "same evaluation method used in Intent Labs",
+        "Learn teaches it.",
+        "Labs demonstrates it. Evals defines the result.",
         "Credentials are optional. Production standards are not.",
         "A practice,",
         "not a course catalog.",
@@ -104,6 +107,7 @@ def test_front_door_expresses_the_selective_practice_doctrine() -> None:
         assert phrase in template
 
     forbidden_public_claims = (
+        "model-agnostic",
         "outsourcing bench",
         "hire our certified",
         "get certified",
@@ -113,6 +117,25 @@ def test_front_door_expresses_the_selective_practice_doctrine() -> None:
     lowered = template.lower()
     for phrase in forbidden_public_claims:
         assert phrase not in lowered
+
+
+def test_front_door_maps_the_intent_solutions_network() -> None:
+    """Keep Learn separate while sharing the Labs/Evals evaluation method."""
+    template = _template()
+
+    expected_links = (
+        'href="https://intentsolutions.io/"',
+        'href="https://labs.intentsolutions.io/"',
+        'href="https://labs.intentsolutions.io/start/"',
+        'href="https://evals.intentsolutions.io/"',
+        'href="https://learn.intentsolutions.io/" aria-current="page"',
+    )
+    for link in expected_links:
+        assert link in template
+
+    assert "Learn teaches the operating method." in template
+    assert "Labs publishes the evidence." in template
+    assert "Evals provides the definitions" in template
 
 
 def test_front_door_carries_mobile_overflow_and_accessibility_guards() -> None:
@@ -196,6 +219,4 @@ def test_umami_tracker_is_same_origin_on_both_visitor_surfaces() -> None:
         assert 'src="/u.js"' in text, f"{path}: same-origin Umami tag missing"
         assert 'data-website-id="9350d174-bb53-4f1d-be75-c8221a3f4717"' in text
         assert 'data-host-url="/u"' in text, f"{path}: posts must stay same-origin"
-        assert "analytics.intentsolutions.io" not in text, (
-            f"{path}: cross-origin tracker load would be refused by the CSP"
-        )
+        assert "analytics.intentsolutions.io" not in text, f"{path}: cross-origin tracker load would be refused by the CSP"
