@@ -38,6 +38,34 @@
 .isl-root a { color: inherit; text-decoration: none; }
 .isl-root img { display: block; max-width: 100%; }
 
+.isl-network {
+    border-bottom: 1px solid #303638;
+    background: #101416;
+    color: #aeb7b9;
+}
+
+.isl-network .isl-wrap {
+    display: flex;
+    min-height: 2.25rem;
+    align-items: center;
+    gap: clamp(0.9rem, 2.3vw, 1.65rem);
+}
+
+.isl-network a {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+.isl-network a:hover,
+.isl-network a[aria-current='page'] { color: #fff; }
+.isl-network a:first-child { color: #ff7a1a; }
+
 .isl-root :focus-visible {
     outline: 3px solid var(--signal);
     outline-offset: 4px;
@@ -302,6 +330,24 @@
 .isl-method-card h3 { margin: 0 0 0.4rem; color: var(--graphite); font-family: var(--font-display); font-size: 1rem; font-weight: 650; }
 .isl-method-card p { margin: 0; color: rgb(var(--ink-dim)); font-size: 0.86rem; }
 
+.isl-method-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    margin-top: clamp(2.5rem, 5vw, 4rem);
+    border-top: 1px solid rgb(var(--line));
+}
+
+.isl-method-links a {
+    display: grid;
+    gap: 0.3rem;
+    padding: 1.25rem 0;
+}
+
+.isl-method-links a + a { border-left: 1px solid rgb(var(--line)); padding-left: clamp(1.25rem, 3vw, 2rem); }
+.isl-method-links strong { color: var(--signal-dark); font-size: 0.86rem; }
+.isl-method-links span { color: rgb(var(--ink-dim)); font-size: 0.76rem; }
+
 .isl-paths { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: clamp(3rem, 8vw, 7rem); align-items: start; }
 
 .isl-core {
@@ -464,6 +510,8 @@
     .isl-hero-grid { gap: 3.75rem; }
     .isl-journey,
     .isl-method-grid { grid-template-columns: 1fr; }
+    .isl-method-links { grid-template-columns: 1fr; }
+    .isl-method-links a + a { border-left: 0; border-top: 1px solid rgb(var(--line)); padding-left: 0; }
     .isl-stage { min-height: 0; }
     .isl-stage .step { margin-bottom: 1.25rem; }
     .isl-footer-main { grid-template-columns: 1fr; }
@@ -471,6 +519,8 @@
 }
 
 @media (max-width: 520px) {
+    .isl-network .isl-wrap { padding-inline: 1rem; gap: 0.8rem; }
+    .isl-network a { font-size: 0.56rem; letter-spacing: 0.08em; }
     .isl-header .isl-wrap { min-height: 4rem; padding-inline: 1rem; }
     .isl-brand .word { display: none; }
     .isl-btn-sm { padding-inline: 0.72rem; }
