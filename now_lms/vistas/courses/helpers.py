@@ -21,7 +21,7 @@ from bleach import clean, linkify
 from flask import flash
 from flask_login import current_user
 from markdown import markdown
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 # ---------------------------------------------------------------------------------------
 # Local resources
@@ -163,7 +163,8 @@ def _get_course_evaluations_and_attempts(
                     select(EvaluationAttempt)
                     .filter_by(evaluation_id=evaluation.id, user_id=usuario)
                     .order_by(
-                        EvaluationAttempt.submitted_at.asc().nullsfirst(),
+                        case((EvaluationAttempt.submitted_at.is_(None), 0), else_=1),
+                        EvaluationAttempt.submitted_at.asc(),
                         EvaluationAttempt.started_at.asc(),
                         EvaluationAttempt.id.asc(),
                     )

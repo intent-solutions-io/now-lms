@@ -26,6 +26,7 @@ recurso_completado=False, completion_form=None) -%}
 
                 <div class="col-md-4 text-center">
                     {% if not recurso_completado %}
+                    {% if completion_form %}
                     <form method="POST"
                           action="{{ url_for('resources.marcar_recurso_completado', curso_id=curso, resource_type=type, codigo=codigo) }}">
                         {{ completion_form.csrf_token }}
@@ -33,6 +34,11 @@ recurso_completado=False, completion_form=None) -%}
                             <i class="bi bi-check-circle me-2" aria-hidden="true"></i>{{ _('Marcar Completado') }}
                         </button>
                     </form>
+                    {% else %}
+                    <button type="button" class="btn btn-success btn-lg" disabled>
+                        <i class="bi bi-check-circle me-2" aria-hidden="true"></i>{{ _('Marcar Completado') }}
+                    </button>
+                    {% endif %}
                     {% else %}
                     <button type="button" class="btn btn-success btn-lg" disabled>
                         <i class="bi bi-check-circle-fill me-2" aria-hidden="True"></i>{{ _('Recurso Completado') }}

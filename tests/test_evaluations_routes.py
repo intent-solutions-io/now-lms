@@ -214,8 +214,12 @@ def test_routes_take_and_result(client, db_session, eval_setup):
     assert response_result.status_code == 200
 
 
-def test_intent_theme_evaluation_uses_form_csrf(client, db_session, eval_setup, app, monkeypatch):
-    """The Intent theme renders and validates the same CSRF form used by the route."""
+@pytest.mark.parametrize(
+    "template_name",
+    ["evaluations/take_evaluation.html", "themes/intent_learn/overrides/take_evaluation.j2"],
+)
+def test_evaluation_templates_use_form_csrf(client, db_session, eval_setup, app, monkeypatch, template_name):
+    """Fallback and Intent templates render the CSRF form validated by the route."""
     student = eval_setup["student"]
     ev = eval_setup["evaluation"]
     db_session.add(EstudianteCurso(curso="EVAL01", usuario=student.usuario, vigente=True))
@@ -231,7 +235,7 @@ def test_intent_theme_evaluation_uses_form_csrf(client, db_session, eval_setup, 
     monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
     monkeypatch.setattr(
         "now_lms.vistas.evaluations.get_take_evaluation_template",
-        lambda: "themes/intent_learn/overrides/take_evaluation.j2",
+        lambda: template_name,
     )
 
     response_get = client.get(f"/evaluation/{ev.id}/take")

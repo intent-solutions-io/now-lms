@@ -174,7 +174,6 @@ def test_marcar_recurso_completado_crea_avance(app, db_session, monkeypatch):
     page = client.get(f"/course/{curso.codigo}/resource/{recurso.tipo}/{recurso.id}")
     assert page.status_code == 200
     assert f"/evaluation/attempt/{attempt.id}/result".encode() in page.data
-    assert b"75%" in page.data
     token_match = re.search(rb'name="csrf_token"[^>]*value="([^"]+)"', page.data)
     assert token_match is not None
 

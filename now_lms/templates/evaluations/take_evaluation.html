@@ -74,6 +74,7 @@ set config = config() %}
                                 </div>
 
                                 <form method="POST">
+                                    {{ form.csrf_token }}
                                     {% for question in evaluation.questions %}
                                     <div class="card mb-3">
                                         <div class="card-body">
