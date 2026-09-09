@@ -40,7 +40,7 @@ from now_lms.db import (
     QuestionOption,
     database,
 )
-from now_lms.forms import EvaluationReopenRequestForm
+from now_lms.forms import EvaluationReopenRequestForm, TakeEvaluationForm
 from now_lms.i18n import _
 from now_lms.themes import (
     get_evaluation_result_template,
@@ -231,7 +231,11 @@ def take_evaluation(evaluation_id: int) -> str | Response:
         section = database.session.get(CursoSeccion, eval_obj.section_id)
         return redirect(url_for(ROUTE_COURSE_TOMAR_CURSO, course_code=section.curso))
 
+    form = TakeEvaluationForm()
+
     if request.method == "POST":
+        if not form.validate_on_submit():
+            abort(400)
         attempt = EvaluationAttempt(evaluation_id=evaluation_id, user_id=current_user.usuario, started_at=datetime.now())
         database.session.add(attempt)
         database.session.flush()
@@ -251,7 +255,7 @@ def take_evaluation(evaluation_id: int) -> str | Response:
         flash(EVALUATION_SUBMITTED, "success")
         return redirect(url_for("evaluation.evaluation_result", attempt_id=attempt.id))
 
-    return render_template(get_take_evaluation_template(), evaluation=eval_obj)
+    return render_template(get_take_evaluation_template(), evaluation=eval_obj, form=form)
 
 
 @evaluation.route("/evaluation/attempt/<attempt_id>/result", methods=["GET"])
