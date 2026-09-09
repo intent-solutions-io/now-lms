@@ -82,6 +82,7 @@ from now_lms.forms import (
     CursoRecursoMeet,
     CursoRecursoVideoYoutube,
     SlideShowForm,
+    ResourceCompletionForm,
 )
 from now_lms.cache import invalidar_cache_curso
 from now_lms.i18n import _
@@ -254,6 +255,7 @@ def pagina_recurso(curso_id: str, resource_type: str, codigo: str) -> str:
             secciones=SECCIONES,
             indice=INDICE,
             recurso_completado=recurso_completado,
+            completion_form=ResourceCompletionForm(),
             user_progress=user_progress,
             evaluaciones=evaluaciones,
             evaluation_attempts=evaluation_attempts,
@@ -270,6 +272,9 @@ def marcar_recurso_completado(curso_id: str, resource_type: str, codigo: str) ->
     if current_user.tipo != "student" or not verifica_estudiante_asignado_a_curso(curso_id):
         flash(NO_AUTORIZADO_MSG, "warning")
         return abort(403)
+
+    if not ResourceCompletionForm().validate_on_submit():
+        abort(400)
 
     avance = (
         database.session.execute(

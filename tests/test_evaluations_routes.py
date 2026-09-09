@@ -6,8 +6,8 @@ Tests unitarios y de integración para las evaluaciones.
 
 from datetime import datetime, timedelta
 import json
+import re
 import pytest
-from flask_login import login_user, logout_user
 from now_lms.db import (
     database,
     Usuario,
@@ -29,6 +29,7 @@ from now_lms.vistas.evaluations import (
     can_user_attempt_evaluation,
     calculate_score,
 )
+
 
 @pytest.fixture
 def eval_setup(app, db_session):
@@ -80,9 +81,11 @@ def eval_setup(app, db_session):
         "evaluation": evaluation_obj,
     }
 
+
 def test_can_user_access_evaluation_no_inscription(app, db_session, eval_setup):
     """Debe denegar acceso si el usuario no está inscrito."""
     assert can_user_access_evaluation(eval_setup["evaluation"], eval_setup["student"]) is False
+
 
 def test_can_user_access_evaluation_success(app, db_session, eval_setup):
     """Debe permitir acceso si el usuario está inscrito."""
@@ -96,6 +99,7 @@ def test_can_user_access_evaluation_success(app, db_session, eval_setup):
 
     assert can_user_access_evaluation(eval_setup["evaluation"], eval_setup["student"]) is True
 
+
 def test_is_evaluation_available(app, db_session, eval_setup):
     """Verifica si la evaluación está disponible en base a la fecha límite."""
     ev = eval_setup["evaluation"]
@@ -104,6 +108,7 @@ def test_is_evaluation_available(app, db_session, eval_setup):
     ev.available_until = datetime.now() - timedelta(days=1)
     db_session.commit()
     assert is_evaluation_available(ev) is False
+
 
 def test_attempts_count_and_can_attempt(app, db_session, eval_setup):
     """Verifica el límite de intentos de la evaluación."""
@@ -131,6 +136,7 @@ def test_attempts_count_and_can_attempt(app, db_session, eval_setup):
     assert get_user_attempts_count(ev.id, student.usuario) == 2
     # Superó el límite de max_attempts (que es 2)
     assert can_user_attempt_evaluation(ev, student) is False
+
 
 def test_calculate_score_multiple_and_boolean(app, db_session, eval_setup):
     """Verifica que el puntaje se calcule correctamente."""
@@ -169,6 +175,7 @@ def test_calculate_score_multiple_and_boolean(app, db_session, eval_setup):
     score = calculate_score(attempt)
     assert score == 100.0
 
+
 def test_routes_take_and_result(client, db_session, eval_setup):
     """Prueba las rutas de responder evaluación y ver el resultado."""
     student = eval_setup["student"]
@@ -206,6 +213,48 @@ def test_routes_take_and_result(client, db_session, eval_setup):
     response_result = client.get(f"/evaluation/attempt/{attempt.id}/result")
     assert response_result.status_code == 200
 
+
+def test_intent_theme_evaluation_uses_form_csrf(client, db_session, eval_setup, app, monkeypatch):
+    """The Intent theme renders and validates the same CSRF form used by the route."""
+    student = eval_setup["student"]
+    ev = eval_setup["evaluation"]
+    db_session.add(EstudianteCurso(curso="EVAL01", usuario=student.usuario, vigente=True))
+    question = Question(evaluation_id=ev.id, type="multiple", text="Is this regression fixed?")
+    db_session.add(question)
+    db_session.commit()
+    correct = QuestionOption(question_id=question.id, text="true", is_correct=True)
+    incorrect = QuestionOption(question_id=question.id, text="false", is_correct=False)
+    db_session.add_all([correct, incorrect])
+    db_session.commit()
+
+    client.post("/user/login", data={"usuario": "stud_eval", "acceso": "pass"})
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
+    monkeypatch.setattr(
+        "now_lms.vistas.evaluations.get_take_evaluation_template",
+        lambda: "themes/intent_learn/overrides/take_evaluation.j2",
+    )
+
+    response_get = client.get(f"/evaluation/{ev.id}/take")
+    assert response_get.status_code == 200
+    token_match = re.search(rb'name="csrf_token"[^>]*value="([^"]+)"', response_get.data)
+    assert token_match is not None
+
+    missing_token = client.post(f"/evaluation/{ev.id}/take", data={f"question_{question.id}": str(correct.id)})
+    assert missing_token.status_code == 400
+
+    response_post = client.post(
+        f"/evaluation/{ev.id}/take",
+        data={
+            "csrf_token": token_match.group(1).decode(),
+            f"question_{question.id}": str(correct.id),
+        },
+        follow_redirects=True,
+    )
+    assert response_post.status_code == 200
+    attempt = db_session.execute(database.select(EvaluationAttempt).filter_by(evaluation_id=ev.id)).scalar_one()
+    assert attempt.score == 100.0
+
+
 def test_routes_request_reopen(client, db_session, eval_setup):
     """Prueba solicitar reabrir la evaluación."""
     student = eval_setup["student"]
@@ -224,8 +273,12 @@ def test_routes_request_reopen(client, db_session, eval_setup):
     client.post("/user/login", data={"usuario": "stud_eval", "acceso": "pass"})
 
     # Registrar 2 intentos fallidos para agotar max_attempts
-    attempt1 = EvaluationAttempt(evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(), passed=False, score=20.0)
-    attempt2 = EvaluationAttempt(evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(), passed=False, score=10.0)
+    attempt1 = EvaluationAttempt(
+        evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(), passed=False, score=20.0
+    )
+    attempt2 = EvaluationAttempt(
+        evaluation_id=ev.id, user_id=student.usuario, started_at=datetime.now(), passed=False, score=10.0
+    )
     db_session.add_all([attempt1, attempt2])
     db_session.commit()
 

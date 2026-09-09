@@ -975,6 +975,10 @@ class TakeEvaluationForm(FlaskForm):
     pass  # pylint: disable=unnecessary-pass
 
 
+class ResourceCompletionForm(FlaskForm):
+    """Empty CSRF carrier for marking a course resource complete."""
+
+
 class ForoMensajeForm(FlaskForm):
     """Formulario para crear un nuevo mensaje del foro."""
 

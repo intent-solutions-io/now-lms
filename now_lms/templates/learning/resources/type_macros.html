@@ -1,5 +1,5 @@
 {% set current_theme = current_theme() %} {% macro nav_footer(indice=None, curso=None, type=None, codigo=None, avance=None,
-recurso_completado=False) -%}
+recurso_completado=False, completion_form=None) -%}
 <div class="container mt-4">
     <div class="card shadow-sm">
         <div class="card-body">
@@ -26,11 +26,13 @@ recurso_completado=False) -%}
 
                 <div class="col-md-4 text-center">
                     {% if not recurso_completado %}
-                    <a
-                        href="{{ url_for('resources.marcar_recurso_completado', curso_id=curso, resource_type=type, codigo=codigo) }}"
-                        class="btn btn-success btn-lg"
-                        ><i class="bi bi-check-circle me-2" aria-hidden="true"></i>{{ _('Marcar Completado') }}</a
-                    >
+                    <form method="POST"
+                          action="{{ url_for('resources.marcar_recurso_completado', curso_id=curso, resource_type=type, codigo=codigo) }}">
+                        {{ completion_form.csrf_token }}
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="bi bi-check-circle me-2" aria-hidden="true"></i>{{ _('Marcar Completado') }}
+                        </button>
+                    </form>
                     {% else %}
                     <button type="button" class="btn btn-success btn-lg" disabled>
                         <i class="bi bi-check-circle-fill me-2" aria-hidden="True"></i>{{ _('Recurso Completado') }}
@@ -160,7 +162,7 @@ evaluation_attempts=None) %}
 
                                 <a
                                     class="list-group-item list-group-item-action border-0 d-flex align-items-center py-2 px-2 mb-1 rounded"
-                                    href="{{ url_for('evaluation.take_evaluation', evaluation_id=eval.id) }}"
+                                    href="{% if is_completed %}{{ url_for('evaluation.evaluation_result', attempt_id=last_attempt.id) }}{% else %}{{ url_for('evaluation.take_evaluation', evaluation_id=eval.id) }}{% endif %}"
                                 >
                                     <div class="me-2">
                                         {% if eval.is_exam %}

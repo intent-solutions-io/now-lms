@@ -162,7 +162,11 @@ def _get_course_evaluations_and_attempts(
                 database.session.execute(
                     select(EvaluationAttempt)
                     .filter_by(evaluation_id=evaluation.id, user_id=usuario)
-                    .order_by(EvaluationAttempt.started_at)
+                    .order_by(
+                        EvaluationAttempt.submitted_at.asc().nullsfirst(),
+                        EvaluationAttempt.started_at.asc(),
+                        EvaluationAttempt.id.asc(),
+                    )
                 )
                 .scalars()
                 .all()

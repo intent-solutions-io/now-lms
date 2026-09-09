@@ -280,7 +280,7 @@
                               data-unanswered-label="{{ _('unanswered') }}"
                               data-flag-clear="{{ _('Flagged — click to clear') }}"
                               data-flag-review="{{ _('Flag for review') }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                            {{ form.csrf_token }}
                             {% for question in evaluation.questions %} {% set correct_count = question.options |
                             selectattr("is_correct", "equalto", true) | list | length %}
                             <section
