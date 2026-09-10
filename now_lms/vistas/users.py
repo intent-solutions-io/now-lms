@@ -27,6 +27,7 @@ from now_lms.db import Configuracion, MailConfig, Usuario, database
 from now_lms.forms import ForgotPasswordForm, LoginForm, LogonForm, ResetPasswordForm
 from now_lms.i18n import _
 from now_lms.logs import log
+from now_lms.mail import mail_delivery_available
 from now_lms.misc import INICIO_SESION, panel_de_usuario
 
 # ---------------------------------------------------------------------------------------
@@ -92,9 +93,10 @@ def inicio_sesion() -> str | Response:
 
     form = LoginForm()
 
-    # Check if password recovery is available
-    mail_config = database.session.execute(database.select(MailConfig)).scalar_one_or_none()
-    show_forgot_password = mail_config and mail_config.email_verificado
+    # Password recovery uses the effective mail configuration, which may be
+    # supplied securely through deployment environment variables rather than
+    # the administrator-managed database row.
+    show_forgot_password = mail_delivery_available()
 
     if form.validate_on_submit():
         if validar_acceso(form.usuario.data, form.acceso.data):
@@ -260,8 +262,7 @@ def check_mail(token: str) -> Response:
 def _send_password_reset_message(usuario) -> None:
     """Send the reset message when the account and mail service are eligible."""
     if usuario and usuario.correo_electronico_verificado:
-        mail_config = database.session.execute(database.select(MailConfig)).first()
-        if mail_config and mail_config[0].email_verificado:
+        if mail_delivery_available():
             from now_lms.auth import send_password_reset_email
 
             if send_password_reset_email(usuario):
