@@ -158,6 +158,18 @@ def _config() -> SimpleNamespace:
         return config_from_env
 
 
+def mail_delivery_available() -> bool:
+    """Return whether the effective mail configuration can send application mail.
+
+    The application can obtain mail settings from either the deployment
+    environment or the administrator-managed ``MailConfig`` row. Password
+    recovery must use that same effective configuration; inspecting only the
+    database row hides recovery on deployments that deliberately keep SMTP
+    credentials outside the database.
+    """
+    return bool(_config().mail_configured)
+
+
 def resolve_sender() -> tuple[str, str | None]:
     """Return the (name, address) sender pair for an outgoing Message.
 
