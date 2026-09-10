@@ -13,7 +13,7 @@ hidden from everyone but their staff.
 """
 
 from now_lms.auth import proteger_passwd
-from now_lms.db import Curso, Usuario, database
+from now_lms.db import Curso, CursoRecurso, CursoSeccion, Usuario, database
 
 PASSWORD = "preview-walk-pw"
 REDIRECTS = {301, 302, 303, 307, 308}
@@ -39,7 +39,7 @@ def _make_course(app, code, *, estado="open", publico=False):
         database.session.commit()
 
 
-def _student_client(app, username):
+def _student_client(app, username, *, tipo="student"):
     with app.app_context():
         database.session.add(
             Usuario(
@@ -48,7 +48,7 @@ def _student_client(app, username):
                 nombre="Preview",
                 apellido="Walker",
                 correo_electronico=username,
-                tipo="student",
+                tipo=tipo,
                 activo=True,
                 correo_electronico_verificado=True,
                 creado_por="test",
@@ -61,14 +61,51 @@ def _student_client(app, username):
     return client
 
 
+def _add_private_lesson(app, code):
+    with app.app_context():
+        section = CursoSeccion(
+            curso=code,
+            nombre="Private section",
+            descripcion="Private resource test section.",
+            indice=1,
+            estado=True,
+        )
+        database.session.add(section)
+        database.session.commit()
+        database.session.add(
+            CursoRecurso(
+                curso=code,
+                seccion=section.id,
+                tipo="text",
+                nombre="Private lesson",
+                descripcion="Private resource test lesson.",
+                text="# Private lesson",
+                indice=1,
+                publico=False,
+                requerido="required",
+            )
+        )
+        database.session.commit()
+
+
+def _use_intent_course_view_template(monkeypatch):
+    """Exercise the fork-local template rather than the stock test theme."""
+    import now_lms.vistas.courses.base as course_base
+
+    monkeypatch.setattr(
+        course_base,
+        "get_course_view_template",
+        lambda: "themes/intent_learn/overrides/course_view.j2",
+    )
+
+
 def test_member_can_preview_open_gated_course(app, db_session):
     """Signed-in, NOT enrolled, course open but publico=False: 200, not 403."""
     _make_course(app, "prevw1", estado="open", publico=False)
     client = _student_client(app, "preview-walker@example.com")
     resp = client.get("/course/prevw1/view")
     assert resp.status_code == 200, (
-        "a signed-in member must be able to preview an open course — "
-        "the take page already shows them its locked outline"
+        "a signed-in member must be able to preview an open course — " "the take page already shows them its locked outline"
     )
 
 
@@ -87,3 +124,29 @@ def test_member_cannot_preview_a_draft_course(app, db_session):
     client = _student_client(app, "draft-walker@example.com")
     resp = client.get("/course/prevw3/view")
     assert resp.status_code == 403
+
+
+def test_admin_course_view_links_private_resources(app, db_session, monkeypatch):
+    """Authorized administrators must not see a misleading locked outline."""
+    _use_intent_course_view_template(monkeypatch)
+    _make_course(app, "prevw4", estado="open", publico=False)
+    _add_private_lesson(app, "prevw4")
+    client = _student_client(app, "preview-admin@example.com", tipo="admin")
+
+    response = client.get("/course/prevw4/view")
+
+    assert response.status_code == 200
+    assert "/course/prevw4/resource/text/" in response.get_data(as_text=True)
+
+
+def test_unenrolled_member_course_view_keeps_private_resources_locked(app, db_session, monkeypatch):
+    """The admin repair must not turn a member's catalogue preview into access."""
+    _use_intent_course_view_template(monkeypatch)
+    _make_course(app, "prevw5", estado="open", publico=False)
+    _add_private_lesson(app, "prevw5")
+    client = _student_client(app, "preview-unenrolled@example.com")
+
+    response = client.get("/course/prevw5/view")
+
+    assert response.status_code == 200
+    assert "/course/prevw5/resource/text/" not in response.get_data(as_text=True)
