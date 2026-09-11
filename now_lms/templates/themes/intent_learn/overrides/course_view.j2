@@ -4,6 +4,11 @@
     {% set site_config = config() %}
     {% set S = url_for('static', filename='themes/intent_learn') %}
     {% set levels = {0: 'Introductory', 1: 'Beginner', 2: 'Intermediate', 3: 'Advanced'} %}
+    {# Keep the catalogue preview locked for visitors who are not entitled to
+       the course, but do not hide resources from an administrator or an
+       enrolled learner. The resource route applies the same authorization
+       decision before serving the content. #}
+    {% set can_view_resources = current_user.is_authenticated and (current_user.tipo == 'admin' or estudiante_asignado(curso.codigo)) %}
     <head>
         {{ current_theme.headertags() }} {{ current_theme.local_style() }}
         <title>{{ curso.nombre }} · Intent Solutions Learn</title>
@@ -234,7 +239,7 @@
                                             <p class="isl-sec-desc">{{ seccion.descripcion }}</p>
                                             {% endif %}
                                             {% for recurso in recursos %}{% if recurso.seccion == seccion.id %}
-                                            {% if recurso.publico == True %}
+                                            {% if can_view_resources or recurso.publico == True %}
                                             <div class="isl-res">
                                                 <i class="{{ iconos_recursos[recurso.tipo] }}" aria-hidden="true"></i>
                                                 <a class="name" href="{{ url_for('resources.pagina_recurso', curso_id=recurso.curso, codigo=recurso.id, resource_type=recurso.tipo) }}">{{ recurso.nombre }}</a>
