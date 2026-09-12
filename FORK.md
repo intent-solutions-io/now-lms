@@ -24,11 +24,8 @@ Concretely:
 
 ## Branches
 
-- **`main`** — thin tracking mirror of `upstream/main`, plus fork-local governance (this file,
-  `.github/CODEOWNERS`). Fixes destined for upstream branch off here.
-- **`deploy/now-lms-fixed`** — the branch our platform deploys from. It carries `main` plus the
-  fork-local changes listed under "Fork-local changes carried on `deploy`" below. Each of those has
-  an upstream path and retires from the fork once upstream accepts it.
+- **`main`** — the sole canonical branch and production deployment line. It carries the upstream
+  baseline plus the fork-local changes documented below; fixes destined for upstream branch from it.
 
 ## Working the fork
 
@@ -104,7 +101,7 @@ PR.
 against **PostgreSQL**, not SQLite. SQLite's permissiveness is what let ~34 strictness
 bugs hide in the suite before the v2.0.0 sync.
 
-## Fork-local changes carried on `deploy/now-lms-fixed`
+## Fork-local changes carried on `main`
 
 Per the posture above we avoid private patches, but `deploy` temporarily carries the changes below
 so the cohort can use the platform today. Each has an upstream path and its retirement condition is
