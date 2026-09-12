@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="{{ current_locale() }}" class="h-100">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="{{ _('Aplicación para gestión del aprendizaje.') }}" />
+        <meta name="author" content="Intent Solutions" />
+
+        <meta name="theme-color" content="#f97316" />
+
+        <!-- Intent Solutions node-mark (real orange logo; matches intentsolutions.io) -->
+        <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='themes/intent_learn/favicon.svg') }}" />
+        <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='themes/intent_learn/favicon/apple-touch-icon.png') }}" />
+
+        <!-- Código local -->
+        <link href="{{ url_for('static', filename='css/cacaoaccounting.css') }}" rel="stylesheet" />
+
+        <!-- Bootstrap core CSS -->
+        <link rel="stylesheet" href="{{ url_for('static', filename='node_modules/bootstrap/dist/css/bootstrap.css') }}" />
+        <script src="{{ url_for('static', filename='node_modules/bootstrap/dist/js/bootstrap.bundle.js') }}"></script>
+
+        <!-- Brand layer: maps the learn identity tokens onto Bootstrap's CSS variables so
+             pages built on this base keep the same identity as the front door (issue #38).
+             Must load AFTER bootstrap so the variable overrides win the cascade. -->
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/brand.css') }}" />
+
+        <!-- Bootstrap Font -->
+        <link
+            rel="stylesheet"
+            href="{{ url_for('static', filename='node_modules/bootstrap-icons/font/bootstrap-icons.css') }}"
+        />
+
+        <title>{{ title }}</title>
+        {# Umami analytics — served SAME-ORIGIN via the edge proxy (/u.js -> the estate
+           Umami container; posts to /u/api/send). Same-origin is deliberate: upstream
+           v2.0.0 CSP script-src/connect-src stay untouched (no core patch, no merge
+           surface) and the theme no-CDN rule holds. Website id: learn.intentsolutions.io
+           in the estate Umami. #}
+        <script
+            defer
+            src="/u.js"
+            data-website-id="9350d174-bb53-4f1d-be75-c8221a3f4717"
+            data-host-url="/u"
+        ></script>
+    </head>
+
+    <body>
+        <!-- Inicio del bloque contenido -->
+
+        {% block contenido %}{% endblock %}
+
+        <!-- Fin del bloque contenido -->
+        <!-- No third-party CDN loads in this theme. The icon-library loaders that used
+             to sit below were dead code (nothing here renders their custom element;
+             icons are bootstrap-icons, self-hosted) and upstream's v2.0.0 CSP blocks
+             that CDN host anyway. If a JS library is ever actually adopted, vendor it
+             into static/themes/intent_learn/ — same rule as the fonts, and the
+             front-door tests enforce it. -->
+    </body>
+</html>

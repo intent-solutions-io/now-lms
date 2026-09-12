@@ -21,11 +21,14 @@ from werkzeug.wrappers import Response
 # Local resources
 # ---------------------------------------------------------------------------------------
 from now_lms.auth import perfil_requerido, proteger_passwd, validar_acceso
+from now_lms.cache import cache, cache_incr
 from now_lms.config import DIRECTORIO_PLANTILLAS
 from now_lms.db import Configuracion, MailConfig, Usuario, database
 from now_lms.forms import ForgotPasswordForm, LoginForm, LogonForm, ResetPasswordForm
+from now_lms.i18n import _
 from now_lms.logs import log
-from now_lms.misc import INICIO_SESION, PANEL_DE_USUARIO
+from now_lms.mail import mail_delivery_available
+from now_lms.misc import INICIO_SESION, panel_de_usuario
 
 # ---------------------------------------------------------------------------------------
 # Standard library
@@ -33,8 +36,27 @@ from now_lms.misc import INICIO_SESION, PANEL_DE_USUARIO
 
 
 # Constants
-USER_ALREADY_LOGGED_IN_MSG = "Su usuario ya tiene una sesión iniciada."
-ACCOUNT_CREATION_ERROR_MSG = "Error al crear la cuenta."
+#
+# These are functions rather than module-level strings on purpose. `_()` resolves
+# against the locale active *when it runs*, and a module-level constant runs once
+# at import, outside any request — so the translation freezes to whatever locale
+# the interpreter started in and every later request gets that same string. The
+# msgids below are Spanish and are translated in the catalogue, but users were
+# still seeing Spanish because the lookup had already happened at import.
+#
+# Same defect class as the eager `_()` form labels that upstream PR #231 made
+# lazy. `_l()` would also work, but flash() puts its argument in the session and
+# a lazy proxy is not JSON-serialisable, so resolving at call time is safer here.
+def USER_ALREADY_LOGGED_IN_MSG() -> str:
+    """Return the already-signed-in notice in the current request's locale."""
+    return _("Su usuario ya tiene una sesión iniciada.")
+
+
+def ACCOUNT_CREATION_ERROR_MSG() -> str:
+    """Return the account-creation failure notice in the current request's locale."""
+    return _("Error al crear la cuenta.")
+
+
 USER_LOGIN_ROUTE = "user.inicio_sesion"
 
 # ---------------------------------------------------------------------------------------
@@ -44,17 +66,37 @@ USER_LOGIN_ROUTE = "user.inicio_sesion"
 user = Blueprint("user", __name__, template_folder=DIRECTORIO_PLANTILLAS)
 
 
+def _check_rate_limit(limit_key: str, max_attempts: int, window: int = 60) -> bool:
+    """Check rate limit using cache. Returns True if allowed, False if exceeded."""
+    current = cache.get(limit_key)
+    if current is None:
+        cache.set(limit_key, 1, timeout=window)
+        return True
+    if int(current) >= max_attempts:
+        return False
+    cache_incr(limit_key, timeout=window)
+    return True
+
+
 @user.route("/user/login", methods=["GET", "POST"])
 def inicio_sesion() -> str | Response:
     """Inicio de sesión del usuario."""
     if current_user.is_authenticated:
-        flash(USER_ALREADY_LOGGED_IN_MSG, "info")
-        return PANEL_DE_USUARIO
+        flash(USER_ALREADY_LOGGED_IN_MSG(), "info")
+        return panel_de_usuario()
+
+    # Rate limiting: 5 login attempts per minute per IP
+    rate_limit_key = f"rate_limit_login_{request.remote_addr}"
+    if request.method == "POST" and not _check_rate_limit(rate_limit_key, 5):
+        flash(_("Demasiados intentos de inicio de sesión. Intente nuevamente en un minuto."), "error")
+        return INICIO_SESION
+
     form = LoginForm()
 
-    # Check if password recovery is available
-    mail_config = database.session.execute(database.select(MailConfig)).scalar_one_or_none()
-    show_forgot_password = mail_config and mail_config.email_verificado
+    # Password recovery uses the effective mail configuration, which may be
+    # supplied securely through deployment environment variables rather than
+    # the administrator-managed database row.
+    show_forgot_password = mail_delivery_available()
 
     if form.validate_on_submit():
         if validar_acceso(form.usuario.data, form.acceso.data):
@@ -81,12 +123,14 @@ def inicio_sesion() -> str | Response:
                         database.session.commit()
                         login_user(identidad)
                         flash(
-                            "Su correo electrónico no ha sido verificado. Su acceso a la plataforma está limitado. "
-                            "Por favor, verifique su correo electrónico para acceder a todas las funcionalidades.",
+                            _(
+                                "Su correo electrónico no ha sido verificado. Su acceso a la plataforma está limitado. "
+                                "Por favor, verifique su correo electrónico para acceder a todas las funcionalidades."
+                            ),
                             "warning",
                         )
-                        return PANEL_DE_USUARIO
-                    flash("Su cuenta esta inactiva.", "info")
+                        return panel_de_usuario()
+                    flash(_("Su cuenta esta inactiva."), "info")
                     return INICIO_SESION
 
                 # Account is active, allow login
@@ -95,16 +139,16 @@ def inicio_sesion() -> str | Response:
                 # Show warning if email is not verified
                 if not identidad.correo_electronico_verificado and config and config.verify_user_by_email:
                     flash(
-                        "Su correo electrónico no ha sido verificado. Su acceso a algunas funcionalidades está limitado.",
+                        _("Su correo electrónico no ha sido verificado. Su acceso a algunas funcionalidades está limitado."),
                         "warning",
                     )
 
-                return PANEL_DE_USUARIO
+                return panel_de_usuario()
 
-        flash("Inicio de Sesion Incorrecto.", "warning")
+        flash(_("Inicio de Sesion Incorrecto."), "warning")
         return INICIO_SESION
     return render_template(
-        "auth/login.html", form=form, titulo="Inicio de Sesion - NOW LMS", show_forgot_password=show_forgot_password
+        "auth/login.html", form=form, titulo=_("Inicio de Sesion - NOW LMS"), show_forgot_password=show_forgot_password
     )
 
 
@@ -124,13 +168,13 @@ def cerrar_sesion() -> Response:
 def crear_cuenta() -> str | Response:
     """Crear cuenta de usuario desde el sistio web."""
     if current_user.is_authenticated:
-        flash("Usted ya posee una cuenta en el sistema.", "warning")
-        return PANEL_DE_USUARIO
+        flash(_("Usted ya posee una cuenta en el sistema."), "warning")
+        return panel_de_usuario()
 
     form = LogonForm()
     config_result = database.session.execute(database.select(Configuracion)).first()
     config = config_result[0] if config_result else None
-    if form.validate_on_submit() or request.method == "POST":
+    if form.validate_on_submit():
         usuario_ = Usuario(
             usuario=form.correo_electronico.data,
             acceso=proteger_passwd(form.acceso.data),
@@ -161,12 +205,12 @@ def crear_cuenta() -> str | Response:
 
             return INICIO_SESION
         except OperationalError:
-            flash(ACCOUNT_CREATION_ERROR_MSG, "warning")
+            flash(ACCOUNT_CREATION_ERROR_MSG(), "warning")
             return redirect("/")
         except PendingRollbackError:
-            flash(ACCOUNT_CREATION_ERROR_MSG, "warning")
+            flash(ACCOUNT_CREATION_ERROR_MSG(), "warning")
             return redirect("/")
-    return render_template("auth/logon.html", form=form, titulo="Crear cuenta - NOW LMS")
+    return render_template("auth/logon.html", form=form, titulo=_("Crear cuenta - NOW LMS"))
 
 
 @user.route("/user/new_user", methods=["GET", "POST"])
@@ -175,7 +219,7 @@ def crear_cuenta() -> str | Response:
 def crear_usuario() -> str | Response:
     """Crear manualmente una cuenta de usuario."""
     form = LogonForm()
-    if form.validate_on_submit() or request.method == "POST":
+    if form.validate_on_submit():
         usuario_ = Usuario(
             usuario=form.usuario.data,
             acceso=proteger_passwd(form.acceso.data),
@@ -190,10 +234,10 @@ def crear_usuario() -> str | Response:
         try:
             database.session.add(usuario_)
             database.session.commit()
-            flash("Usuario creado exitosamente.", "success")
+            flash(_("Usuario creado exitosamente."), "success")
             return redirect(url_for("user_profile.usuario", id_usuario=form.usuario.data))
         except OperationalError:
-            flash(ACCOUNT_CREATION_ERROR_MSG, "warning")
+            flash(ACCOUNT_CREATION_ERROR_MSG(), "warning")
             return redirect("/new_user")
     else:
         return render_template(
@@ -209,35 +253,40 @@ def check_mail(token: str) -> Response:
 
     _token = validate_confirmation_token(token)
     if _token:
-        flash("Correo verificado exitosamente. Ya puede iniciar sesión en el sistema", "success")
+        flash(_("Correo verificado exitosamente. Ya puede iniciar sesión en el sistema"), "success")
         return redirect(url_for(USER_LOGIN_ROUTE))
-    flash("Token de verificación invalido.", "warning")
+    flash(_("Token de verificación invalido."), "warning")
     return redirect(url_for("user.cerrar_sesion"))
 
 
 def _send_password_reset_message(usuario) -> None:
     """Send the reset message when the account and mail service are eligible."""
     if usuario and usuario.correo_electronico_verificado:
-        mail_config = database.session.execute(database.select(MailConfig)).first()
-        if mail_config and mail_config[0].email_verificado:
+        if mail_delivery_available():
             from now_lms.auth import send_password_reset_email
 
             if send_password_reset_email(usuario):
-                flash("Se ha enviado un correo con instrucciones para recuperar su contraseña.", "success")
+                flash(_("Se ha enviado un correo con instrucciones para recuperar su contraseña."), "success")
             else:
-                flash("Error al enviar el correo de recuperación. Intente más tarde.", "error")
+                flash(_("Error al enviar el correo de recuperación. Intente más tarde."), "error")
         else:
-            flash("El sistema de correo no está configurado. Contacte al administrador.", "warning")
+            flash(_("El sistema de correo no está configurado. Contacte al administrador."), "warning")
     else:
-        flash("Se ha enviado un correo con instrucciones para recuperar su contraseña.", "success")
+        flash(_("Se ha enviado un correo con instrucciones para recuperar su contraseña."), "success")
 
 
 @user.route("/user/forgot_password", methods=["GET", "POST"])
 def forgot_password() -> str | Response:
     """Solicitar recuperación de contraseña."""
     if current_user.is_authenticated:
-        flash(USER_ALREADY_LOGGED_IN_MSG, "info")
-        return PANEL_DE_USUARIO
+        flash(USER_ALREADY_LOGGED_IN_MSG(), "info")
+        return panel_de_usuario()
+
+    # Rate limiting: 3 forgot-password attempts per minute per IP
+    rate_limit_key = f"rate_limit_forgot_pwd_{request.remote_addr}"
+    if request.method == "POST" and not _check_rate_limit(rate_limit_key, 3):
+        flash(_("Demasiadas solicitudes de recuperación de contraseña. Intente nuevamente en un minuto."), "error")
+        return INICIO_SESION
 
     form = ForgotPasswordForm()
     if form.validate_on_submit():
@@ -249,40 +298,40 @@ def forgot_password() -> str | Response:
 
         return redirect(url_for(USER_LOGIN_ROUTE))
 
-    return render_template("auth/forgot_password.html", form=form, titulo="Recuperar Contraseña - NOW LMS")
+    return render_template("auth/forgot_password.html", form=form, titulo=_("Recuperar Contraseña - NOW LMS"))
 
 
 @user.route("/user/reset_password/<token>", methods=["GET", "POST"])
 def reset_password(token: str) -> str | Response:
     """Restablecer contraseña con token."""
     if current_user.is_authenticated:
-        flash(USER_ALREADY_LOGGED_IN_MSG, "info")
-        return PANEL_DE_USUARIO
+        flash(USER_ALREADY_LOGGED_IN_MSG(), "info")
+        return panel_de_usuario()
 
     from now_lms.auth import validate_password_reset_token
 
     email = validate_password_reset_token(token)
     if not email:
-        flash("El enlace de recuperación es inválido o ha expirado.", "error")
+        flash(_("El enlace de recuperación es inválido o ha expirado."), "error")
         return redirect(url_for(USER_LOGIN_ROUTE))
 
     usuario = database.session.execute(database.select(Usuario).filter_by(correo_electronico=email)).scalar_one_or_none()
     if not usuario:
-        flash("Usuario no encontrado.", "error")
+        flash(_("Usuario no encontrado."), "error")
         return redirect(url_for(USER_LOGIN_ROUTE))
 
     form = ResetPasswordForm()
     if form.validate_on_submit():
         if form.new_password.data != form.confirm_password.data:
-            flash("Las nuevas contraseñas no coinciden.", "error")
-            return render_template("auth/reset_password.html", form=form, titulo="Restablecer Contraseña - NOW LMS")
+            flash(_("Las nuevas contraseñas no coinciden."), "error")
+            return render_template("auth/reset_password.html", form=form, titulo=_("Restablecer Contraseña - NOW LMS"))
 
         # Update password
         usuario.acceso = proteger_passwd(form.new_password.data)
         database.session.commit()
 
-        flash("Contraseña actualizada exitosamente. Ya puede iniciar sesión.", "success")
+        flash(_("Contraseña actualizada exitosamente. Ya puede iniciar sesión."), "success")
         log.info(f"Password reset for user {usuario.usuario}")
         return redirect(url_for(USER_LOGIN_ROUTE))
 
-    return render_template("auth/reset_password.html", form=form, titulo="Restablecer Contraseña - NOW LMS")
+    return render_template("auth/reset_password.html", form=form, titulo=_("Restablecer Contraseña - NOW LMS"))

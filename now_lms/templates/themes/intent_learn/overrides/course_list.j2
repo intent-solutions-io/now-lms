@@ -1,0 +1,109 @@
+{# /course/explore has two audiences and one of them is not a prospect.
+
+   A signed-in member gets pages/courses_member.html: the app shell, and the
+   honest sentence that courses here are assigned rather than browsed. Sending
+   them the teaser below meant every in-app "Explore courses" click landed on
+   the public front door — marketing nav, request-access CTA, no app chrome.
+
+   Anonymous visitors keep the teaser exactly as it was. #}
+{% if current_user.is_authenticated %}{% include "themes/intent_learn/pages/courses_member.html" %}{% else %}
+<!doctype html>
+<html lang="{{ current_locale() }}">
+    {% set current_theme = current_theme() %}
+    {% set site_config = config() %}
+    {% set S = url_for('static', filename='themes/intent_learn') %}
+    <head>
+        {{ current_theme.headertags() }} {{ current_theme.local_style() }}
+        <title>{{ _('Practice Tracks · Intent Solutions Learn') }}</title>
+        <link rel="stylesheet" href="{{ S }}/front-door.css" />
+    </head>
+    {# Deliberately renders NO course data: the public catalog is a doctrine-voice
+       teaser, and the `cursos` pagination object the route passes is unused. That is
+       not laziness — `_course_explore_query` filters `Curso.publico.is_(True)` and
+       every course on this deployment is gated, so the object is empty for everyone.
+       Rendering it would show a visitor an empty catalogue.
+
+       Everything below this point is the prospect's page and only the prospect's:
+       members are routed to pages/courses_member.html above, so there is no
+       signed-in branch left to carry here. #}
+    <body class="isl-root">
+        <header class="isl-header">
+            <div class="isl-wrap">
+                <a class="isl-brand" href="/" aria-label="{{ _('Intent Solutions Learn — home') }}">
+                    <img src="{{ S }}/logo-mark.png" alt="" width="30" height="30" />
+                    <span class="word">{{ _('Intent') }}<span class="s">{{ _('Solutions') }}</span></span>
+                </a>
+                <nav class="isl-nav" aria-label="{{ _('Primary navigation') }}">
+                    <a class="link" href="/#practice">{{ _('The practice') }}</a>
+                    <a class="link" href="/#method">{{ _('House method') }}</a>
+                    <a class="link" href="/#paths">{{ _('Proof paths') }}</a>
+                    <span class="isl-nav-actions">
+                        <a class="isl-btn isl-btn-secondary isl-btn-sm" href="{{ url_for('user.inicio_sesion') }}">{{ _('Sign in') }}</a>
+                        <a class="isl-btn isl-btn-primary isl-btn-sm" href="{{ url_for('request_access.request_access') }}">{{ _('Request access') }}</a>
+                    </span>
+                </nav>
+            </div>
+        </header>
+
+        <main>
+            <section class="isl-section" aria-labelledby="tracks-title">
+                <div class="isl-wrap">
+                    <div class="isl-section-head">
+                        <p class="isl-kicker">{{ _('Inside the practice') }}</p>
+                        <h1 id="tracks-title" class="isl-tracks-h">{{ _('One practice.') }} <span class="isl-hl">{{ _('Several ways to prove it.') }}</span></h1>
+                        <p>
+                            {{ _('Everyone shares the Intent Solutions house core — systems thinking, agentic delivery, evaluation, governance, production operations, peer review. From there, members pursue role-shaped practice. Credentials are optional proof paths within the tracks, not the membership itself.') }}
+                        </p>
+                    </div>
+
+                    <div class="isl-tracks-list">
+                        <article class="isl-track">
+                            <h3>{{ _('Production architecture') }}</h3>
+                            <p>{{ _('System design, risk judgment, and technical decision-making under constraints. Members practice architecture patterns, postmortems, governance frameworks, and cost/reliability tradeoffs.') }}</p>
+                        </article>
+                        <article class="isl-track">
+                            <h3>{{ _('Agent building & orchestration') }}</h3>
+                            <p>{{ _('Tools, context, handoffs, and failure modes. Members build real agents, debug evals, and ship systems that fail gracefully beyond a single impressive prompt.') }}</p>
+                        </article>
+                        <article class="isl-track">
+                            <h3>{{ _('Evaluation & governance') }}</h3>
+                            <p>{{ _('Evidence, policy, auditability, and release confidence. Members design evals that separate demonstrated behavior from confident claims, and operate systems with clear ownership when the model is wrong.') }}</p>
+                        </article>
+                    </div>
+
+                    <div class="isl-tracks-notes">
+                        <p><strong>{{ _('All members begin with the shared house core, regardless of track.') }}</strong> {{ _('The house method travels with you.') }}</p>
+                        <p>{{ _('Proof paths can include credentials — shipping well remains a first-class path.') }}</p>
+                        <p>{{ _('Some members are invited onto client work that comes through Intent Solutions. That invitation is earned, not sold.') }}</p>
+                    </div>
+
+                    <div class="isl-cta-row">
+                        <a class="isl-btn isl-btn-primary" href="{{ url_for('request_access.request_access') }}">{{ _('Request access') }} <span aria-hidden="true">→</span></a>
+                        <a class="isl-btn isl-btn-secondary" href="/#practice">{{ _('See how the practice works') }}</a>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="isl-footer">
+            <div class="isl-wrap">
+                <div class="isl-footer-main">
+                    <div>
+                        <span class="fb"><img src="{{ S }}/logo-mark.png" alt="" width="22" height="22" /> {{ _('Intent Solutions Learn') }}</span>
+                        <p class="isl-footer-note">{{ _('A model-agnostic implementation practice built around judgment, evidence, and production standards.') }}</p>
+                    </div>
+                    <nav class="isl-legal" aria-label="{{ _('Legal') }}">
+                        <a href="https://intentsolutions.io/terms">{{ _('Terms of Service') }}</a>
+                        <a href="https://intentsolutions.io/privacy">{{ _('Privacy Policy') }}</a>
+                        <a href="https://intentsolutions.io/acceptable-use">{{ _('Acceptable Use') }}</a>
+                    </nav>
+                </div>
+                <div class="isl-footer-bottom">
+                    <span>{{ _('© Intent Solutions. All rights reserved.') }}</span>
+                    <a href="https://intentsolutions.io">{{ _('intentsolutions.io') }}</a>
+                </div>
+            </div>
+        </footer>
+    </body>
+</html>
+{% endif %}

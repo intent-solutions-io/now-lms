@@ -1,0 +1,129 @@
+# Intent Solutions deployment of NOW-LMS (learn.intentsolutions.io).
+#
+# INTERIM (until bmosoluciones/now-lms#179 + the Dockerfile lockfile fix merge upstream and
+# Quay republishes): the app image is built from THIS fork's source, which carries the
+# fresh-PostgreSQL bootstrap fix. Once upstream publishes a fixed image, replace the `build:`
+# block with `image: quay.io/bmosoluciones/now_lms@sha256:<new-digest>` — one-line swap.
+#
+# Secrets are injected from the environment (SOPS-decrypted at deploy time), never committed.
+# Required: LMS_SECRET_KEY (>=32 chars), LMS_DB_PASSWORD, LMS_ADMIN_USER, LMS_ADMIN_PSWD.
+
+name: now-lms
+
+services:
+  # One-shot: make the named volumes writable by the app's arbitrary UBI user (uid 1001, gid 0).
+  volinit:
+    image: alpine
+    command: sh -c "chown -R 1001:0 /data /themes && chmod -R g+w /data /themes"
+    volumes:
+      - nowlms-data:/data
+      - nowlms-themes:/themes
+    restart: "no"
+
+  # Sessions + view cache. One REDIS_URL below flips both: session_config.py picks
+  # Redis over the flask_sessions table, cache.py picks RedisCache over NullCache.
+  # appendonly + a named volume so a redis restart does NOT log every member out.
+  # Internal-only: no host port; only the app container can reach it.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    volumes:
+      - nowlms-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: nowlms
+      POSTGRES_PASSWORD: ${LMS_DB_PASSWORD:?set LMS_DB_PASSWORD}
+      POSTGRES_DB: nowlms
+    volumes:
+      - nowlms-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nowlms -d nowlms"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      args:
+        # Refuses to build without the commit SHA -- deploy via scripts/deploy-vps.sh,
+        # which sets it from the checkout. An image that cannot say which commit it is
+        # is how the July checkout/image/volume drift happened (fork issue #14).
+        BUILD_SHA: ${BUILD_SHA:?run the deploy via scripts/deploy-vps.sh, which sets BUILD_SHA}
+    image: now-lms:intent-bootfix   # tag the locally-built image so redeploys reuse it
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      volinit:
+        condition: service_completed_successfully
+    environment:
+      SECRET_KEY: ${LMS_SECRET_KEY:?set LMS_SECRET_KEY}
+      # bare postgresql:// crashes (psycopg2 not installed) — pg8000 is mandatory and explicit
+      DATABASE_URL: postgresql+pg8000://nowlms:${LMS_DB_PASSWORD}@db:5432/nowlms
+      ADMIN_USER: ${LMS_ADMIN_USER:?set LMS_ADMIN_USER}
+      ADMIN_PSWD: ${LMS_ADMIN_PSWD:?set LMS_ADMIN_PSWD}
+      NOW_LMS_DATA_DIR: /app/data
+      NOW_LMS_THEMES_DIR: /app/themes
+      NOW_LMS_LANG: en                # English UI (app defaults to Spanish)
+      # v2.0.0's in-container Caddy rewrites X-Forwarded-Proto to {scheme} (=http on
+      # the loopback hop from the HOST Caddy), so app-level FORCE_HTTPS 301-loops the
+      # whole site. The host edge terminates TLS and enforces the http->https redirect
+      # itself; the app must NOT second-guess it. Cookie security is unaffected
+      # (SESSION_COOKIE_SECURE keys off FLASK_ENV, below).
+      NOW_LMS_FORCE_HTTPS: "0"
+      NOW_LMS_TRUSTED_PROXY: "*"      # trust Caddy's X-Forwarded-* (app is loopback-bound; only Caddy reaches it)
+      # Sessions AND view cache in Redis (session_config.py + cache.py both key off
+      # this). Switching the session backend invalidates the old flask_sessions rows
+      # once — members re-login one time after this deploy.
+      REDIS_URL: redis://redis:6379/0
+      WSGI_SERVER: waitress          # single-process; Redis-backed sessions clear the multi-worker path when we scale
+      FLASK_ENV: production          # flips SESSION_COOKIE_SECURE on (session_config.py keys off this)
+      # Optional: best-effort Slack ping for /request-access submissions. The
+      # :- default means a deploy never fails on a notification var; unset just
+      # logs a warning and the DB row remains the source of truth.
+      SLACK_WEBHOOK_LEADS_CONTACT: ${SLACK_WEBHOOK_LEADS_CONTACT:-}
+
+      # MXroute SMTP. now_lms/mail.py only sets mail_configured=True when
+      # MAIL_SERVER, MAIL_PORT, MAIL_USERNAME and MAIL_PASSWORD are ALL present,
+      # so password-reset mail stays off until every one is set. There is no
+      # env_file here, so each var must be listed explicitly to reach the app.
+      MAIL_SERVER: ${LMS_MAIL_SERVER:-}
+      MAIL_PORT: ${LMS_MAIL_PORT:-}
+      MAIL_USERNAME: ${LMS_MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${LMS_MAIL_PASSWORD:-}
+      MAIL_USE_TLS: ${LMS_MAIL_USE_TLS:-False}
+      MAIL_USE_SSL: ${LMS_MAIL_USE_SSL:-False}
+      MAIL_DEFAULT_SENDER: ${LMS_MAIL_DEFAULT_SENDER:-}
+    volumes:
+      - nowlms-data:/app/data
+      - nowlms-themes:/app/themes
+    ports:
+      - "127.0.0.1:8080:8080"        # Caddy reverse_proxy target; never public-bound
+    healthcheck:
+      # Send X-Forwarded-Proto: https (as Caddy does) so NOW_LMS_FORCE_HTTPS does not
+      # 301-redirect the probe to https://localhost/ — urllib follows that redirect into a
+      # hang, tripping the timeout and flapping the container unhealthy despite a live app.
+      # timeout=5 caps any future redirect/stall well under the healthcheck timeout below.
+      test: ["CMD-SHELL", "python3.12 -c \"import urllib.request,sys; req=urllib.request.Request('http://127.0.0.1:8080/health', headers={'X-Forwarded-Proto': 'https'}); sys.exit(0 if urllib.request.urlopen(req, timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  nowlms-pgdata:
+  nowlms-data:
+  nowlms-themes:
+  nowlms-redis:

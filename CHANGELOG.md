@@ -9,6 +9,167 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### Security:
+ - Apply the course gate to the remaining resource routes that still branched on the
+   resource's own `publico` flag: `pagina_recurso_alternativo`, `external_code`, and the
+   meet calendar routes (`/calendar.ics`, `/google-calendar`, `/outlook-calendar`) now
+   route through `_resource_is_viewable()`. `pagina_recurso_alternativo` additionally
+   filters on `CursoRecurso.curso == curso_id` so a resource can no longer be rendered in
+   the context of an unrelated course. Backported from upstream `c9e674f`.
+ - Return `404` from `external_code` when the resource id does not exist under the
+   supplied course, instead of dereferencing `None` inside `_resource_is_viewable()` and
+   raising a `500` (the sibling `pdf_viewer` route already had this guard). Backported
+   from upstream `d1a7000`.
+ - Return `404` from `recurso_file` when the resource id does not exist under the supplied
+   course, or when its upload set is unconfigured. The route has no `@login_required` and
+   dereferenced `doc.base_doc_url` before the auth branch, so an anonymous request for an
+   unknown id raised a `500` while a known id redirected to the login page — an
+   unauthenticated oracle for which resource ids exist. Backported from upstream
+   `e81684f`.
+
+### Fixed:
+ - **Free-course access**: `verifica_estudiante_asignado_a_curso` required a completed
+   payment record even on free courses, so every bulk-provisioned member was locked out
+   of their courses while the page still rendered 200 with an Enroll button. Offered
+   upstream as [#227](https://github.com/bmosoluciones/now-lms/pull/227).
+ - **View-cache keys** now include user identity instead of only an auth/anon flag —
+   required before running a real cache backend. Offered upstream (U10 queue).
+ - Compose: app-level `NOW_LMS_FORCE_HTTPS` disabled, because v2.0.0's in-container
+   Caddy rewrites `X-Forwarded-Proto` and the app then 301-loops every request.
+ - Compose: restored `NOW_LMS_LANG=en` and `NOW_LMS_TRUSTED_PROXY`, dropped by the
+   sync rebuild.
+
+### Added:
+ - **Redis** for sessions and the view cache (`REDIS_URL`), appendonly + named volume.
+ - **Browser E2E layer** (`e2e/`, Playwright): boots the real app and walks the member
+   journey — login → course → lesson — plus the anonymous gating boundary. Pins the
+   free-course access regression above.
+ - `ops/lms/` — the LMS provisioning and progress-digest tooling now lives in this repo,
+   with reactivation made opt-in and reversible, rollback covering all user paths, and
+   the digest covering the whole cohort rather than only `tipo='student'`.
+
+### Changed:
+ - Deploy-line CI: the **PostgreSQL suite and the browser E2E job now block** (they were
+   advisory pending the v2.0.0 sync, which has landed). A green deploy-line PR now
+   proves lint + tests + the member browser journey.
+
+### Operational (no code change):
+ - 2026-07-29: upstream **v2.0.0 sync landed on production** (PR #41), rehearsed against
+   a post-provisioning snapshot; public history rewritten to purge curriculum and member
+   PII. Eight patches sent upstream. Full record:
+   `000-docs/013-OD-AACR-v2-sync-landing-and-upstream-queue-2026-07-29.md`.
+ - 2026-07-28: founding-members beta provisioned on production from the intent-os estate
+   session — 50 users (6 admin / 44 student), 49 enrollments each in `IS-START` +
+   `CCA-F`, progress rows seeded, weekly digest cron live. Constraints + full record:
+   `000-docs/012-OD-AACR-founding-members-provisioned-on-prod-2026-07-28.md`.
+
+## [2.0.0] - 2026-07-26
+
+> **BREAKING: This release requires manual migration. Existing installations will fail at runtime if themes are not updated. See [Migration Guide](https://bmosoluciones.github.io/now-lms/blog/2026/07/26/page-refactoring-breaking-changes/).**
+
+### Added:
+ - Admin-managed custom pages with full CRUD (create, edit, activate/deactivate, delete).
+ - Direct access to custom pages from admin panel tools.
+ - Theme validation via `theme.yml` presence.
+ - Theme overrides for `course_take`, `resource_list`, `resource_view`.
+ - Contact form and footer links as separate blueprints.
+ - Alembic migration to rename `static_pages` table to `custom_pages`.
+ - Documentation for custom pages and static pages.
+ - Comprehensive tests for custom pages, contact, and footer links.
+
+### Breaking Changes — Database:
+ - DB table `static_pages` renamed to `custom_pages`.
+ - Alembic migration renames the table only — does **not** update templates, URLs, or custom themes.
+ - `StaticPage` model renamed to `CustomPage`.
+
+### Breaking Changes — Routes:
+ - Admin-managed pages: `/static/<slug>` → `/page/<slug>`.
+ - Theme-defined pages: new route `/static/<page>`.
+ - Contact endpoint: `static_pages.contact` → `contact.contact_form`.
+
+### Breaking Changes — Python API:
+ - `get_footer_pages()` → `get_custom_pages()`.
+ - `StaticPageFooterForm` → `CustomPageFooterForm`.
+ - Blueprint `static_pages` split into `custom_pages`, `contact`, `footer_links`.
+
+### Breaking Changes — Templates:
+ - `admin/static_pages.html` → `admin/custom_pages.html`.
+ - `admin/edit_static_page.html` → `admin/edit_custom_page.html`.
+ - `page_info/static_page.html` → `page_info/custom_page.html`.
+
+### Breaking Changes — Theme directories:
+ - `templates/themes/<theme>/custom_pages/` → `templates/themes/<theme>/static_pages/`.
+ - Every theme footer/navbar must update: `get_footer_pages()` → `get_custom_pages()`, `static_pages.view_page` → `custom_pages.view_page`, `static_pages.contact` → `contact.contact_form`.
+ - Old themes using previous function names or endpoints will fail at runtime (Jinja `UndefinedError`/`BuildError`).
+
+### Migration:
+ 1. Put the application in maintenance mode.
+ 2. Back up both databases and all theme directories.
+ 3. Run `flask db upgrade` (or `alembic upgrade head`).
+ 4. Rename theme `custom_pages/` directories to `static_pages/`.
+ 5. Update theme footer/navbar templates for new endpoints and helpers.
+ 6. Clear application and Redis caches.
+ 7. Restart application services.
+ 8. Verify: home, navbar, footer, `/page/<slug>`, `/static/<page>`, `/contact`, blog, courses, admin custom-page CRUD.
+ - Check logs for `BuildError`, `UndefinedError`, migration errors, missing-template errors.
+
+### Changed:
+ - Renamed inverted nomenclature: DB-driven admin pages are now `custom_pages`, filesystem theme templates are now `static_pages`.
+
+### Fixed:
+ - Custom pages now work correctly with default theme.
+ - Theme macro fallback works for all macros in `current_theme()`.
+ - Theme defaults to `now_lms` when NULL.
+
+## [1.3.3] - 2026-07-25
+
+### Fixed:
+ - Rate-limit counters `ResponseError: value is not an integer or out of range` in Redis. `cache.cache.inc()` sent pickled byte-strings to Redis INCR which expects plain integers. Now uses Redis native `INCR` via `cache_incr()` for atomic counter increments, with get+set fallback for non-Redis backends.
+
+## [1.3.2] - 2026-07-25
+
+### Fixed:
+ - Rate-limit counter `AttributeError: 'Cache' object has no attribute 'inc'` in login and public API endpoints. Flask-Caching 2.4.0 does not expose `inc()` on its `Cache` wrapper; now accesses the underlying cachelib backend via `cache.cache.inc()`.
+
+## [1.3.1] - 2026-07-25
+
+### Added:
+ - Direct role access links to admin panel: new 'Acceso a Roles' card with direct links to Instructor and Moderator panels.
+
+### Fixed:
+ - Correct blueprint name in `url_for` for `nuevo_recurso_html` endpoint (was using 'course' instead of 'resources').
+ - Handle both `r` and `csrf_seed` columns in database migration.
+
+## [1.3.0] - 2026-07-25
+
+### Added:
+ - Payment receipt generation: automatically sends a beautiful HTML receipt via email when PayPal payments are completed (if SMTP is configured).
+ - Student payment history: a new `/payments` dashboard where students can view their transaction history, and download a simple PDF copy of their receipt using Weasyprint.
+ - i18n and l10n improvements: wrapped untranslated strings in `gettext()` across all views and templates, completed missing EN/PT_BR translations.
+ - Comprehensive form testing suite (`tests/test_forms_comprehensive.py`).
+ - Alembic migration validation test (`tests/test_alembic_upgrade.py`).
+ - `pool_pre_ping` enabled on SQLAlchemy engine options.
+ - `invalidar_cache_curso()` and `invalidar_cache_programa()` functions for targeted cache invalidation.
+
+### Changed:
+ - `mysql-connector-python` is now the recommended driver for MySQL/MariaDB connections (`DATABASE_URL` with `mysql://` is corrected to `mysql+mysqlconnector://`).
+ - Test suite: pytest fixtures now create an isolated Flask application per test for multi-database stability.
+ - Increased Programa.nombre column length from 20 to 150.
+ - Increased Style.theme column length from 15 to 40.
+ - Renamed Configuracion.r column to csrf_seed.
+ - Universal cache invalidation for courses and programs on mutations.
+ - Prevent caching of authenticated routes with CSRF protection.
+ - Black formatting applied to recently modified files.
+
+### Fixed:
+ - Apply the database URL driver correction also when `DATABASE_URL` is overridden via environment variable in the application factory.
+ - Fixed foreign key violation when creating certificate templates: the `usuario` field now correctly stores the username instead of the user ULID.
+ - Fixed several tests that assigned the user ULID to foreign keys that reference `usuario.usuario` (username).
+ - Fixed WTForms validation flow replacing `form.validate_on_submit() or request.method == "POST"` with strict `form.validate_on_submit()` in course, section, resource and program forms.
+ - Fixed MasterClassForm template validation bypass when template ID was empty due to WTForms Optional validator.
+ - Fixed Pago.monto precision/scale to prevent MySQL rounding (Numeric(10,2)).
+ - Fixed certificate foreign key storing username in Certificado.usuario, Certificacion.usuario, ProgramaEstudiante.usuario and BlogPost.author_id.
+
 ## [1.2.4] - 2026-05-12
 
 ### Changed:

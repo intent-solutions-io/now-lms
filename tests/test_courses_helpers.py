@@ -67,6 +67,29 @@ def test_get_course_library_path_structure():
     assert p.replace("\\", "/").endswith("files/curso123/library")
 
 
+def test_get_course_library_path_rejects_traversal_codes():
+    """Ningún código de curso puede escapar ni reubicar el directorio de biblioteca."""
+    import pytest
+
+    # Separadores de ruta y secuencias ".." deben rechazarse, no sanearse en silencio.
+    for malicious in ("..", "../..", "a/../..", "a\\..\\..", "foo..bar", "", "."):
+        with pytest.raises(ValueError):
+            get_course_library_path(malicious)
+
+
+def test_validate_course_code_rejects_dot_dot():
+    """`..` cumple el patrón de caracteres permitidos, pero debe rechazarse igualmente."""
+    import pytest
+
+    from now_lms.vistas.courses.helpers import _validate_course_code
+
+    _validate_course_code("curso-123")  # caso válido, no debe lanzar
+
+    for malicious in ("..", "foo..bar", "..foo"):
+        with pytest.raises(ValueError):
+            _validate_course_code(malicious)
+
+
 def test_ensure_course_library_directory_creates(tmp_path, monkeypatch):
     # Redefinir la constante usada en helpers directamente para evitar reload
     import now_lms.vistas.courses.helpers as helpers_mod
@@ -100,11 +123,44 @@ def test_get_course_evaluations_and_attempts_empty(db_session):
 
 
 def test_get_user_resource_progress(db_session):
-    from now_lms.db import CursoRecursoAvance
+    from now_lms.auth import proteger_passwd
+    from now_lms.db import Curso, CursoRecurso, CursoRecursoAvance, CursoSeccion, Usuario
 
-    avance = CursoRecursoAvance(curso="curso1", recurso="1", usuario="user1", completado=True, requerido="required")
+    usuario = Usuario(
+        usuario="user1",
+        acceso=proteger_passwd("pass"),
+        nombre="User",
+        correo_electronico="user1@example.com",
+        tipo="student",
+        activo=True,
+    )
+    curso = Curso(
+        codigo="curso1",
+        nombre="Curso 1",
+        descripcion_corta="curso",
+        descripcion="curso",
+        estado="open",
+    )
+    db_session.add_all([usuario, curso])
+    db_session.commit()
+
+    seccion = CursoSeccion(curso="curso1", nombre="Seccion 1", descripcion="seccion", indice=1)
+    db_session.add(seccion)
+    db_session.commit()
+
+    recurso = CursoRecurso(
+        seccion=seccion.id,
+        curso="curso1",
+        nombre="Recurso 1",
+        descripcion="recurso",
+        tipo="text",
+    )
+    db_session.add(recurso)
+    db_session.commit()
+
+    avance = CursoRecursoAvance(curso="curso1", recurso=recurso.id, usuario="user1", completado=True, requerido="required")
     db_session.add(avance)
     db_session.commit()
 
     progress = _get_user_resource_progress("curso1", "user1")
-    assert progress.get("1", {}).get("completado") is True
+    assert progress.get(recurso.id, {}).get("completado") is True

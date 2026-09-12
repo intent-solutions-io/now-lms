@@ -74,19 +74,20 @@ from now_lms.forms import (
 from now_lms.i18n import _
 from now_lms.logs import log
 from now_lms.misc import CURSO_NIVEL, TIPOS_RECURSOS
+from now_lms.cache import invalidar_cache_curso, invalidate_user_course_view_cache
 from now_lms.themes import get_course_list_template, get_course_view_template
 from now_lms.vistas.courses.helpers import markdown2html, _crear_indice_avance_curso
 
 # ---------------------------------------------------------------------------------------
 # Gestión de cursos.
 # ---------------------------------------------------------------------------------------
-RECURSO_AGREGADO = "Recurso agregado correctamente al curso."
-ERROR_AL_AGREGAR_CURSO = "Hubo en error al crear el recurso."
+RECURSO_AGREGADO = _("Recurso agregado correctamente al curso.")
+ERROR_AL_AGREGAR_CURSO = _("Hubo en error al crear el recurso.")
 
 VISTA_CURSOS = "course.curso"
 VISTA_ADMINISTRAR_CURSO = "course.administrar_curso"
 COULD_NOT_UPDATE_PROFILE_PHOTO = "Could not update profile photo."
-NO_AUTORIZADO_MSG = "No se encuentra autorizado a acceder al recurso solicitado."
+NO_AUTORIZADO_MSG = _("No se encuentra autorizado a acceder al recurso solicitado.")
 
 # ---------------------------------------------------------------------------------------
 # Template constants
@@ -124,22 +125,38 @@ def _check_course_access(_curso, course_code: str) -> tuple[bool, bool]:
     if current_user.is_authenticated and request.args.get("inspect"):
         if current_user.tipo == "admin":
             return True, True
-        docente = database.session.execute(
-            database.select(DocenteCurso).filter(
-                DocenteCurso.curso == course_code, DocenteCurso.usuario == current_user.usuario
+        docente = (
+            database.session.execute(
+                database.select(DocenteCurso).filter(
+                    DocenteCurso.curso == course_code, DocenteCurso.usuario == current_user.usuario
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         return bool(docente), bool(docente)
 
     if current_user.is_authenticated:
-        enrollment = database.session.execute(
-            database.select(EstudianteCurso).filter_by(
-                curso=course_code, usuario=current_user.usuario, vigente=True
+        enrollment = (
+            database.session.execute(
+                database.select(EstudianteCurso).filter_by(curso=course_code, usuario=current_user.usuario, vigente=True)
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if enrollment:
             return True, False
-        return (True, False) if enrollment else _public_course_access(_curso)
+        # Ruling on fork issue #52's gating inconsistency (2026-08-02): a
+        # signed-in member may PREVIEW any open course. The take page already
+        # renders its locked outline to every student, so denying the summary
+        # made the deeper page more permissive than the shallower one — and
+        # left members no way to discover the courses they are invited to
+        # enroll in. `publico` keeps governing the anonymous world (gated
+        # courses 302 to the intake), drafts stay hidden, and content remains
+        # gated per resource.
+        if _curso and _curso.estado == "open":
+            return True, False
+        return _public_course_access(_curso)
 
     return _public_course_access(_curso)
 
@@ -212,9 +229,7 @@ def _update_course_fields(curso_a_editar, form) -> None:
     curso_a_editar.duracion = form.duracion.data
     curso_a_editar.publico = form.publico.data
     curso_a_editar.modalidad = form.modalidad.data
-    curso_a_editar.foro_habilitado = (
-        False if form.modalidad.data == "self_paced" else form.foro_habilitado.data
-    )
+    curso_a_editar.foro_habilitado = False if form.modalidad.data == "self_paced" else form.foro_habilitado.data
     curso_a_editar.limitado = form.limitado.data
     curso_a_editar.capacidad = form.capacidad.data
     curso_a_editar.fecha_inicio = form.fecha_inicio.data
@@ -274,7 +289,7 @@ course = Blueprint("course", __name__, template_folder=DIRECTORIO_PLANTILLAS)
 
 @course.route("/course/<course_code>/view", methods=["GET"])
 @cache.cached(key_prefix=cache_key_with_auth_state)  # type: ignore[arg-type]
-def curso(course_code: str) -> str:
+def curso(course_code: str) -> str | Response:
     """Pagina principal del curso."""
     _curso = database.session.execute(database.select(Curso).filter_by(codigo=course_code)).scalar_one_or_none()
     acceso, editable = _check_course_access(_curso, course_code)
@@ -304,6 +319,10 @@ def curso(course_code: str) -> str:
             markdown2html=markdown2html,
         )
 
+    if not current_user.is_authenticated:
+        # Courses are gated: an anonymous visitor holding a course link is the
+        # one most primed to convert, so land them on the intake, not a 403.
+        return redirect(url_for("request_access.request_access"))
     abort(403)
 
 
@@ -393,10 +412,11 @@ def nuevo_curso() -> str | Response:
         asignar_curso_a_instructor(form.codigo.data, usuario_id=current_user.usuario)
         _save_course_logo(nuevo_curso_)
         database.session.commit()
-        flash("Curso creado exitosamente.", "success")
+        invalidar_cache_curso(form.codigo.data)
+        flash(_("Curso creado exitosamente."), "success")
         return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=form.codigo.data))
     except OperationalError:
-        flash("Hubo en error al crear su curso.", "warning")
+        flash(_("Hubo en error al crear su curso."), "warning")
         return redirect("/instructor")
 
 
@@ -422,13 +442,16 @@ def editar_curso(course_code: str) -> str | Response:
                 _update_course_taxonomy(course_code, form.codigo.data, form)
             database.session.commit()
             _save_course_logo(curso_a_editar)
-            flash("Curso actualizado exitosamente.", "success")
+            invalidar_cache_curso(course_code)
+            if course_code != form.codigo.data:
+                invalidar_cache_curso(form.codigo.data)
+            flash(_("Curso actualizado exitosamente."), "success")
             return redirect(curso_url)
         except OperationalError:
-            flash("Hubo en error al actualizar el curso.", "warning")
+            flash(_("Hubo en error al actualizar el curso."), "warning")
             return redirect(curso_url)
     elif request.method == "POST" and form.errors:
-        flash("El formulario tiene errores. Revisa los campos marcados.", "warning")
+        flash(_("El formulario tiene errores. Revisa los campos marcados."), "warning")
 
     if request.method == "GET":
         _populate_edit_form(form, curso_a_editar, course_code)
@@ -459,10 +482,11 @@ def nuevo_seccion(course_code: str) -> str | Response:
             nueva_seccion.creado_por = current_user.usuario
             database.session.add(nueva_seccion)
             database.session.commit()
-            flash("Sección agregada correctamente al curso.", "success")
+            invalidar_cache_curso(course_code)
+            flash(_("Sección agregada correctamente al curso."), "success")
             return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
         except OperationalError:
-            flash("Hubo en error al crear la seccion.", "warning")
+            flash(_("Hubo en error al crear la seccion."), "warning")
             return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
     else:
         return render_template("learning/nuevo_seccion.html", form=form)
@@ -486,10 +510,11 @@ def editar_seccion(course_code: str, seccion: str) -> str | Response:
             seccion_a_editar.modificado = datetime.now(timezone.utc)
             seccion_a_editar.modificado_por = current_user.usuario
             database.session.commit()
-            flash("Sección modificada correctamente.", "success")
+            invalidar_cache_curso(course_code)
+            flash(_("Sección modificada correctamente."), "success")
             return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
         except OperationalError:
-            flash("Hubo en error al actualizar la seccion.", "warning")
+            flash(_("Hubo en error al actualizar la seccion."), "warning")
             return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
     else:
         return render_template("learning/editar_seccion.html", form=form, seccion=seccion_a_editar)
@@ -620,7 +645,7 @@ def _persist_admin_enrollment(course_code: str, curso, student, bypass_payment: 
         estado="completed",
         metodo="admin_enrollment",
         monto=0 if bypass_payment else curso.precio,
-        descripcion=f"Inscripción administrativa por {current_user.usuario}",
+        descripcion=_("Inscripción administrativa por %(user)s", user=current_user.usuario),
         audit=not bypass_payment and curso.pagado,
         nombre=student.nombre,
         apellido=student.apellido,
@@ -629,7 +654,7 @@ def _persist_admin_enrollment(course_code: str, curso, student, bypass_payment: 
         creado_por=current_user.usuario,
     )
     if notes:
-        pago.descripcion += f" - Notas: {notes}"
+        pago.descripcion += _(" - Notas: %(notes)s", notes=notes)
     database.session.add(pago)
     database.session.flush()
     enrollment = EstudianteCurso(
@@ -643,6 +668,7 @@ def _persist_admin_enrollment(course_code: str, curso, student, bypass_payment: 
     database.session.add(enrollment)
     database.session.commit()
     _crear_indice_avance_curso(course_code)
+    invalidate_user_course_view_cache(student.usuario, course_code)
     create_events_for_student_enrollment(student.usuario, course_code)
 
 
@@ -662,21 +688,21 @@ def admin_course_enrollment(course_code: str) -> str | Response:
         notes = form.notes.data.strip() if form.notes.data else ""
         usuario_existe, existing_enrollment = _enrollment_student(course_code, student_username)
         if not usuario_existe:
-            flash(f"El usuario '{student_username}' no existe en el sistema.", "error")
+            flash(_("El usuario '{}' no existe en el sistema.").format(student_username), "error")
             return render_template(TEMPLATE_ADMIN_ENROLL, curso=_curso, form=form)
         if existing_enrollment:
-            flash(f"El estudiante '{student_username}' ya está inscrito en este curso.", "warning")
+            flash(_("El estudiante '{}' ya está inscrito en este curso.").format(student_username), "warning")
             return render_template(TEMPLATE_ADMIN_ENROLL, curso=_curso, form=form)
 
         try:
             _persist_admin_enrollment(course_code, _curso, usuario_existe, bypass_payment, notes)
 
-            flash(f"Estudiante '{student_username}' inscrito exitosamente en el curso '{_curso.nombre}'.", "success")
+            flash(_("Estudiante '{}' inscrito exitosamente en el curso '{}'.").format(student_username, _curso.nombre), "success")
             return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
 
         except Exception as e:
             database.session.rollback()
-            flash(f"Error al inscribir al estudiante: {str(e)}", "error")
+            flash(_("Error al inscribir al estudiante: {}").format(str(e)), "error")
 
     return render_template(TEMPLATE_ADMIN_ENROLL, curso=_curso, form=form)
 
@@ -737,7 +763,7 @@ def admin_course_unenrollment(course_code: str, student_username: str) -> Respon
     ).scalar_one_or_none()
 
     if not enrollment:
-        flash(f"El estudiante '{student_username}' no está inscrito en este curso.", "error")
+        flash(_("El estudiante '{}' no está inscrito en este curso.").format(student_username), "error")
         return redirect(url_for("course.admin_course_enrollments", course_code=course_code))
 
     try:
@@ -746,12 +772,13 @@ def admin_course_unenrollment(course_code: str, student_username: str) -> Respon
         enrollment.modificado = datetime.now(timezone.utc).date()
         enrollment.modificado_por = current_user.usuario
         database.session.commit()
+        invalidate_user_course_view_cache(student_username, course_code)
 
-        flash(f"Estudiante '{student_username}' desinscrito del curso exitosamente.", "success")
+        flash(_("Estudiante '{}' desinscrito del curso exitosamente.").format(student_username), "success")
 
     except Exception as e:
         database.session.rollback()
-        flash(f"Error al desinscribir al estudiante: {str(e)}", "error")
+        flash(_("Error al desinscribir al estudiante: {}").format(str(e)), "error")
 
     return redirect(url_for("course.admin_course_enrollments", course_code=course_code))
 

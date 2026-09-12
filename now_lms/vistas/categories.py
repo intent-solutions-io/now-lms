@@ -25,6 +25,8 @@ from now_lms.config import DIRECTORIO_PLANTILLAS
 from now_lms.db import MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA, Categoria, database
 from now_lms.db.tools import cursos_por_categoria, programas_por_categoria
 from now_lms.forms import CategoriaForm
+from now_lms.i18n import _
+from now_lms.vistas._helpers import safe_commit
 
 # ---------------------------------------------------------------------------------------
 # Standard library
@@ -55,9 +57,9 @@ def new_category() -> str | Response:
         database.session.add(categoria)
         try:
             database.session.commit()
-            flash("Nueva categoria creada.", "success")
+            flash(_("Nueva categoria creada."), "success")
         except OperationalError:
-            flash("Hubo un error al crear la categoria.", "warning")
+            flash(_("Hubo un error al crear la categoria."), "warning")
         return redirect(url_for(ROUTE_CATEGORY_CATEGORIES))
 
     return render_template("learning/categorias/nueva_categoria.html", form=form)
@@ -90,7 +92,7 @@ def delete_category(ulid: str) -> Response:
     from sqlalchemy import delete
 
     database.session.execute(delete(Categoria).where(Categoria.id == ulid))
-    database.session.commit()
+    safe_commit()
     return redirect(url_for(ROUTE_CATEGORY_CATEGORIES))
 
 
@@ -99,7 +101,11 @@ def delete_category(ulid: str) -> Response:
 @perfil_requerido("instructor")
 def edit_category(ulid: str) -> str | Response:
     """Editar categoria."""
+    from flask import abort
+
     categoria = database.session.execute(database.select(Categoria).filter(Categoria.id == ulid)).scalar_one_or_none()
+    if not categoria:
+        abort(404)
     form = CategoriaForm(nombre=categoria.nombre, descripcion=categoria.descripcion)
     if form.validate_on_submit() or request.method == "POST":
         categoria.nombre = form.nombre.data
@@ -107,9 +113,9 @@ def edit_category(ulid: str) -> str | Response:
         try:
             database.session.add(categoria)
             database.session.commit()
-            flash("Categoria editada correctamente.", "success")
+            flash(_("Categoria editada correctamente."), "success")
         except OperationalError:
-            flash("No se puedo editar la categoria.", "warning")
+            flash(_("No se puedo editar la categoria."), "warning")
         return redirect(url_for(ROUTE_CATEGORY_CATEGORIES))
 
     return render_template("learning/categorias/editar_categoria.html", form=form)

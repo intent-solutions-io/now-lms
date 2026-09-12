@@ -30,7 +30,8 @@ from flask_login import current_user
 # ---------------------------------------------------------------------------------------
 # Local resources
 # ---------------------------------------------------------------------------------------
-from now_lms.db import Configuracion, MailConfig, Usuario, database
+from now_lms.db import Configuracion, Usuario, database
+from now_lms.i18n import _
 from now_lms.logs import log
 
 ph = PasswordHasher()
@@ -114,7 +115,7 @@ def perfil_requerido(perfil_id: str | tuple[str, ...]) -> Callable[[Callable], C
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             if not current_user.is_authenticated:
-                flash("Favor iniciar sesión.", "warning")
+                flash(_("Favor iniciar sesión."), "warning")
                 return redirect(url_for("user.inicio_sesion"))
 
             log.trace(f"Verifying access for user {current_user.usuario} with profile {perfil_id}")
@@ -131,7 +132,7 @@ def perfil_requerido(perfil_id: str | tuple[str, ...]) -> Callable[[Callable], C
                 return func(*args, **kwargs)
 
             log.warning(f"Access denied for user {current_user.usuario} with profile {current_user.tipo}")
-            flash("No se encuentra autorizado a acceder al recurso solicitado.", "error")
+            flash(_("No se encuentra autorizado a acceder al recurso solicitado."), "error")
             return abort(403)
 
         return wrapper
@@ -153,7 +154,7 @@ def email_verificado_requerido(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         if not current_user.is_authenticated:
-            flash("Favor iniciar sesión.", "warning")
+            flash(_("Favor iniciar sesión."), "warning")
             return redirect(url_for("user.inicio_sesion"))
 
         # Admins bypass email verification requirement
@@ -163,8 +164,10 @@ def email_verificado_requerido(func: Callable) -> Callable:
         # Check if email verification is required
         if usuario_requiere_verificacion_email():
             flash(
-                "Debe verificar su correo electrónico para acceder a esta funcionalidad. "
-                "Revise su bandeja de entrada y confirme su dirección de correo.",
+                _(
+                    "Debe verificar su correo electrónico para acceder a esta funcionalidad. "
+                    "Revise su bandeja de entrada y confirme su dirección de correo."
+                ),
                 "warning",
             )
             return redirect(url_for("user_profile.usuario", id_usuario=current_user.usuario))
@@ -188,7 +191,7 @@ def proteger_secreto(password: str) -> bytes:
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=config.r,
+            salt=config.csrf_seed,
             iterations=480_000,  # Python 3.6+ - Numeric literal underscores for readability
         )
         key = base64.urlsafe_b64encode(kdf.derive(current_app.config.get("SECRET_KEY").encode()))
@@ -207,7 +210,7 @@ def descifrar_secreto(hash_value: bytes) -> str | None:
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=config.r,
+            salt=config.csrf_seed,
             iterations=480_000,  # Python 3.6+ - Numeric literal underscores for readability
         )
         key = base64.urlsafe_b64encode(kdf.derive(current_app.config.get("SECRET_KEY").encode()))
@@ -272,17 +275,17 @@ def send_confirmation_email(user) -> None:
     """Send confirmation email to user."""
     from flask_mail import Message
 
-    from now_lms.mail import send_mail
+    from now_lms.mail import resolve_sender, send_mail
 
-    row = database.session.execute(database.select(MailConfig)).first()
-    if row is None:
-        return
-    config = row[0]
-
+    # Resolve the sender the same way send_mail resolves the server: environment
+    # first, database second. Reading the MailConfig row directly here asked a
+    # different question than the one that decides whether mail works, so an
+    # env-configured deployment with an empty row returned silently. No gate here:
+    # the send_mail call below passes no_config=True and owns that decision.
     msg = Message(
         subject="Email verification",
         recipients=[user.correo_electronico],
-        sender=((config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS"), config.MAIL_DEFAULT_SENDER),
+        sender=resolve_sender(),
     )
     token = generate_confirmation_token(user.correo_electronico)
     url = url_for("user.check_mail", token=token, _external=True)
@@ -307,8 +310,8 @@ def send_confirmation_email(user) -> None:
             msg,
             background=False,
             no_config=True,
-            _log="Correo de confirmación enviado",
-            _flush="Correo de confirmación enviado.",
+            _log=_("Correo de confirmación enviado"),
+            _flush=_("Correo de confirmación enviado."),
         )
         log.info(f"Confirmation email sent to user {user.usuario}")
     except Exception as e:  # noqa: E722
@@ -356,38 +359,35 @@ def send_password_reset_email(user) -> bool:
     """Send password reset email to user."""
     from flask_mail import Message
 
-    from now_lms.mail import send_mail
+    from now_lms.mail import resolve_sender, send_mail
 
-    row = database.session.execute(database.select(MailConfig)).first()
-    if row is None:
-        return False
-    config = row[0]
-
+    # See send_confirmation_email: the row read this replaced is what made
+    # password reset send nothing on an env-configured deployment.
     msg = Message(
-        subject="Recuperación de Contraseña - NOW LMS",
+        subject=_("Recuperación de Contraseña - NOW LMS"),
         recipients=[user.correo_electronico],
-        sender=((config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS"), config.MAIL_DEFAULT_SENDER),
+        sender=resolve_sender(),
     )
     token = generate_password_reset_token(user.correo_electronico)
     url = url_for("user.reset_password", token=token, _external=True)
     msg.html = f"""
     <div class="container">
         <div class="header">
-          <h1>Recuperación de Contraseña</h1>
+          <h1>{_("Recuperación de Contraseña")}</h1>
         </div>
         <div class="content">
-          <p>Hola {user.nombre},</p>
-          <p>Has solicitado recuperar tu contraseña. Haz clic en el siguiente enlace para establecer una nueva contraseña:</p>
+          <p>{_("Hola") + " " + user.nombre + ","}</p>
+          <p>{_("Has solicitado recuperar tu contraseña. Haz clic en el siguiente enlace para establecer una nueva contraseña:")}</p>
           <p>
-              <a href="{url}" style="background-color: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px;">Restablecer Contraseña</a>
+              <a href="{url}" style="background-color: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px;">{_("Restablecer Contraseña")}</a>
           </p>
-          <p>Si no puedes hacer clic en el botón, copia y pega la siguiente URL en tu navegador:</p>
+          <p>{_("Si no puedes hacer clic en el botón, copia y pega la siguiente URL en tu navegador:")}</p>
           <p>{url}</p>
-          <p>Este enlace expirará en 1 hora por seguridad.</p>
-          <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+          <p>{_("Este enlace expirará en 1 hora por seguridad.")}</p>
+          <p>{_("Si no solicitaste este cambio, puedes ignorar este correo.")}</p>
         </div>
         <div class="footer">
-          <p>Este es un mensaje automático. Por favor no respondas a este correo.</p>
+          <p>{_("Este es un mensaje automático. Por favor no respondas a este correo.")}</p>
         </div>
       </div>
     """
@@ -396,8 +396,8 @@ def send_password_reset_email(user) -> bool:
             msg,
             background=False,
             no_config=True,
-            _log="Correo de recuperación de contraseña enviado",
-            _flush="Correo de recuperación de contraseña enviado.",
+            _log=_("Correo de recuperación de contraseña enviado"),
+            _flush=_("Correo de recuperación de contraseña enviado."),
         )
         log.info(f"Recovery email sent to user {user.usuario}")
         return True

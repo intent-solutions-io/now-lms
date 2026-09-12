@@ -1,0 +1,35 @@
+{% macro headertags() -%}
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="{{ _('Practitioner AI-native software training from Intent Solutions.') }}" />
+<meta name="author" content="Intent Solutions" />
+
+<meta name="theme-color" content="#f97316" />
+<meta name="msapplication-TileColor" content="#18171b" />
+
+<!-- Intent Solutions mark (auto light/dark via prefers-color-scheme) -->
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='themes/intent_learn/favicon.svg') }}" />
+
+<!-- Bootstrap core CSS -->
+<link rel="stylesheet" href="{{ url_for('static', filename='node_modules/bootstrap/dist/css/bootstrap.min.css') }}" />
+<script src="{{ url_for('static', filename='node_modules/bootstrap/dist/js/bootstrap.bundle.min.js') }}"></script>
+
+<!-- Brand layer: maps the learn identity tokens onto Bootstrap's CSS variables so
+     authenticated stock pages keep the same identity as the front door (issue #38).
+     Must load AFTER bootstrap so the variable overrides win the cascade. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/brand.css') }}" />
+
+<!-- Bootstrap Font -->
+<link rel="stylesheet" href="{{ url_for('static', filename='node_modules/bootstrap-icons/font/bootstrap-icons.min.css') }}" />
+
+<!-- Favicons (fallback raster set, kept for platforms that ignore the SVG icon above).
+     These point at the theme's own directory, NOT static/icons/favicon/. That shared path
+     belongs to upstream and is referenced by every other bundled theme, so overwriting it
+     with Intent Solutions marks made cambridge/harvard/ocean/oxford/sakura/corporative and
+     the default now_lms theme render our favicon. Branding stays inside the theme. -->
+<link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='themes/intent_learn/favicon/apple-touch-icon.png') }}" />
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='themes/intent_learn/favicon/favicon-32x32.png') }}" />
+<link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='themes/intent_learn/favicon/favicon-16x16.png') }}" />
+<link rel="manifest" href="{{ url_for('static', filename='icons/favicon/site.webmanifest') }}" />
+
+{{ adsense_meta() | safe }} {{ adsense_code() | safe }} {%- endmacro %}

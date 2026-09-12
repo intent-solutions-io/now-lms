@@ -1,0 +1,528 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 - 2026 BMO Soluciones, S.A.
+
+"""End-to-end and contract tests for the access-request intake (/request-access).
+
+The intake stores to the native contact_messages table with the ``[ACCESS] ``
+subject discriminator, pings Slack best-effort, and defends itself (CSRF,
+honeypot, timed token, rate limit, length caps). The practice-tracks teaser
+tests live here too: both surfaces exist so the public site never leaks course
+or vendor names to anonymous visitors.
+"""
+
+import re
+from collections import deque
+from pathlib import Path
+
+import pytest
+from jinja2 import Environment
+
+import now_lms.vistas.request_access as ra_module
+from now_lms.auth import proteger_passwd
+from now_lms.db import ContactMessage, Curso, Style, Usuario, database
+
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+TEASER_PATH = Path("now_lms/templates/themes/intent_learn/overrides/course_list.j2")
+RA_TEMPLATE_PATH = Path("now_lms/templates/themes/intent_learn/pages/request_access.html")
+
+VALID_DATA = {
+    "name": "Ada Lovelace",
+    "email": "ada@example.com",
+    "links": "https://github.com/ada\nhttps://ada.dev",
+    "building": "An agentic ETL pipeline that keeps eating my error budget.",
+    "role_context": "Founder",
+    "source": "A post",
+    "website": "",
+}
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_buckets():
+    """The limiter is module state; isolate it between tests."""
+    ra_module._RATE_BUCKETS.clear()
+    ra_module._RATE_LAST_SWEEP = 0.0
+    yield
+    ra_module._RATE_BUCKETS.clear()
+    ra_module._RATE_LAST_SWEEP = 0.0
+
+
+@pytest.fixture()
+def fast_ok(monkeypatch):
+    """Disable the minimum-submit-time gate so happy-path POSTs store."""
+    monkeypatch.setattr(ra_module, "MIN_SUBMIT_SECONDS", 0)
+
+
+def _get_ts_token(client) -> str:
+    """Fetch the form and extract the signed issue-time token."""
+    page = client.get("/request-access").data.decode("utf-8")
+    match = re.search(r'name="ts"[^>]*value="([^"]+)"', page) or re.search(r'value="([^"]+)"[^>]*name="ts"', page)
+    assert match, "the request-access form did not render its ts token"
+    return match.group(1)
+
+
+def _post(client, ts_token, **overrides):
+    data = dict(VALID_DATA, ts=ts_token)
+    data.update(overrides)
+    return client.post("/request-access", data=data, follow_redirects=False)
+
+
+def _stored_rows(db_session):
+    return (
+        db_session.execute(database.select(ContactMessage).filter(ContactMessage.subject.like("[ACCESS] %"))).scalars().all()
+    )
+
+
+def _use_intent_learn_theme(db_session):
+    from now_lms.cache import cache
+
+    style = db_session.execute(database.select(Style)).scalar_one()
+    style.theme = "intent_learn"
+    db_session.commit()
+    cache.clear()
+
+
+# ---------------------------------------------------------------------------------------
+# The intake page
+# ---------------------------------------------------------------------------------------
+
+
+def test_request_access_renders_anonymously(client, db_session):
+    resp = client.get("/request-access")
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert "isl-ra-form" in body
+    assert "Request" in body and "Access" in body
+    # The locked copy: soft review promise + waiting-list line + privacy line.
+    assert "A person reads every request" in body
+    assert "waiting list" in body
+    assert "We store what you submit and use it only to review your request." in body
+    # Secondary mailto path keeps its literal @ (RFC 6068).
+    hrefs = re.findall(r'href="(mailto:[^"]*)"', body)
+    assert hrefs, "the secondary mailto path is missing"
+    for href in hrefs:
+        address = href[len("mailto:") :].split("?", 1)[0]
+        assert "@" in address and "%40" not in address
+    # No vendor or course names leak from the public door.
+    for leaked in ("Claude", "Anthropic", "CCA-"):
+        assert leaked not in body
+
+
+def test_post_stores_a_parseable_access_request(client, db_session, fast_ok):
+    resp = _post(client, _get_ts_token(client))
+    assert resp.status_code in REDIRECT_STATUS_CODES
+
+    rows = _stored_rows(db_session)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.subject == "[ACCESS] Ada Lovelace"
+    assert row.name == "Ada Lovelace"
+    assert row.email == "ada@example.com"
+    assert row.status == "not_seen"
+    # The labeled template stays parseable field by field.
+    assert "Links to work:\nhttps://github.com/ada\nhttps://ada.dev" in row.message
+    assert "What are you building / where do you want sharper judgment:" in row.message
+    assert "Current role or company:\nFounder" in row.message
+    assert "How they found us:\nA post" in row.message
+    assert "-- Submitted via /request-access" in row.message
+
+
+def test_post_confirmation_page_carries_the_locked_copy(client, db_session, fast_ok):
+    resp = _post(client, _get_ts_token(client))
+    confirm = client.get(resp.headers["Location"]).data.decode("utf-8")
+    assert "Got it" in confirm and "on the list" in confirm
+    assert "fit beats speed" in confirm
+
+
+def test_honeypot_drops_the_submission_silently(client, db_session, fast_ok):
+    resp = _post(client, _get_ts_token(client), website="https://spam.example")
+    # A bot sees success; nothing stores.
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert _stored_rows(db_session) == []
+
+
+def test_faster_than_human_submission_is_dropped(client, db_session):
+    # MIN_SUBMIT_SECONDS is live here: a token issued and posted immediately
+    # is bot-shaped, so it is silently dropped.
+    resp = _post(client, _get_ts_token(client))
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert _stored_rows(db_session) == []
+
+
+def test_garbage_ts_token_reprompts_without_storing(client, db_session, fast_ok):
+    resp = _post(client, "not-a-signed-token")
+    assert resp.status_code == 200
+    assert "expired" in resp.data.decode("utf-8")
+    assert _stored_rows(db_session) == []
+
+
+def test_missing_required_fields_do_not_store(client, db_session, fast_ok):
+    resp = _post(client, _get_ts_token(client), links="", building="")
+    assert resp.status_code == 200
+    assert _stored_rows(db_session) == []
+
+
+def test_invalid_email_does_not_store(client, db_session, fast_ok):
+    resp = _post(client, _get_ts_token(client), email="not-an-email")
+    assert resp.status_code == 200
+    assert _stored_rows(db_session) == []
+
+
+def test_csrf_is_enforced_when_enabled(app, db_session, fast_ok, monkeypatch):
+    # TESTING config disables CSRF, which would make a naive test vacuous.
+    # monkeypatch.setitem (not a bare assignment) so the flag RESTORES after
+    # this test: v2.0.0's conftest builds the function-scoped `app` on a
+    # session-scoped shared app, and a leaked WTF_CSRF_ENABLED=True made every
+    # later token-less POST in the process re-render as a 200 (found on the
+    # sync branch's first PG run).
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
+    client = app.test_client()
+
+    page = client.get("/request-access").data.decode("utf-8")
+    assert 'name="csrf_token"' in page, "the form must emit the CSRF token"
+
+    ts_match = re.search(r'name="ts"[^>]*value="([^"]+)"', page)
+    resp = client.post(
+        "/request-access",
+        data=dict(VALID_DATA, ts=ts_match.group(1) if ts_match else ""),
+        follow_redirects=False,
+    )
+    # Without the token the form must not validate, and nothing may store.
+    assert resp.status_code == 200
+    assert _stored_rows(db_session) == []
+
+    # With the token from the page, the same submission goes through.
+    csrf = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', page)
+    assert csrf
+    resp_ok = client.post(
+        "/request-access",
+        data=dict(VALID_DATA, ts=ts_match.group(1), csrf_token=csrf.group(1)),
+        follow_redirects=False,
+    )
+    assert resp_ok.status_code in REDIRECT_STATUS_CODES
+    assert len(_stored_rows(db_session)) == 1
+
+
+def test_rate_limit_returns_429_after_the_window_fills(client, db_session, fast_ok):
+    ts_token = _get_ts_token(client)
+    for _ in range(ra_module._RATE_LIMIT_POSTS):
+        resp = _post(client, ts_token)
+        assert resp.status_code in REDIRECT_STATUS_CODES
+    resp = _post(client, ts_token)
+    assert resp.status_code == 429
+    assert len(_stored_rows(db_session)) == ra_module._RATE_LIMIT_POSTS
+
+
+# --------------------------------------------------------------------------- #
+# Limiter bounding: the sweep interval and the hard cap.
+#
+# These exercise _rate_limited() directly rather than through HTTP, because the
+# behavior under test is what happens across THOUSANDS of distinct client IPs —
+# which is the abuse case, and is not reachable from a test client.
+# --------------------------------------------------------------------------- #
+
+
+def test_sweep_is_interval_gated_not_per_request(monkeypatch):
+    """A drained bucket survives until the sweep interval elapses.
+
+    The point of the interval is that the O(n) pass does NOT run on every
+    request; proving it is skipped is how we know the lock is not held for a
+    full walk each time.
+    """
+    clock = {"now": 1_000.0}
+    monkeypatch.setattr(ra_module, "time", lambda: clock["now"])
+    ra_module._RATE_LAST_SWEEP = clock["now"]
+
+    # A stale bucket from an IP that never returns.
+    ra_module._RATE_BUCKETS["10.0.0.9"] = deque([clock["now"] - ra_module._RATE_LIMIT_WINDOW - 10])
+
+    # Well inside the interval: the stale bucket must still be there.
+    clock["now"] += ra_module._RATE_SWEEP_INTERVAL / 2
+    ra_module._rate_limited("10.0.0.1")
+    assert "10.0.0.9" in ra_module._RATE_BUCKETS
+
+    # Past the interval: the same call now reaps it.
+    clock["now"] += ra_module._RATE_SWEEP_INTERVAL
+    ra_module._rate_limited("10.0.0.1")
+    assert "10.0.0.9" not in ra_module._RATE_BUCKETS
+
+
+def test_hard_cap_evicts_oldest_first_and_keeps_the_caller(monkeypatch):
+    """Past the cap, the oldest-touched buckets go and the caller's stays."""
+    clock = {"now": 5_000.0}
+    monkeypatch.setattr(ra_module, "time", lambda: clock["now"])
+    monkeypatch.setattr(ra_module, "_RATE_MAX_BUCKETS", 10)
+    ra_module._RATE_LAST_SWEEP = clock["now"]  # suppress the sweep; isolate the cap
+
+    # 12 live buckets (recent enough that the sweep would not drop them),
+    # each touched at a distinct, increasing time.
+    for index in range(12):
+        ra_module._RATE_BUCKETS[f"10.1.0.{index}"] = deque([clock["now"] - (12 - index)])
+    assert len(ra_module._RATE_BUCKETS) == 12
+
+    ra_module._rate_limited("10.9.9.9")
+
+    # Back within the cap, the caller is present, and the survivors are the
+    # most recently touched — eviction is oldest-first, not arbitrary.
+    assert len(ra_module._RATE_BUCKETS) <= ra_module._RATE_MAX_BUCKETS
+    assert "10.9.9.9" in ra_module._RATE_BUCKETS
+    assert "10.1.0.0" not in ra_module._RATE_BUCKETS  # oldest, evicted
+    assert "10.1.0.11" in ra_module._RATE_BUCKETS  # newest, kept
+
+
+def test_limit_still_enforced_for_a_single_ip_after_bounding(monkeypatch):
+    """Bounding must not weaken the actual limit for one client."""
+    clock = {"now": 9_000.0}
+    monkeypatch.setattr(ra_module, "time", lambda: clock["now"])
+
+    for _attempt in range(ra_module._RATE_LIMIT_POSTS):
+        assert ra_module._rate_limited("10.2.0.1") is False
+    assert ra_module._rate_limited("10.2.0.1") is True
+
+    # And the window still expires.
+    clock["now"] += ra_module._RATE_LIMIT_WINDOW + 1
+    assert ra_module._rate_limited("10.2.0.1") is False
+
+
+def test_crlf_is_stripped_from_header_shaped_fields(app, db_session):
+    with app.test_request_context("/request-access"):
+        form = ra_module.RequestAccessForm(
+            data=dict(VALID_DATA, name="Eve\r\nInjected", email="eve@example.com\r\nBcc: x"),
+            meta={"csrf": False},
+        )
+        ra_module._store_request(form)
+    row = _stored_rows(db_session)[0]
+    assert "\r" not in row.name and "\n" not in row.name
+    assert "\r" not in row.email and "\n" not in row.email
+
+
+def test_subject_truncates_to_the_column_limit(app, db_session):
+    with app.test_request_context("/request-access"):
+        form = ra_module.RequestAccessForm(
+            data=dict(VALID_DATA, name="N" * 400),
+            meta={"csrf": False},
+        )
+        ra_module._store_request(form)
+    row = _stored_rows(db_session)[0]
+    assert len(row.subject) <= ra_module.SUBJECT_MAX
+    assert len(row.name) <= ra_module.NAME_MAX
+    assert row.subject.startswith("[ACCESS] ")
+
+
+# ---------------------------------------------------------------------------------------
+# Slack ping (best-effort by contract)
+# ---------------------------------------------------------------------------------------
+
+
+def test_slack_ping_sends_name_but_never_email(client, db_session, fast_ok, monkeypatch):
+    sent = {}
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_urlopen(req, timeout=0):
+        sent["url"] = req.full_url
+        sent["body"] = req.data.decode("utf-8")
+        return _FakeResponse()
+
+    monkeypatch.setenv("SLACK_WEBHOOK_LEADS_CONTACT", "https://hooks.slack.example/T000/B000")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    resp = _post(client, _get_ts_token(client))
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert sent["url"] == "https://hooks.slack.example/T000/B000"
+    assert "Ada Lovelace" in sent["body"]
+    assert "ada@example.com" not in sent["body"], "the ping must not carry the applicant's email"
+    assert '"unfurl_links": false' in sent["body"]
+    # The admin link is a path, never a host-derived external URL: a crafted
+    # Host header on the public POST must not be able to poison the staff link.
+    assert "/admin/contact-messages" in sent["body"]
+    assert "localhost" not in sent["body"]
+
+
+def test_slack_failure_never_breaks_the_submission(client, db_session, fast_ok, monkeypatch):
+    def exploding_urlopen(*args, **kwargs):
+        raise OSError("slack is down")
+
+    monkeypatch.setenv("SLACK_WEBHOOK_LEADS_CONTACT", "https://hooks.slack.example/T000/B000")
+    monkeypatch.setattr("urllib.request.urlopen", exploding_urlopen)
+
+    resp = _post(client, _get_ts_token(client))
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert len(_stored_rows(db_session)) == 1
+
+
+def test_unset_webhook_env_still_stores(client, db_session, fast_ok, monkeypatch):
+    monkeypatch.delenv("SLACK_WEBHOOK_LEADS_CONTACT", raising=False)
+    resp = _post(client, _get_ts_token(client))
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert len(_stored_rows(db_session)) == 1
+
+
+# ---------------------------------------------------------------------------------------
+# Admin surface
+# ---------------------------------------------------------------------------------------
+
+
+def _login_admin(app, db_session):
+    admin = Usuario(
+        usuario="admin",
+        acceso=proteger_passwd("admin"),
+        nombre="Admin",
+        correo_electronico="admin@example.com",
+        tipo="admin",
+        activo=True,
+    )
+    db_session.add(admin)
+    db_session.commit()
+    client = app.test_client()
+    client.post("/user/login", data={"usuario": "admin", "acceso": "admin"}, follow_redirects=False)
+    return client
+
+
+def test_admin_list_filters_by_subject_and_shows_the_request(app, client, db_session, fast_ok):
+    resp = _post(client, _get_ts_token(client))
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    db_session.add(ContactMessage(name="Otro", email="o@example.com", subject="Unrelated", message="x", status="not_seen"))
+    db_session.commit()
+
+    admin_client = _login_admin(app, db_session)
+    listing = admin_client.get("/admin/contact-messages?q=[ACCESS]")
+    assert listing.status_code == 200
+    assert b"Ada Lovelace" in listing.data
+    assert b"Unrelated" not in listing.data
+
+    row = _stored_rows(db_session)[0]
+    detail = admin_client.get(f"/admin/contact-messages/{row.id}/view")
+    assert detail.status_code == 200
+    assert b"Links to work:" in detail.data
+
+
+# ---------------------------------------------------------------------------------------
+# The practice-tracks teaser (/course/explore) and gated courses
+# ---------------------------------------------------------------------------------------
+
+
+def test_explore_serves_the_teaser_to_anonymous_visitors(client, db_session):
+    _use_intent_learn_theme(db_session)
+    resp = client.get("/course/explore")
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert "isl-tracks-list" in body
+    assert "/request-access" in body
+    # Doctrine copy, including the founder-approved honesty sentence.
+    assert "One practice." in body
+    assert "That invitation is earned, not sold." in body
+    # Zero course cards, zero vendor names — even with public courses in the DB.
+    assert "isl-course-grid" not in body
+    for leaked in ("Claude", "Anthropic", "CCA-"):
+        assert leaked not in body
+
+
+def _signed_in(app, db_session, usuario: str, tipo: str):
+    """Create a user of ``tipo`` and return a client already logged in as them."""
+    db_session.add(
+        Usuario(
+            usuario=usuario,
+            acceso=proteger_passwd(usuario),
+            nombre=usuario.title(),
+            correo_electronico=f"{usuario}@example.com",
+            tipo=tipo,
+            activo=True,
+        )
+    )
+    db_session.commit()
+    client = app.test_client()
+    client.post("/user/login", data={"usuario": usuario, "acceso": usuario}, follow_redirects=False)
+    return client
+
+
+def test_explore_keeps_a_signed_in_member_inside_the_app(app, db_session):
+    """A member who clicks "Explore courses" must not land on the public front door.
+
+    The teaser is the prospect's page: marketing nav pointing at landing-page
+    anchors, the public footer, "Request access". Serving it to a member meant
+    every in-app explore link walked them out of the app.
+    """
+    _use_intent_learn_theme(db_session)
+    client = _signed_in(app, db_session, "student", "student")
+
+    resp = client.get("/course/explore")
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+
+    # None of the front door reaches a member.
+    assert "isl-tracks-list" not in body, "a signed-in member is being served the public teaser"
+    assert "Request access" not in body
+    assert "isl-footer" not in body
+    # The app shell does.
+    assert "navbar" in body
+    assert 'href="/my_courses"' in body, "the member view must offer their own courses"
+    assert "Courses here are assigned, not browsed." in body
+
+
+def test_explore_does_not_loop_a_moderator_back_to_itself(app, db_session):
+    """`my_courses` flashes and redirects every role it does not serve.
+
+    It handles student, instructor and admin; a moderator sent there bounces
+    straight back to /course/explore, which is the loop this page exists to
+    close. Moderators get the dashboard instead.
+    """
+    _use_intent_learn_theme(db_session)
+    client = _signed_in(app, db_session, "moderator", "moderator")
+
+    body = client.get("/course/explore").data.decode("utf-8")
+    assert "isl-tracks-list" not in body
+    assert 'href="/my_courses"' not in body, "a moderator was linked into the my_courses redirect loop"
+    assert 'href="/home/panel"' in body
+
+
+def test_gated_course_redirects_anonymous_to_the_intake(client, db_session):
+    curso = Curso(
+        codigo="GATED01",
+        nombre="Hidden Course",
+        descripcion_corta="hidden",
+        descripcion="hidden",
+        estado="open",
+        publico=False,
+    )
+    db_session.add(curso)
+    db_session.commit()
+
+    resp = client.get("/course/GATED01/view", follow_redirects=False)
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert "/request-access" in resp.headers["Location"]
+
+
+# ---------------------------------------------------------------------------------------
+# File-level contract tests (run even without the full app installed)
+# ---------------------------------------------------------------------------------------
+
+
+def test_teaser_template_parses_and_carries_the_locked_copy():
+    template = TEASER_PATH.read_text(encoding="utf-8")
+    Environment().parse(template)
+    assert "One practice." in template
+    assert "Several ways to prove it." in template
+    assert "house core" in template
+    assert "Some members are invited onto client work that comes through Intent Solutions." in template
+    assert "That invitation is earned, not sold." in template
+    assert "request_access.request_access" in template
+    # The teaser must not iterate the course queryset.
+    assert "cursos.items" not in template
+    assert "curso.nombre" not in template
+
+
+def test_request_access_template_is_autoescaped_html_with_defenses():
+    template = RA_TEMPLATE_PATH.read_text(encoding="utf-8")
+    Environment().parse(template)
+    # .html extension => Flask autoescaping. The .j2 overrides are NOT autoescaped,
+    # so this page (which re-renders visitor input on validation errors) must stay .html.
+    assert RA_TEMPLATE_PATH.suffix == ".html"
+    assert "form.csrf_token" in template
+    assert "isl-ra-hp" in template  # honeypot wrapper
+    assert "{{ form.ts }}" in template  # signed issue-time token
+    assert "intentsolutions.io/privacy" in template

@@ -3,19 +3,17 @@
 
 """Unit tests for vistas helpers (now_lms/vistas/_helpers.py)."""
 
-import os
-from pathlib import Path
 from unittest import mock
 
 import pytest
 
-from now_lms.db import EnlacesUtiles, StaticPage, Style, database
+from now_lms.db import CustomPage, EnlacesUtiles, Style, database
 from now_lms.vistas._helpers import (
     favicon_personalizado,
     get_blog_post_cover_image,
     get_current_course_logo,
+    get_custom_pages,
     get_footer_enlaces,
-    get_footer_pages,
     get_site_favicon,
     get_site_logo,
     logo_personalizado,
@@ -115,10 +113,10 @@ def test_logo_and_favicon_personalizado(app, db_session):
         assert favicon_personalizado() is False
 
 
-def test_get_footer_pages_and_enlaces(app, db_session):
+def test_get_custom_pages_and_enlaces(app, db_session):
     """Test retrieving active footer pages and links."""
-    # Create static pages
-    page1 = StaticPage(
+    # Create custom pages
+    page1 = CustomPage(
         title="Terms of Service Unique Title",
         slug="terms",
         content="Our terms...",
@@ -126,7 +124,7 @@ def test_get_footer_pages_and_enlaces(app, db_session):
         mostrar_en_footer=True,
         creado_por="helper_tester",
     )
-    page2 = StaticPage(
+    page2 = CustomPage(
         title="Privacy Policy Unique Title",
         slug="privacy",
         content="Our privacy policy...",
@@ -134,7 +132,7 @@ def test_get_footer_pages_and_enlaces(app, db_session):
         mostrar_en_footer=False,  # Not in footer
         creado_por="helper_tester",
     )
-    page3 = StaticPage(
+    page3 = CustomPage(
         title="About Us Unique Title",
         slug="about",
         content="About our site...",
@@ -162,8 +160,8 @@ def test_get_footer_pages_and_enlaces(app, db_session):
     db_session.add_all([link1, link2])
     db_session.commit()
 
-    # Retrieve and check footer pages
-    pages = get_footer_pages()
+    # Retrieve and check custom pages in footer
+    pages = get_custom_pages()
     titles = [p.title for p in pages]
     assert "Terms of Service Unique Title" in titles
     assert "Privacy Policy Unique Title" not in titles
@@ -171,13 +169,13 @@ def test_get_footer_pages_and_enlaces(app, db_session):
 
     # Retrieve and check footer links
     links = get_footer_enlaces()
-    link_titles = [l.titulo for l in links]
+    link_titles = [lnk.titulo for lnk in links]
     assert "BMO Soluciones Unique Link" in link_titles
     assert "Disabled Link Unique Link" not in link_titles
 
 
-def test_get_footer_pages_and_enlaces_exceptions(app, db_session):
+def test_get_custom_pages_and_enlaces_exceptions(app, db_session):
     """Test exceptions handling in footer loaders."""
     with mock.patch("now_lms.db.database.session.execute", side_effect=Exception("DB Error")):
-        assert get_footer_pages() == []
+        assert get_custom_pages() == []
         assert get_footer_enlaces() == []

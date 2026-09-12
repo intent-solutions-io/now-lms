@@ -1,0 +1,26 @@
+:8080 {
+    encode gzip
+
+    # Global security headers for defense-in-depth
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "no-referrer-when-downgrade"
+        Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.paypalobjects.com https://cdnjs.cloudflare.com; connect-src 'self' https://www.paypal.com https://www.paypalobjects.com; frame-src 'self' https:; worker-src 'self' blob: https://cdnjs.cloudflare.com; media-src 'self' blob: https:;"
+        # Remove Server header to prevent info disclosure
+        -Server
+    }
+
+    handle_path /static/* {
+        root * /app/now_lms/static
+        file_server
+        header Cache-Control "public, max-age=86400"
+    }
+
+    reverse_proxy localhost:8000 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+}

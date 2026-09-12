@@ -168,11 +168,11 @@
                                 <div class="row g-2 mb-3">
                                     <div class="col-6">
                                         <small class="text-muted">{{ _('Nacimiento') }}:</small><br />
-                                        <span>{{ perfil.nacimiento }}</span>
+                                        <span>{{ perfil.nacimiento.strftime('%Y-%m-%d') if perfil.nacimiento else '—' }}</span>
                                     </div>
                                     <div class="col-6">
                                         <small class="text-muted">{{ _('Fecha de Alta') }}:</small><br />
-                                        <span>{{ perfil.fecha_alta }}</span>
+                                        <span>{{ perfil.fecha_alta.strftime('%Y-%m-%d') if perfil.fecha_alta else '—' }}</span>
                                     </div>
                                 </div>
                             </div>
@@ -270,18 +270,18 @@
                                     >
                                         <div class="card-body">
                                             <h6 class="card-title text-success">{{ curso.nombre }}</h6>
-                                            <p class="card-text text-muted small">{{ curso.descripcion_corta }}</p>
-                                            <p class="card-text">
-                                                <small class="text-muted">Código: {{ curso.codigo }}</small>
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                            {% else %}
-                            <div class="text-center py-4">
-                                <i class="bi bi-book text-muted" style="font-size: 3rem"></i>
+                                             <p class="card-text text-muted small">{{ curso.descripcion_corta }}</p>
+                                             <p class="card-text">
+                                                 <small class="text-muted">{{ _('Código') }}: {{ curso.codigo }}</small>
+                                             </p>
+                                         </div>
+                                     </div>
+                                 </div>
+                                 {% endfor %}
+                             </div>
+                             {% else %}
+                             <div class="text-center py-4">
+                                 <i class="bi bi-book text-muted" style="font-size: 3rem"></i>
                                 <p class="text-muted mt-2">{{ _('No tienes cursos inscritos actualmente.') }}</p>
                                 <a href="{{ url_for('course.lista_cursos') }}" class="btn btn-outline-success">
                                     <i class="bi bi-search me-1"></i>{{ _('Explorar Cursos') }}
@@ -359,6 +359,29 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Student Payments Link -->
+                        <div class="profile-card p-4 mt-4">
+                            <div class="row align-items-center">
+                                <div class="col-md-8">
+                                    <h4 class="mb-2">
+                                        <i class="bi bi-wallet2 text-success me-2"></i>{{ _('Historial de Pagos') }}
+                                    </h4>
+                                    <p class="text-muted mb-0">
+                                        {{ _('Consulta tus transacciones de pago, estados y descarga tus recibos de pago en PDF.') }}
+                                    </p>
+                                </div>
+                                <div class="col-md-4 text-end">
+                                    <a
+                                        href="{{ url_for('user_profile.payments_history') }}"
+                                        class="btn btn-outline-success"
+                                        style="border-radius: 25px"
+                                    >
+                                        <i class="bi bi-file-earmark-text me-1"></i> {{ _('Mis Pagos') }}
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         {% elif perfil.tipo == "instructor" %}
                         <!-- Instructor Profile Section -->
                         <div class="profile-card p-4 mb-4">
@@ -368,7 +391,7 @@
                                 </div>
                                 <div>
                                     <h4 class="mb-1"><i class="bi bi-mortarboard me-2"></i>{{ _('Mis Cursos Creados') }}</h4>
-                                    <p class="text-muted mb-0">Cursos que has desarrollado y publicas</p>
+                                     <p class="text-muted mb-0">{{ _('Cursos que has desarrollado y publicas') }}</p>
                                 </div>
                             </div>
 
@@ -383,11 +406,11 @@
                                         <div class="card-body">
                                             <h6 class="card-title text-primary">{{ curso.nombre }}</h6>
                                             <p class="card-text text-muted small">{{ curso.descripcion_corta }}</p>
-                                            <p class="card-text">
-                                                <small class="text-muted">Código: {{ curso.codigo }}</small>
-                                            </p>
-                                            <p class="card-text">
-                                                <small class="text-muted">Estado: {{ curso.estado | capitalize }}</small>
+                                             <p class="card-text">
+                                                 <small class="text-muted">{{ _('Código') }}: {{ curso.codigo }}</small>
+                                             </p>
+                                             <p class="card-text">
+                                                  <small class="text-muted">{{ _('Estado') }}: {{ curso.estado | capitalize }}</small>
                                             </p>
                                         </div>
                                     </div>
@@ -397,7 +420,7 @@
                             {% else %}
                             <div class="text-center py-4">
                                 <i class="bi bi-mortarboard text-muted" style="font-size: 3rem"></i>
-                                <p class="text-muted mt-2">No tienes cursos creados actualmente.</p>
+                                 <p class="text-muted mt-2">{{ _('No tienes cursos creados actualmente.') }}</p>
                             </div>
                             {% endif %}
                         </div>
@@ -475,7 +498,7 @@
                         <div class="profile-card p-4">
                             <div class="text-center py-4">
                                 <i class="bi bi-person text-muted" style="font-size: 3rem"></i>
-                                <p class="text-muted mt-2">Perfil de usuario estándar.</p>
+                                 <p class="text-muted mt-2">{{ _('Perfil de usuario estándar.') }}</p>
                             </div>
                         </div>
                         {% endif %}

@@ -131,8 +131,8 @@ from now_lms.vistas._helpers import (
     favicon_personalizado,
     get_blog_post_cover_image,
     get_current_course_logo,
+    get_custom_pages,
     get_footer_enlaces,
-    get_footer_pages,
     get_site_favicon,
     get_site_logo,
     logo_personalizado,
@@ -160,11 +160,17 @@ from now_lms.vistas.profiles.admin import admin_profile
 from now_lms.vistas.profiles.instructor import instructor_profile
 from now_lms.vistas.profiles.moderator import moderator_profile
 from now_lms.vistas.profiles.user import user_profile
+from now_lms.vistas.comunidad import comunidad
+from now_lms.vistas.member_dashboard import member_dashboard
+from now_lms.vistas.prior_credentials import prior_credentials
 from now_lms.vistas.programs import program
 from now_lms.vistas.public_api import public_api
+from now_lms.vistas.request_access import request_access_bp
 from now_lms.vistas.resources import resource_d
 from now_lms.vistas.settings import setting
-from now_lms.vistas.static_pages import static_pages
+from now_lms.vistas.custom_pages import custom_pages
+from now_lms.vistas.contact import contact
+from now_lms.vistas.footer_links import footer_links
 from now_lms.vistas.tags import tag
 from now_lms.vistas.users import user
 from now_lms.vistas.web_error_codes import web_error
@@ -194,8 +200,9 @@ def inicializa_extenciones_terceros(flask_app: Flask) -> None:
     """Inicia extensiones de terceros."""
     log.trace("Starting third-party extensions")
     with flask_app.app_context():
-        from now_lms.i18n import get_locale, get_timezone
         from os.path import abspath, dirname, join
+
+        from now_lms.i18n import get_locale, get_timezone
 
         # Ensure Alembic reads migration scripts from the package directory using absolute path
         migrations_dir = abspath(join(dirname(__file__), "migrations"))
@@ -251,11 +258,17 @@ def registrar_modulos_en_la_aplicacion_principal(flask_app: Flask):
         flask_app.register_blueprint(home)
         flask_app.register_blueprint(msg)
         flask_app.register_blueprint(page_info)
+        flask_app.register_blueprint(comunidad)
+        flask_app.register_blueprint(member_dashboard)
+        flask_app.register_blueprint(prior_credentials)
         flask_app.register_blueprint(program)
         flask_app.register_blueprint(public_api)
+        flask_app.register_blueprint(request_access_bp)
         flask_app.register_blueprint(resource_d)
         flask_app.register_blueprint(setting)
-        flask_app.register_blueprint(static_pages)
+        flask_app.register_blueprint(custom_pages)
+        flask_app.register_blueprint(contact)
+        flask_app.register_blueprint(footer_links)
         flask_app.register_blueprint(tag)
         flask_app.register_blueprint(user)
         flask_app.register_blueprint(masterclass)
@@ -354,7 +367,7 @@ def define_variables_globales_jinja2(flask_app: Flask):
     flask_app.jinja_env.globals["favicon_perzonalizado"] = favicon_perzonalizado
     flask_app.jinja_env.globals["get_all_from_db"] = get_all_records
     flask_app.jinja_env.globals["get_course_sections"] = get_course_sections
-    flask_app.jinja_env.globals["get_footer_pages"] = get_footer_pages
+    flask_app.jinja_env.globals["get_custom_pages"] = get_custom_pages
     flask_app.jinja_env.globals["get_footer_enlaces"] = get_footer_enlaces
     flask_app.jinja_env.globals["get_locale"] = get_locale
     flask_app.jinja_env.globals["get_one_from_db"] = get_one_record
@@ -467,7 +480,9 @@ def create_app(app_name="now_lms", testing=False, config_overrides=None):
     if environ.get("SECRET_KEY"):
         env_overrides["SECRET_KEY"] = environ.get("SECRET_KEY")
     if environ.get("DATABASE_URL"):
-        env_overrides["SQLALCHEMY_DATABASE_URI"] = environ.get("DATABASE_URL")
+        from now_lms.config import corregir_url_base_datos
+
+        env_overrides["SQLALCHEMY_DATABASE_URI"] = corregir_url_base_datos(environ.get("DATABASE_URL"))
     if environ.get("REDIS_URL"):
         env_overrides["CACHE_REDIS_URL"] = environ.get("REDIS_URL")
 
@@ -509,6 +524,7 @@ def create_app(app_name="now_lms", testing=False, config_overrides=None):
 
         # Register request handlers and error handlers
         _register_before_request_handlers(flask_app)
+        _register_after_request_handlers(flask_app)
         _register_error_handlers(flask_app)
 
     if DESARROLLO:
@@ -526,7 +542,7 @@ def create_app(app_name="now_lms", testing=False, config_overrides=None):
     if FORCE_HTTPS:
         from werkzeug.middleware.proxy_fix import ProxyFix
 
-        flask_app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+        flask_app.wsgi_app = ProxyFix(flask_app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
     log.trace(f"Flask application created successfully: {app_name}")
     return flask_app
@@ -571,12 +587,59 @@ def _register_before_request_handlers(flask_app):
         return None
 
 
+def _register_after_request_handlers(flask_app):
+    """Register after_request handlers for the Flask application."""
+
+    @flask_app.after_request
+    def add_security_headers(response):
+        """Add HTTP security headers to all responses to ensure robust defense-in-depth."""
+        # 1. Prevent Clickjacking
+        if "X-Frame-Options" not in response.headers:
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+
+        # 2. Prevent MIME-sniffing
+        if "X-Content-Type-Options" not in response.headers:
+            response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # 3. Enable XSS filter in older browsers
+        if "X-XSS-Protection" not in response.headers:
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # 4. Referrer Policy
+        if "Referrer-Policy" not in response.headers:
+            response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
+
+        # 5. Content Security Policy (CSP)
+        if "Content-Security-Policy" not in response.headers:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; "
+                "form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; "
+                "style-src 'self' 'unsafe-inline'; "
+                "script-src 'self' 'unsafe-inline' https://www.paypal.com https://www.paypalobjects.com "
+                "https://cdnjs.cloudflare.com; "
+                "connect-src 'self' https://www.paypal.com https://www.paypalobjects.com; "
+                "frame-src 'self' https:; worker-src 'self' blob: https://cdnjs.cloudflare.com; "
+                "media-src 'self' blob: https:;"
+            )
+
+        # 6. HTTP Strict Transport Security (HSTS)
+        # Apply only if FORCE_HTTPS is enabled or request is secure
+        if (FORCE_HTTPS or request.is_secure) and "Strict-Transport-Security" not in response.headers:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        return response
+
+
 def _register_error_handlers(flask_app):
     """Register error handlers for the Flask application."""
     flask_app.register_error_handler(PaymentRequired, handle_402)
 
+    # 403/404/405 are deliberately not cached. Their default key is the request path
+    # alone, so one user's error page was served to every later visitor to that path,
+    # and error_403 additionally calls flash() - which a cache hit skips, leaving the
+    # user with no "please sign in" message. error_500 below has no such branch and
+    # stays cached.
     @flask_app.errorhandler(403)
-    @cache.cached()
     def error_403(error):
         """Pagina personalizada para recursos no autorizados."""
         if not current_user.is_authenticated:
@@ -588,7 +651,6 @@ def _register_error_handlers(flask_app):
         return render_template("error_pages/403.html", error=error), 403
 
     @flask_app.errorhandler(404)
-    @cache.cached()
     def error_404(error):
         """Pagina personalizada para recursos no encontrados."""
         if not current_user.is_authenticated:
@@ -599,7 +661,6 @@ def _register_error_handlers(flask_app):
         return render_template("error_pages/404.html", error=error), 404
 
     @flask_app.errorhandler(405)
-    @cache.cached()
     def error_405(error):
         """Pagina personalizada para metodos no permitidos."""
         log.warning(f"Method not allowed: {error}")
@@ -627,6 +688,8 @@ application = lms_app
 # ---------------------------------------------------------------------------------------
 def initial_setup(with_examples=False, with_tests=False, flask_app=None):
     """Inicializa una nueva bases de datos."""
+    from contextlib import nullcontext
+
     from flask import current_app, has_app_context
 
     # Use provided app, current app context, or fallback to global lms_app
@@ -637,7 +700,16 @@ def initial_setup(with_examples=False, with_tests=False, flask_app=None):
     else:
         app_to_use = lms_app
 
-    with app_to_use.app_context():
+    # Si el llamador ya abrió un application context para ESTA misma app, se
+    # reutiliza en lugar de anidar otro. Al salir de un context anidado Flask
+    # dispara teardown_appcontext y flask-alembic invalida la conexión que dejó
+    # cacheada alembic.stamp(); contra sqlite:///:memory: esa conexión es la
+    # base de datos entera, así que el esquema recién creado desaparecía a la
+    # mitad del bootstrap.
+    reutilizar_contexto = has_app_context() and current_app._get_current_object() is app_to_use
+    contexto = nullcontext() if reutilizar_contexto else app_to_use.app_context()
+
+    with contexto:
         log.info("Creating database schema.")
 
         # Ensure Flask-Session extension is declared BEFORE create_all so its
@@ -664,6 +736,15 @@ def initial_setup(with_examples=False, with_tests=False, flask_app=None):
                 log.error(f"Required session table '{session_table}' was not created during bootstrap!")
                 raise RuntimeError(f"Required session table '{session_table}' is missing.")
             log.info(f"Verified that session table '{session_table}' exists in database schema.")
+
+        # create_all() above builds the full current-model schema (the migration "head").
+        # Stamp Alembic to head so this fresh database is recorded as already at the latest
+        # revision. Without this, a later boot would see a populated database, run
+        # alembic.upgrade() from base, and collide with the schema create_all() already made
+        # (e.g. an unguarded "CREATE TABLE external_api_keys" that already exists). Stamping
+        # keeps subsequent AUTO_MIGRATE upgrades incremental — only genuinely new migrations run.
+        alembic.stamp()
+        log.info("Alembic stamped to head for the freshly created schema.")
 
         system_info(app_to_use)
         log.debug("Database schema created successfully.")
@@ -745,6 +826,6 @@ def init_app(with_examples=False, flask_app=None):
 
 # Import CLI module to register CLI commands - must be at the end to avoid circular imports
 try:
-    import now_lms.cli  # noqa: F401, E402
+    import now_lms.cli  # noqa: F401
 except ImportError:
     log.warning("Could not import CLI module")

@@ -21,7 +21,7 @@ from bleach import clean, linkify
 from flask import flash
 from flask_login import current_user
 from markdown import markdown
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 # ---------------------------------------------------------------------------------------
 # Local resources
@@ -41,32 +41,42 @@ from now_lms.db import (
     select,
 )
 from now_lms.misc import HTML_TAGS
+from now_lms.i18n import _
 from now_lms.logs import log
 from now_lms.vistas.evaluation_helpers import can_user_receive_certificate
 from .data import SAFE_FILE_EXTENSIONS, DANGEROUS_FILE_EXTENSIONS
-
 
 _COURSE_CODE_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 
 
 def _validate_course_code(course_code: str) -> None:
-    if not _COURSE_CODE_RE.match(course_code):
+    """Rechaza códigos de curso que no puedan usarse como un único segmento de ruta.
+
+    El patrón permitido ya excluye los separadores de ruta ("/" y "\\"), pero por sí
+    solo acepta "." y ".." — que ``os.path.join`` interpreta como "este directorio" y
+    "subir un directorio". Se rechazan explícitamente para que ningún código de curso
+    pueda reubicar la biblioteca fuera de ``<publicos>/files/<curso>/`` (equivale al
+    saneamiento de ".." que hace upstream en ``get_course_library_path``).
+    """
+    if not course_code or not _COURSE_CODE_RE.match(course_code):
+        raise ValueError(f"Invalid course code: {course_code!r}")
+    if ".." in course_code or course_code in {".", ".."}:
         raise ValueError(f"Invalid course code: {course_code!r}")
 
 
 def validate_downloadable_file(file, max_size_mb: int = 1) -> tuple[bool, str]:
     """Valida archivo subido para recursos descargables."""
     if not file or not getattr(file, "filename", None):
-        return False, "No se ha seleccionado ningún archivo"
+        return False, _("No se ha seleccionado ningún archivo")
 
     filename = str(file.filename or "").lower()
     file_ext = splitext(filename)[1].lower()
 
     if file_ext in DANGEROUS_FILE_EXTENSIONS:
-        return False, f"Tipo de archivo no permitido por seguridad: {file_ext}"
+        return False, _("Tipo de archivo no permitido por seguridad: {}").format(file_ext)
 
     if file_ext not in SAFE_FILE_EXTENSIONS:
-        return False, f"Tipo de archivo no soportado: {file_ext}"
+        return False, _("Tipo de archivo no soportado: {}").format(file_ext)
 
     # Calcular tamaño en bytes
     try:
@@ -79,7 +89,7 @@ def validate_downloadable_file(file, max_size_mb: int = 1) -> tuple[bool, str]:
 
     max_size_bytes = max_size_mb * 1024 * 1024
     if file_size > max_size_bytes:
-        return False, f"El archivo es demasiado grande. Máximo permitido: {max_size_mb}MB"
+        return False, _("El archivo es demasiado grande. Máximo permitido: {}MB").format(max_size_mb)
 
     return True, ""
 
@@ -152,7 +162,12 @@ def _get_course_evaluations_and_attempts(
                 database.session.execute(
                     select(EvaluationAttempt)
                     .filter_by(evaluation_id=evaluation.id, user_id=usuario)
-                    .order_by(EvaluationAttempt.started_at)
+                    .order_by(
+                        case((EvaluationAttempt.submitted_at.is_(None), 0), else_=1),
+                        EvaluationAttempt.submitted_at.asc(),
+                        EvaluationAttempt.started_at.asc(),
+                        EvaluationAttempt.id.asc(),
+                    )
                 )
                 .scalars()
                 .all()
@@ -187,6 +202,11 @@ def _crear_indice_avance_curso(course_code: str) -> None:
 
     if recursos:
         for recurso in recursos:
+            existing = database.session.execute(
+                database.select(CursoRecursoAvance).filter_by(usuario=usuario, curso=course_code, recurso=recurso.id)
+            ).scalar_one_or_none()
+            if existing:
+                continue
             avance = CursoRecursoAvance(
                 usuario=usuario,
                 curso=course_code,
@@ -195,7 +215,7 @@ def _crear_indice_avance_curso(course_code: str) -> None:
                 requerido=recurso.requerido,
             )
             database.session.add(avance)
-            database.session.commit()
+        database.session.commit()
 
 
 def _emitir_certificado(curso_id: str, usuario: str, plantilla: str) -> None:
@@ -209,7 +229,7 @@ def _emitir_certificado(curso_id: str, usuario: str, plantilla: str) -> None:
     certificado.creado_por = current_user.usuario if current_user.is_authenticated else "system"
     database.session.add(certificado)
     database.session.commit()
-    flash("Certificado de finalización emitido.", "success")
+    flash(_("Certificado de finalización emitido."), "success")
 
 
 def _actualizar_avance_curso(curso_id: str, usuario: str) -> None:
@@ -251,7 +271,7 @@ def _actualizar_avance_curso(curso_id: str, usuario: str) -> None:
     _avance.avance = ((_recursos_completados or 0) / (_recursos_requeridos or 1)) * 100
     if _avance.avance >= 100:
         _avance.completado = True
-        flash("Curso completado", "success")
+        flash(_("Curso completado"), "success")
         _curso = database.session.execute(select(Curso).filter(Curso.codigo == curso_id)).scalars().first()
         log.warning(_curso)
         if _curso and _curso.certificado:

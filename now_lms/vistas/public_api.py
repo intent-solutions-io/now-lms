@@ -13,8 +13,9 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, url_for
 from flask_mail import Message
 from now_lms.auth import proteger_passwd, generate_confirmation_token
-from now_lms.db import ExternalApiKey, Curso, RemoteEnrollmentRequest, Usuario, EstudianteCurso, database, MailConfig
-from now_lms.mail import send_mail
+from now_lms.db import ExternalApiKey, Curso, RemoteEnrollmentRequest, Usuario, EstudianteCurso, database
+from now_lms.i18n import _
+from now_lms.mail import _config, resolve_sender, send_mail
 from now_lms.version import VERSION
 
 public_api = Blueprint("public_api", __name__, url_prefix="/api/v1/public")
@@ -27,7 +28,7 @@ def check_rate_limit(key_record):
     Uses the application cache to store request counts.
     Default: 60 requests per minute per API Key.
     """
-    from now_lms.cache import cache
+    from now_lms.cache import cache, cache_incr
 
     # Define limit: 60 requests per 60 seconds
     LIMIT = 60
@@ -43,7 +44,7 @@ def check_rate_limit(key_record):
     if int(current_count) >= LIMIT:
         return False
 
-    cache.inc(cache_key)
+    cache_incr(cache_key, timeout=WINDOW)
     return True
 
 
@@ -104,8 +105,13 @@ def get_course(course_code):
     """Consult public course information by code."""
     course = database.session.execute(database.select(Curso).filter_by(codigo=course_code)).scalar_one_or_none()
 
-    if not course:
-        return jsonify({"error": "course_not_found", "message": "Course code was not found."}), 404
+    # A valid API key authenticates a calling SERVICE, not a specific enrolled
+    # learner — this endpoint has no per-caller entitlement to check. Applying
+    # the same visibility rule the HTML views use (`publico`) keeps a gated
+    # course's existence and metadata from leaking to any integration holding a
+    # key, the same 404 an anonymous browser gets on the web path.
+    if not course or not course.publico:
+        return jsonify({"error": "course_not_found", "message": _("Course code was not found.")}), 404
 
     return (
         jsonify(
@@ -168,7 +174,7 @@ def remote_enrollment():
     course = database.session.execute(database.select(Curso).filter_by(codigo=course_code)).scalar_one_or_none()
 
     if not course:
-        return jsonify({"error": "course_not_found", "message": "Course code was not found."}), 404
+        return jsonify({"error": "course_not_found", "message": _("Course code was not found.")}), 404
 
     # User existence/creation
     user = database.session.execute(database.select(Usuario).filter_by(correo_electronico=email)).scalar_one_or_none()
@@ -229,6 +235,10 @@ def remote_enrollment():
     database.session.add(remote_request)
     database.session.commit()
 
+    from now_lms.cache import invalidate_user_course_view_cache
+
+    invalidate_user_course_view_cache(user.usuario, course_code)
+
     # Send notification email
     # Determine if we should send synchronously (useful for tests)
     sync = data.get("_sync_email") == "1" or data.get("_sync_email") is True
@@ -248,43 +258,49 @@ def remote_enrollment():
 
 def send_enrollment_email(user, course, is_new_user, sync=False):
     """Send notification email to student."""
-    mail_config = database.session.execute(database.select(MailConfig)).scalar_one_or_none()
-    if not mail_config or not mail_config.email_verificado:
+    # Environment first, database second — same resolution send_mail uses. The
+    # direct MailConfig read this replaced made enrollment mail silently no-op on
+    # an env-configured deployment whose database row was never populated.
+    #
+    # The verified-config gate is PRESERVED, not introduced: this path used to
+    # require `mail_config.email_verificado`, and `_config().mail_configured` is
+    # that same flag once the environment source is honoured too.
+    if not _config().mail_configured:
         return
 
-    subject = f"Has sido inscrito en {course.nombre}"
+    subject = _("Has sido inscrito en {}").format(course.nombre)
 
     if is_new_user:
         token = generate_confirmation_token(user.correo_electronico)
         action_url = url_for("user.check_mail", token=token, _external=True)
         body_text = f"""
-        Hola,
+        {_("Hola,")}
 
-        Has sido inscrito en el curso: {course.nombre}.
+        {_("Has sido inscrito en el curso: {}.").format(course.nombre)}
 
-        Como eres un usuario nuevo, por favor completa tu primer acceso y verifica tu cuenta haciendo clic en el siguiente enlace:
+        {_("Como eres un usuario nuevo, por favor completa tu primer acceso y verifica tu cuenta haciendo clic en el siguiente enlace:")}
         {action_url}
 
-        En este enlace podrás definir tu contraseña y completar tu perfil.
+        {_("En este enlace podrás definir tu contraseña y completar tu perfil.")}
         """
     else:
         action_url = url_for("home.pagina_de_inicio", _external=True)
         body_text = f"""
-        Hola,
+        {_("Hola,")}
 
-        Has sido inscrito en el curso: {course.nombre}.
+        {_("Has sido inscrito en el curso: {}.").format(course.nombre)}
 
-        Puedes acceder al curso ingresando a la plataforma:
+        {_("Puedes acceder al curso ingresando a la plataforma:")}
         {action_url}
         """
 
     if course.certificado:
-        body_text += "\n\nEste curso cuenta con certificación al finalizar exitosamente."
+        body_text += "\n\n" + _("Este curso cuenta con certificación al finalizar exitosamente.")
 
     msg = Message(
         subject=subject,
         recipients=[user.correo_electronico],
-        sender=((mail_config.MAIL_DEFAULT_SENDER_NAME or "NOW LMS"), mail_config.MAIL_DEFAULT_SENDER),
+        sender=resolve_sender(),
         body=body_text,
     )
 

@@ -40,6 +40,7 @@ from now_lms.db import (
     database,
 )
 from now_lms.forms import CertificateForm, EmitCertificateForm
+from now_lms.i18n import _
 
 # Template constants
 TEMPLATE_EMITIR_CERTIFICADO = "learning/certificados/emitir_certificado.html"
@@ -52,6 +53,36 @@ HOME_ROUTE = "home.pagina_de_inicio"
 
 certificate = Blueprint("certificate", __name__, template_folder=DIRECTORIO_PLANTILLAS)
 VISTA_CERTIFICADOS = "certificate.certificados"
+
+
+class CertificateHolder:
+    """Read-only projection of `Usuario` for certificate templates.
+
+    Certificate bodies are admin-authored Jinja stored in the database
+    (`Certificado.html`) and rendered on routes that require no authentication, so
+    anyone holding a certification ULID can trigger the render. Passing the `Usuario`
+    ORM row into that context put every column within reach of the template -
+    `correo_electronico`, `nacimiento`, `bio`, `tipo` - not just the name printed on
+    the certificate.
+
+    Only the fields a certificate legitimately prints are exposed. Jinja resolves an
+    unknown attribute to `Undefined`, which renders as empty rather than raising, so a
+    custom template that referenced a personal field degrades to a blank instead of
+    breaking the page.
+
+    Keep this list minimal. Anything added here becomes readable by an unauthenticated
+    visitor with a certificate URL.
+    """
+
+    __slots__ = ("id", "nombre", "apellido")
+
+    def __init__(self, usuario: Usuario) -> None:
+        self.id = usuario.id
+        self.nombre = usuario.nombre
+        self.apellido = usuario.apellido
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"CertificateHolder(nombre={self.nombre!r}, apellido={self.apellido!r})"
 
 
 @certificate.route("/certificate/list", methods=["GET"])
@@ -136,7 +167,7 @@ def certificate_new() -> str | Response:
             descripcion=form.descripcion.data,
             habilitado=False,
             publico=False,
-            usuario=current_user.id,
+            usuario=current_user.usuario,
             html=form.html.data,
             css=form.css.data,
             tipo=form.tipo.data,
@@ -144,10 +175,10 @@ def certificate_new() -> str | Response:
         database.session.add(certificado_obj)
         try:
             database.session.commit()
-            flash("Nuevo certificado creado correctamente.", "success")
+            flash(_("Nuevo certificado creado correctamente."), "success")
         except OperationalError:
             database.session.rollback()
-            flash("Hubo un error al crear el certificado.", "warning")
+            flash(_("Hubo un error al crear el certificado."), "warning")
         return redirect(url_for(VISTA_CERTIFICADOS))
 
     return render_template("learning/certificados/nuevo_certificado.html", form=form)
@@ -182,9 +213,9 @@ def certificate_edit(ulid: str) -> str | Response:
         try:
             database.session.add(certificado_obj)
             database.session.commit()
-            flash("Certificado editado correctamente.", "success")
+            flash(_("Certificado editado correctamente."), "success")
         except OperationalError:
-            flash("No se puedo editar el certificado.", "warning")
+            flash(_("No se puedo editar el certificado."), "warning")
         return redirect(url_for(VISTA_CERTIFICADOS))
 
     return render_template("learning/certificados/editar_certificado.html", form=form)
@@ -259,11 +290,12 @@ def certificacion(ulid: str) -> str | Response:
 
     # Create context with both curso and master_class for template compatibility
     context = {
-        "usuario": usuario,
+        "usuario": CertificateHolder(usuario),
         "certificacion": certificacion_obj,
         "certificado": certificado_obj,
         "url_for": url_for,
         "content_type": content_type,
+        "_": _,
     }
 
     if content_type == "course":
@@ -306,11 +338,12 @@ def certificate_serve_pdf(ulid: str) -> Response:
 
     # Create context with both curso and master_class for template compatibility
     context = {
-        "usuario": usuario,
+        "usuario": CertificateHolder(usuario),
         "certificacion": certificacion_obj,
         "certificado": certificado_obj,
         "url_for": url_for,
         "content_type": content_type,
+        "_": _,
     }
 
     if content_type == "course":
@@ -399,7 +432,7 @@ def certificado(ulid: str) -> str:
 
     # Create context with both curso and master_class for template compatibility
     context = {
-        "usuario": usuario,
+        "usuario": CertificateHolder(usuario),
         "certificacion": certificacion_obj,
         "certificado": certificado_obj,
         "content_type": content_type,
@@ -425,7 +458,7 @@ def certificacion_crear(course_id: str, user: str, template: str) -> Response:
 
     can_receive, reason = can_user_receive_certificate(course_id, user)
     if not can_receive:
-        flash(f"No se puede emitir el certificado: {reason}", "warning")
+        flash(_("No se puede emitir el certificado: %(reason)s", reason=reason), "warning")
         return redirect(url_for("certificate.certificaciones"))
 
     # Calculate expiration date if required
@@ -445,17 +478,15 @@ def _build_certificate_from_form(form: EmitCertificateForm) -> Certificacion | N
     """Validate certificate prerequisites and build the pending model."""
     if form.content_type.data == "course":
         if not form.curso.data:
-            flash("Por favor selecciona un curso.", "warning")
+            flash(_("Por favor selecciona un curso."), "warning")
             return None
         from now_lms.vistas.evaluation_helpers import can_user_receive_certificate
 
         can_receive, reason = can_user_receive_certificate(form.curso.data, form.usuario.data)
         if not can_receive:
-            flash(f"No se puede emitir el certificado: {reason}", "warning")
+            flash(_("No se puede emitir el certificado: %(reason)s", reason=reason), "warning")
             return None
-        curso_obj = database.session.execute(
-            database.select(Curso).filter_by(codigo=form.curso.data)
-        ).scalar_one_or_none()
+        curso_obj = database.session.execute(database.select(Curso).filter_by(codigo=form.curso.data)).scalar_one_or_none()
         return Certificacion(
             usuario=form.usuario.data,
             curso=form.curso.data,
@@ -466,15 +497,13 @@ def _build_certificate_from_form(form: EmitCertificateForm) -> Certificacion | N
         )
 
     if not form.master_class.data:
-        flash("Por favor selecciona una clase magistral.", "warning")
+        flash(_("Por favor selecciona una clase magistral."), "warning")
         return None
     enrollment = database.session.execute(
-        database.select(MasterClassEnrollment).filter_by(
-            master_class_id=form.master_class.data, user_id=form.usuario.data
-        )
+        database.select(MasterClassEnrollment).filter_by(master_class_id=form.master_class.data, user_id=form.usuario.data)
     ).first()
     if not enrollment or not enrollment[0].is_confirmed:
-        flash("El usuario debe estar inscrito y confirmado en la clase magistral.", "warning")
+        flash(_("El usuario debe estar inscrito y confirmado en la clase magistral."), "warning")
         return None
     return Certificacion(
         usuario=form.usuario.data,
@@ -512,11 +541,11 @@ def certificacion_generar() -> str | Response:
         try:
             database.session.add(cert)
             database.session.commit()
-            flash("Certificado generado correctamente.", "success")
+            flash(_("Certificado generado correctamente."), "success")
             return redirect(url_for("certificate.certificaciones"))
 
         except OperationalError:
-            flash("Hubo en error al crear la plantilla.", "warning")
+            flash(_("Hubo un error al crear la plantilla."), "warning")
             return redirect("/instructor")
     else:
         return render_template(TEMPLATE_EMITIR_CERTIFICADO, form=form)
@@ -544,6 +573,65 @@ def certificacion_programa_qr(certificate_id: str) -> Response:
     response.headers["Content-Disposition"] = "attachment; filename=QR_programa.png"
     response.mimetype = "image/png"
     return response
+
+
+class FakeCurso:
+    def __init__(self, codigo, nombre):
+        self.codigo = codigo
+        self.nombre = nombre
+
+
+class ExecuteResultWrapper:
+    def __init__(self, fake_obj):
+        self.fake_obj = fake_obj
+
+    def scalar_one_or_none(self):
+        return self.fake_obj
+
+    def first(self):
+        return self.fake_obj
+
+    def scalars(self):
+        return self
+
+
+class SelectWrapper:
+    def __init__(self, model, real_database):
+        self.model = model
+        self.real_database = real_database
+        self.target_code = None
+
+    def filter_by(self, **kwargs):
+        self.target_code = kwargs.get("codigo")
+        return self
+
+    def filter(self, *args, **kwargs):
+        return self
+
+
+class SessionWrapper:
+    def __init__(self, real_session, snapshot_dict):
+        self.real_session = real_session
+        self.snapshot_dict = snapshot_dict
+
+    def execute(self, query_wrapper):
+        if hasattr(query_wrapper, "target_code") and query_wrapper.target_code in self.snapshot_dict:
+            course_name = self.snapshot_dict[query_wrapper.target_code]
+            return ExecuteResultWrapper(FakeCurso(query_wrapper.target_code, course_name))
+        try:
+            return self.real_session.execute(query_wrapper)
+        except Exception:
+            return ExecuteResultWrapper(None)
+
+
+class DatabaseSnapshotWrapper:
+    def __init__(self, real_database, snapshot_dict):
+        self.real_database = real_database
+        self.snapshot_dict = snapshot_dict
+        self.session = SessionWrapper(real_database.session, snapshot_dict)
+
+    def select(self, model):
+        return SelectWrapper(model, self.real_database)
 
 
 @certificate.route("/certificate/program/view/<ulid>/", methods=["GET"])
@@ -581,14 +669,26 @@ def certificacion_programa(ulid: str) -> str:
 
     template = Environment(loader=BaseLoader, autoescape=True).from_string(insert_style_in_html(certificado_obj))  # type: ignore
 
+    db_ctx: Any = database
+    if certificacion_programa_obj.cursos_snapshot:
+        import json
+
+        try:
+            snapshot_dict = json.loads(certificacion_programa_obj.cursos_snapshot)
+            if isinstance(snapshot_dict, dict):
+                db_ctx = DatabaseSnapshotWrapper(database, snapshot_dict)
+        except Exception:
+            pass
+
     context = {
-        "usuario": usuario,
+        "usuario": CertificateHolder(usuario),
         "certificacion_programa": certificacion_programa_obj,
         "certificado": certificado_obj,
         "programa": programa,
         "id": ulid,  # Keep backward compatibility for templates using id
         "url_for": url_for,
-        "database": database,  # For accessing Curso model in template
+        "database": db_ctx,  # For accessing Curso model in template
+        "_": _,
     }
 
     return template.render(**context)
@@ -631,13 +731,25 @@ def certificate_programa_serve_pdf(ulid: str) -> Any:
 
     template = Environment(loader=BaseLoader, autoescape=True).from_string(certificado_obj.html)  # type: ignore
 
+    db_ctx: Any = database
+    if certificacion_programa_obj.cursos_snapshot:
+        import json
+
+        try:
+            snapshot_dict = json.loads(certificacion_programa_obj.cursos_snapshot)
+            if isinstance(snapshot_dict, dict):
+                db_ctx = DatabaseSnapshotWrapper(database, snapshot_dict)
+        except Exception:
+            pass
+
     context = {
-        "usuario": usuario,
+        "usuario": CertificateHolder(usuario),
         "certificacion_programa": certificacion_programa_obj,
         "certificado": certificado_obj,
         "programa": programa,
         "url_for": url_for,
-        "database": database,  # For accessing Curso model in template
+        "database": db_ctx,  # For accessing Curso model in template
+        "_": _,
     }
 
     return render_pdf(

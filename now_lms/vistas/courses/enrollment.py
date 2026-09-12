@@ -12,7 +12,7 @@ from sqlalchemy.exc import OperationalError
 from werkzeug.wrappers import Response
 
 from now_lms.auth import perfil_requerido, usuario_requiere_verificacion_email
-from now_lms.cache import cache, cache_key_with_auth_state
+from now_lms.cache import cache, cache_key_with_auth_state, invalidate_user_course_view_cache
 from now_lms.calendar_utils import create_events_for_student_enrollment
 from now_lms.db import (
     Certificacion,
@@ -31,9 +31,11 @@ from now_lms.db import (
     select,
 )
 from now_lms.forms import CouponApplicationForm, PagoForm
+from now_lms.i18n import _
 from now_lms.misc import CURSO_NIVEL, TIPOS_RECURSOS
+from now_lms.themes import get_course_take_template
 from .base import VISTA_CURSOS, course, markdown2html
-from .helpers import _crear_indice_avance_curso
+from .helpers import _crear_indice_avance_curso, _get_user_resource_progress
 from .coupons import _validate_coupon_for_enrollment
 
 
@@ -73,9 +75,9 @@ def _build_coupon_flash_message(applied_coupon: object | None, final_price: floa
         return None
 
     if final_price == 0:
-        return f"¡Cupón aplicado exitosamente! Inscripción gratuita con código {applied_coupon.code}"
+        return _("¡Cupón aplicado exitosamente! Inscripción gratuita con código {}").format(applied_coupon.code)
 
-    return f"¡Cupón aplicado! Descuento de {discount_amount} aplicado"
+    return _("¡Cupón aplicado! Descuento de {} aplicado").format(discount_amount)
 
 
 def _build_pago_from_form(form, course_obj: Curso, final_price: float) -> Pago:
@@ -113,17 +115,39 @@ def _finalize_completed_enrollment(
         if applied_coupon and final_price == 0:
             applied_coupon.current_uses += 1
 
-        registro = EstudianteCurso(
-            curso=pago.curso,
-            usuario=pago.usuario,
-            vigente=True,
-            pago=pago.id,
+        # Reuse the student's existing enrollment if there is one, the same way
+        # paypal.py::_save_payment_enrollment does. Adding a second row for the
+        # same (usuario, curso) is never what we want — it just inflates the
+        # enrollment counts everything else reads.
+        registro = (
+            database.session.execute(
+                database.select(EstudianteCurso).filter_by(curso=pago.curso, usuario=pago.usuario)
+            )
+            .scalars()
+            .first()
         )
-        registro.creado = datetime.now(timezone.utc).date()
-        registro.creado_por = current_user.usuario
-        database.session.add(registro)
+        if registro is None:
+            registro = EstudianteCurso(
+                curso=pago.curso,
+                usuario=pago.usuario,
+                vigente=True,
+                pago=pago.id,
+            )
+            registro.creado = datetime.now(timezone.utc).date()
+            registro.creado_por = current_user.usuario
+            database.session.add(registro)
+        else:
+            registro.vigente = True
+            registro.pago = pago.id
+            registro.modificado_por = current_user.usuario
         database.session.commit()
         _crear_indice_avance_curso(course_code)
+
+        # The redirect below lands on the member's own cached pre-enrollment
+        # render otherwise (fork issue #50): phantom Enroll button for up to
+        # CACHE_DEFAULT_TIMEOUT seconds, which is what manufactured duplicate
+        # enrollment attempts.
+        invalidate_user_course_view_cache(pago.usuario, course_code)
 
         create_events_for_student_enrollment(pago.usuario, pago.curso)
 
@@ -133,7 +157,7 @@ def _finalize_completed_enrollment(
         return redirect(url_for("course.tomar_curso", course_code=course_code))
     except OperationalError:
         database.session.rollback()
-        flash("Hubo en error al crear el registro de pago.", "warning")
+        flash(_("Hubo en error al crear el registro de pago."), "warning")
         return redirect(url_for(VISTA_CURSOS, course_code=course_code))
 
 
@@ -153,7 +177,7 @@ def _process_paid_enrollment(pago: Pago, course_code: str) -> Response:
         return redirect(url_for("paypal.payment_page", course_code=course_code, payment_id=pago.id))
     except OperationalError:
         database.session.rollback()
-        flash("Error al procesar el pago", "warning")
+        flash(_("Error al procesar el pago"), "warning")
         return redirect(url_for(VISTA_CURSOS, course_code=course_code))
 
 
@@ -172,12 +196,26 @@ def _check_unverified_email_restriction(course_obj: Curso) -> bool:
     """
     if course_obj.pagado and usuario_requiere_verificacion_email():
         flash(
-            "Debe verificar su correo electrónico para inscribirse en cursos de pago o usar cupones. "
-            "Los cursos gratuitos están disponibles sin verificación.",
+            _(
+                "Debe verificar su correo electrónico para inscribirse en cursos de pago o usar cupones. "
+                "Los cursos gratuitos están disponibles sin verificación."
+            ),
             "warning",
         )
         return True
     return False
+
+
+def _has_active_enrollment(course_code: str) -> bool:
+    """Whether the current user already holds a live enrollment in the course."""
+    return (
+        database.session.execute(
+            database.select(EstudianteCurso).filter_by(curso=course_code, usuario=current_user.usuario, vigente=True)
+        )
+        .scalars()
+        .first()
+        is not None
+    )
 
 
 def _process_validated_enrollment(
@@ -188,11 +226,21 @@ def _process_validated_enrollment(
     course_code: str,
 ) -> Response:
     """Handle PagoForm submission when it has been successfully validated."""
+    # If they are already enrolled, there is nothing to do — send them to the
+    # course instead of writing another Pago and another enrollment row. Paid
+    # enrollments still go through, though: paying to upgrade an audit
+    # enrollment is a real flow, and paypal.py updates the existing row.
+    if _has_active_enrollment(course_code) and (
+        _is_free_enrollment(course_obj, pricing.final_price) or _is_audit_enrollment(mode, course_obj)
+    ):
+        flash(_("Ya está inscrito en este curso."), "info")
+        return redirect(url_for("course.tomar_curso", course_code=course_code))
+
     pago = _build_pago_from_form(form, course_obj, pricing.final_price)
 
     # Add coupon information to payment description
     if pricing.applied_coupon:
-        pago.descripcion = f"Cupón aplicado: {pricing.applied_coupon.code} (Descuento: {pricing.discount_amount})"
+        pago.descripcion = _("Cupón aplicado: %(code)s (Descuento: %(discount)s)", code=pricing.applied_coupon.code, discount=pricing.discount_amount)
 
     # Handle different enrollment modes
     if _is_free_enrollment(course_obj, pricing.final_price):
@@ -240,6 +288,10 @@ def course_enroll(course_code: str) -> str | Response:
         flash(pricing.validation_error, "warning")
 
     form = PagoForm()
+    # A free (or fully-discounted) enrollment has nothing to bill, so the
+    # billing address is neither collected nor required. The template hides
+    # those fields for the same condition.
+    form.requires_billing = not _is_free_enrollment(_curso, pricing.final_price)
     coupon_form = CouponApplicationForm()
 
     # Pre-fill form data only on GET requests to avoid overwriting user submission on POST
@@ -255,7 +307,7 @@ def course_enroll(course_code: str) -> str | Response:
 
     return render_template(
         "learning/curso/enroll.html",
-        title=f"Inscripción - {_curso.nombre}",
+        title=_("Inscripción - {}").format(_curso.nombre),
         curso=_curso,
         usuario=_usuario,
         form=form,
@@ -307,8 +359,25 @@ def tomar_curso(course_code: str) -> str | Response:
             .first()
         )
 
+        # The take template gates every resource link (and hides the enroll
+        # button) on `permitir_estudiante`, but no route ever passed it — so
+        # every enrolled student saw a link-less outline plus an "Enroll"
+        # button, and clicking it stacked duplicate enrollments. Upstream bug,
+        # present before the v2.0.0 sync. `.first()` deliberately tolerates
+        # the duplicate rows that bug already created.
+        student_enrollment = (
+            database.session.execute(
+                database.select(EstudianteCurso).filter_by(
+                    curso=course_code, usuario=current_user.usuario, vigente=True
+                )
+            )
+            .scalars()
+            .first()
+        )
+
         return render_template(
-            "learning/curso.html",
+            get_course_take_template(),
+            permitir_estudiante=bool(student_enrollment),
             curso=curso_obj,
             secciones=database.session.execute(select(CursoSeccion).filter_by(curso=course_code).order_by(CursoSeccion.indice))
             .scalars()
@@ -328,6 +397,7 @@ def tomar_curso(course_code: str) -> str | Response:
             reopen_requests=reopen_requests,
             user_has_paid=user_has_paid,
             user_certificate=user_certificate,
+            user_progress=_get_user_resource_progress(course_code, current_user.usuario),
             markdown2html=markdown2html,
         )
     return redirect(url_for(VISTA_CURSOS, course_code=course_code))
@@ -341,7 +411,13 @@ def moderar_curso(course_code: str) -> str | Response:
     """Pagina principal del curso."""
     if current_user.tipo in ("moderator", "admin"):
         return render_template(
-            "learning/curso.html",
+            get_course_take_template(),
+            # Moderators/admins always see the full resource list (same
+            # template gate as the student take view — see tomar_curso).
+            # user_has_paid=True keeps the evaluation gate open for them if
+            # this view ever gains `evaluaciones`; they moderate, not buy.
+            permitir_estudiante=True,
+            user_has_paid=True,
             curso=database.session.execute(select(Curso).filter_by(codigo=course_code)).scalars().first(),
             secciones=database.session.execute(select(CursoSeccion).filter_by(curso=course_code).order_by(CursoSeccion.indice))
             .scalars()

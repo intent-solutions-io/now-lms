@@ -12,6 +12,7 @@ Each theme is located in the `now_lms/templates/themes/` directory and follows t
 
 ```
 now_lms/templates/themes/your_theme_name/
+├── theme.yml            # Theme metadata (required for validation)
 ├── base.j2              # Base template structure
 ├── header.j2            # HTML head tags and metadata
 ├── js.j2                # JavaScript libraries and scripts
@@ -23,6 +24,20 @@ now_lms/templates/themes/your_theme_name/
 │   └── home.j2          # Custom home page (most common override)
 └── README.md            # Theme documentation
 ```
+
+### Theme Validation
+
+A directory is only recognized as a valid theme if it contains a `theme.yml` file. The system checks for this file when listing available themes in the admin settings panel. Directories without `theme.yml` are ignored, which prevents issues with stray files or incomplete theme directories.
+
+The `theme.yml` file serves as a theme marker. Its content is not validated beyond existence, but it must be present for the theme to appear in the theme selector. Example:
+
+```yaml
+name: my_custom_theme
+```
+
+### Default Theme Fallback
+
+If the active theme is not set or is invalid, the system automatically falls back to the `now_lms` default theme. This ensures the application always has a working theme, even if the database configuration is missing or corrupted.
 
 ### Static Assets
 
@@ -51,33 +66,13 @@ NOW LMS comes with many built-in themes:
 ### Professional Themes
 
 - **corporative**: Professional blue theme for corporate environments
-- **classic**: Minimalist white/gray design with clean typography
 - **excel**: Modern Excel-inspired theme with green professional color scheme (#217346)
     - Tab-style navigation inspired by Excel
     - Clean design for educational content
     - Professional typography for learning
 
-### Contemporary Themes
-
-- **modern**: Contemporary purple-pink gradient theme with bold, vibrant design
-    - Vibrant purple (#7c3aed) and hot pink (#ec4899) color scheme
-    - Modern gradient backgrounds and smooth animations
-    - Inter font family for crisp, contemporary look
-    - Perfect for tech-focused or creative platforms
-
-- **invest**: Professional finance-inspired theme with green palette
-    - Forest green (#2E7D32) representing growth and stability
-    - Montserrat and Roboto typography
-    - Financial icons and professional aesthetic
-    - Custom home page with investment messaging
-
 ### Color Variations
 
-- **amber**: A warm, autumn-inspired theme
-- **golden**: Warm yellow and orange theme with golden accents
-    - Golden sun (#F0B744) and bright orange (#F49640) colors
-    - Energetic and optimistic visual design
-    - High contrast for readability
 - **ocean**: A blue-based theme
 - **sakura**: A cherry blossom-inspired theme
 
@@ -86,7 +81,7 @@ NOW LMS comes with many built-in themes:
 Three prestigious academic themes inspired by world-renowned universities:
 
 - **harvard**: Burgundy theme (#A41034) inspired by Harvard University
-    - Classic academic design with traditional typography
+    - Traditional academic design with classic typography
     - Merriweather/Playfair Display fonts for titles
     - Source Sans Pro for body text
     - Clean navbar without icons
@@ -116,7 +111,15 @@ Create a new directory in `now_lms/templates/themes/` with your theme name:
 mkdir now_lms/templates/themes/my_custom_theme
 ```
 
-### Step 2: Copy Base Files
+### Step 2: Create Theme Metadata
+
+Create a `theme.yml` file in your theme directory. This file is **required** for the theme to be recognized by the system:
+
+```bash
+echo "name: my_custom_theme" > now_lms/templates/themes/my_custom_theme/theme.yml
+```
+
+### Step 3: Copy Base Files
 
 Start by copying files from an existing theme as a template:
 
@@ -124,7 +127,7 @@ Start by copying files from an existing theme as a template:
 cp -r now_lms/templates/themes/now_lms/* now_lms/templates/themes/my_custom_theme/
 ```
 
-### Step 3: Customize Theme Components
+### Step 4: Customize Theme Components
 
 #### Header Component (`header.j2`)
 
@@ -197,24 +200,26 @@ The theming system now supports complete page template overrides. You can custom
 
 - **`home.j2`**: Custom home page template
 - **`course_list.j2`**: Custom course listing page
-- **`course_view.j2`**: Custom individual course page
+- **`course_view.j2`**: Custom course detail page (public view)
+- **`course_take.j2`**: Custom course taking page (enrolled student view)
 - **`program_list.j2`**: Custom program listing page
 - **`program_view.j2`**: Custom individual program page
+- **`resource_list.j2`**: Custom resource listing page
+- **`resource_view.j2`**: Custom resource detail page
 
-### Using the `get_home_template()` Function
+### Using the Override Functions
 
-The system automatically uses the `get_home_template()` function to determine which template to use:
+The system automatically uses override functions to determine which template to use. Each function checks for a theme-specific override file and falls back to the default template if not found:
 
 ```python
-def get_home_template() -> str:
-    """Returns the path to the home page template."""
+def get_course_take_template() -> str:
+    """Returns the path to the course taking template."""
     THEME = get_current_theme()
-    HOME = Path(path.join(get_theme_path(), "overrides", "home.j2"))
+    COURSE_TAKE = Path(path.join(get_theme_path(), "overrides", "course_take.j2"))
 
-    if HOME.exists():
-        return THEMES_DIRECTORY + str(THEME) + "/overrides/home.j2"
-    else:
-        return "inicio/home.html"  # Default template
+    if COURSE_TAKE.exists():
+        return THEMES_DIRECTORY + str(THEME) + "/overrides/course_take.j2"
+    return "learning/curso.html"  # Default template
 ```
 
 ### Template Override Functions
@@ -223,34 +228,37 @@ The system includes several template override functions:
 
 - `get_home_template()` - Home page override
 - `get_course_list_template()` - Course listing override
+- `get_course_view_template()` - Course detail (public) override
+- `get_course_take_template()` - Course taking (enrolled student) override
 - `get_program_list_template()` - Program listing override
-- `get_course_view_template()` - Course view override
 - `get_program_view_template()` - Program view override
+- `get_resource_list_template()` - Resource listing override
+- `get_resource_view_template()` - Resource detail override
 
-## Custom Pages
+## Static Pages (Theme-defined)
 
-Create static custom pages for your theme in the `custom_pages/` directory. These pages can be accessed via `/custom/<page_name>`.
+Create static pages for your theme in the `static_pages/` directory. These pages are defined as Jinja2 templates within the theme and can be accessed via `/static/<page_name>`. They do not use the database.
 
-### Creating Custom Pages
+### Creating Static Pages
 
-1. Create a template in `templates/themes/your_theme/custom_pages/`:
+1. Create a template in `templates/themes/your_theme/static_pages/`:
 
 ```jinja2
-<!-- templates/themes/mytheme/custom_pages/contacto.j2 -->
+<!-- templates/themes/mytheme/static_pages/contacto.j2 -->
 {% set current_theme = current_theme() %}
 <!doctype html>
 <html lang="es">
     <head>
         {{ current_theme.headertags() }}
         {{ current_theme.local_style() }}
-        <title>Contacto - {{ site_config.nombre }}</title>
+        <title>Contacto - {{ config().titulo }}</title>
     </head>
     <body>
         {{ current_theme.navbar() }}
 
         <div class="container py-5">
             <h1>Contacto</h1>
-            <p>Esta es una página personalizada del tema.</p>
+            <p>Esta es una página estática definida por el tema.</p>
             <!-- Add your custom content here -->
         </div>
 
@@ -259,13 +267,13 @@ Create static custom pages for your theme in the `custom_pages/` directory. Thes
 </html>
 ```
 
-2. Access the page at: `/custom/contacto`
+2. Access the page at: `/static/contacto`
 
-### Custom Page Security
+### Static Page Security
 
-- Page names are validated to contain only alphanumeric characters, underscores, and hyphens
-- Only authenticated themes can serve custom pages
+- Page names are validated to prevent path traversal (rejects `/`, `\`, `.`, `$`)
 - Pages are cached for 180 seconds for performance
+- If the template file does not exist, the user is redirected to `/`
 
 ## Static Assets Management
 
@@ -671,9 +679,19 @@ The theming system includes automatic cache invalidation. When you change the ac
 ### Theme Not Loading
 
 1. Verify theme directory structure
-2. Check file permissions
-3. Clear browser cache
-4. Restart the application if needed
+2. Ensure `theme.yml` exists in the theme directory
+3. Check file permissions
+4. Clear browser cache
+5. Restart the application if needed
+
+### Theme Not Appearing in Admin Panel
+
+If your custom theme does not appear in the theme selector at `/setting/theming`:
+
+1. Verify the theme directory is under `now_lms/templates/themes/`
+2. Confirm `theme.yml` exists inside the theme directory
+3. Check that the directory is not a file (e.g., `__pycache__`)
+4. Restart the application to reload the theme list
 
 ### Styling Issues
 

@@ -30,7 +30,7 @@ from werkzeug.wrappers import Response
 # Local resources
 # ---------------------------------------------------------------------------------------
 from now_lms.auth import perfil_requerido
-from now_lms.cache import cache, cache_key_with_auth_state
+from now_lms.cache import cache, cache_key_with_auth_state, invalidar_cache_programa, invalidate_user_course_view_cache
 from now_lms.config import DESARROLLO, DIRECTORIO_PLANTILLAS, images
 from now_lms.db import (
     MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA,
@@ -84,9 +84,9 @@ def _program_explore_query(tag_param: str | None, category_param: str | None):
                 EtiquetaPrograma.etiqueta == tag.id
             )
     if category_param:
-        category = database.session.execute(
-            database.select(Categoria).filter(Categoria.nombre == category_param)
-        ).scalars().first()
+        category = (
+            database.session.execute(database.select(Categoria).filter(Categoria.nombre == category_param)).scalars().first()
+        )
         if category:
             query = query.join(CategoriaPrograma, Programa.id == CategoriaPrograma.programa).filter(
                 CategoriaPrograma.categoria == category.id
@@ -163,9 +163,10 @@ def nuevo_programa() -> str | Response:
     form.categoria.choices = generate_category_choices()
     form.etiquetas.choices = generate_tag_choices()
 
-    if form.validate_on_submit() or request.method == "POST":
+    if form.validate_on_submit():
         try:
             programa = _create_program_from_form(form)
+            invalidar_cache_programa(programa.codigo)
             cache.delete("view/" + url_for(PROGRAMS_ROUTE))
             flash(_("Nuevo Programa creado."), "success")
             return redirect(url_for("program.pagina_programa", codigo=programa.codigo))
@@ -180,7 +181,7 @@ def nuevo_programa() -> str | Response:
 @program.route("/program/list", methods=["GET"])
 @login_required
 @perfil_requerido("instructor")
-@cache.cached(timeout=60)
+@cache.cached(timeout=60, key_prefix=cache_key_with_auth_state)  # type: ignore[arg-type]
 def programas() -> str:
     """Lista de programas."""
     if current_user.tipo == "admin":
@@ -206,10 +207,16 @@ def programas() -> str:
 @perfil_requerido("instructor")
 def delete_program(ulid: str) -> Response:
     """Elimina programa."""
+    programa = database.session.execute(database.select(Programa).filter(Programa.id == ulid)).scalars().first()
+    if programa is None:
+        abort(404)
+    codigo = programa.codigo
+
     database.session.execute(delete(Programa).where(Programa.id == ulid))
 
     if current_user.tipo == "admin":
         database.session.commit()
+        invalidar_cache_programa(codigo)
         cache.delete("view/" + url_for(PROGRAMS_ROUTE))
         return redirect(url_for(PROGRAMS_ROUTE))
     return abort(403)
@@ -224,33 +231,22 @@ def edit_program(ulid: str) -> str | Response:
     if programa is None:
         abort(404)
 
-    form = ProgramaForm(
-        nombre=programa.nombre,
-        descripcion=programa.descripcion,
-        codigo=programa.codigo,
-        precio=programa.precio,
-        estado=programa.estado,
-        promocionado=programa.promocionado,
-        plantilla_certificado=programa.plantilla_certificado,
-    )
-    form.plantilla_certificado.choices = generate_template_choices_program()
-    form.plantilla_certificado.data = programa.plantilla_certificado
-    form.certificado.data = programa.certificado
-
-    # Populate category and tag choices and current values
-    form.categoria.choices = generate_category_choices()
-    form.etiquetas.choices = generate_tag_choices()
-    form.categoria.data = get_program_category(programa.id)
-    form.etiquetas.data = get_program_tags(programa.id)
-
     if current_user.tipo != "admin":
         return abort(403)
 
-    if form.validate_on_submit() or request.method == "POST":
+    form = ProgramaForm()
+    form.plantilla_certificado.choices = generate_template_choices_program()
+    form.categoria.choices = generate_category_choices()
+    form.etiquetas.choices = generate_tag_choices()
+
+    if form.validate_on_submit():
         if programa.promocionado is False and form.promocionado.data is True:
             programa.fecha_promocionado = datetime.today()
 
+        original_codigo = programa.codigo
+
         programa.nombre = form.nombre.data
+        programa.codigo = form.codigo.data
         programa.descripcion = form.descripcion.data
         programa.precio = form.precio.data
         programa.publico = form.publico.data
@@ -275,11 +271,28 @@ def edit_program(ulid: str) -> str | Response:
             database.session.commit()
             _save_program_logo(programa)
 
+            invalidar_cache_programa(original_codigo)
+            if original_codigo != programa.codigo:
+                invalidar_cache_programa(programa.codigo)
+
             flash(_("Programa editado correctamente."), "success")
         except OperationalError:
             database.session.rollback()
             flash(_("No se puedo editar el programa."))
         return redirect(url_for(PROGRAMS_ROUTE))
+
+    if request.method == "GET":
+        form.nombre.data = programa.nombre
+        form.descripcion.data = programa.descripcion
+        form.codigo.data = programa.codigo
+        form.precio.data = programa.precio
+        form.estado.data = programa.estado
+        form.promocionado.data = programa.promocionado
+        form.certificado.data = programa.certificado
+        form.plantilla_certificado.data = programa.plantilla_certificado
+        form.publico.data = programa.publico
+        form.categoria.data = get_program_category(programa.id)
+        form.etiquetas.data = get_program_tags(programa.id)
 
     return render_template("learning/programas/editar_programa.html", form=form, programa=programa)
 
@@ -336,11 +349,137 @@ def lista_programas() -> str:
     )
 
 
+def inscribir_usuario_en_cursos_de_programa(username: str, programa: Programa) -> list[str]:
+    """Enroll a user in all courses of a program. Returns list of enrolled course codes."""
+    from now_lms.calendar_utils import create_events_for_student_enrollment
+    from now_lms.vistas.courses import _crear_indice_avance_curso
+    from now_lms.vistas.paypal import get_site_currency
+
+    program_courses = (
+        database.session.execute(database.select(ProgramaCurso).filter_by(programa=programa.codigo)).scalars().all()
+    )
+
+    enrolled = []
+    for pc in program_courses:
+        # Check if already enrolled in this course
+        existing = database.session.execute(
+            database.select(EstudianteCurso).filter_by(curso=pc.curso, usuario=username, vigente=True)
+        ).scalar_one_or_none()
+        if existing:
+            continue
+
+        # Create Pago
+        curso = database.session.execute(database.select(Curso).filter_by(codigo=pc.curso)).scalar_one_or_none()
+        if not curso:
+            continue
+
+        pago = Pago()
+        pago.usuario = username
+        pago.curso = pc.curso
+        pago.estado = "completed"
+        pago.metodo = "program_enrollment"
+        pago.monto = 0
+        pago.moneda = get_site_currency()
+        pago.descripcion = _("Inscripción al curso como parte del programa '%(name)s'", name=programa.nombre)
+        pago.audit = False
+        pago.creado = datetime.now(timezone.utc).date()
+        pago.creado_por = current_user.usuario if (current_user and current_user.is_authenticated) else username
+
+        usuario_obj = database.session.execute(database.select(Usuario).filter_by(usuario=username)).scalar_one_or_none()
+        if usuario_obj:
+            pago.nombre = usuario_obj.nombre or username
+            pago.apellido = usuario_obj.apellido or ""
+            pago.correo_electronico = usuario_obj.correo_electronico or ""
+        else:
+            pago.nombre = username
+            pago.apellido = ""
+            pago.correo_electronico = ""
+
+        database.session.add(pago)
+        database.session.flush()
+
+        course_enrollment = EstudianteCurso(
+            curso=pc.curso,
+            usuario=username,
+            vigente=True,
+            pago=pago.id,
+            creado=datetime.now(timezone.utc).date(),
+            creado_por=current_user.usuario if (current_user and current_user.is_authenticated) else username,
+        )
+        database.session.add(course_enrollment)
+        enrolled.append(pc.curso)
+
+    if enrolled:
+        for course_code in enrolled:
+            _crear_indice_avance_curso(course_code)
+            invalidate_user_course_view_cache(username, course_code)
+            create_events_for_student_enrollment(username, course_code)
+
+    return enrolled
+
+
+def inscribir_usuario_en_curso_especifico_de_programa(username: str, course_code: str, programa: Programa) -> bool:
+    """Enrolls a single user in a single course of a program."""
+    from now_lms.calendar_utils import create_events_for_student_enrollment
+    from now_lms.vistas.courses import _crear_indice_avance_curso
+    from now_lms.vistas.paypal import get_site_currency
+
+    existing = database.session.execute(
+        database.select(EstudianteCurso).filter_by(curso=course_code, usuario=username, vigente=True)
+    ).scalar_one_or_none()
+    if existing:
+        return False
+
+    curso = database.session.execute(database.select(Curso).filter_by(codigo=course_code)).scalar_one_or_none()
+    if not curso:
+        return False
+
+    pago = Pago()
+    pago.usuario = username
+    pago.curso = course_code
+    pago.estado = "completed"
+    pago.metodo = "program_enrollment"
+    pago.monto = 0
+    pago.moneda = get_site_currency()
+    pago.descripcion = _("Inscripción al curso como parte del programa '%(name)s'", name=programa.nombre)
+    pago.audit = False
+    pago.creado = datetime.now(timezone.utc).date()
+    pago.creado_por = current_user.usuario if (current_user and current_user.is_authenticated) else "system"
+
+    usuario_obj = database.session.execute(database.select(Usuario).filter_by(usuario=username)).scalar_one_or_none()
+    if usuario_obj:
+        pago.nombre = usuario_obj.nombre or username
+        pago.apellido = usuario_obj.apellido or ""
+        pago.correo_electronico = usuario_obj.correo_electronico or ""
+    else:
+        pago.nombre = username
+        pago.apellido = ""
+        pago.correo_electronico = ""
+
+    database.session.add(pago)
+    database.session.flush()
+
+    course_enrollment = EstudianteCurso(
+        curso=course_code,
+        usuario=username,
+        vigente=True,
+        pago=pago.id,
+        creado=datetime.now(timezone.utc).date(),
+        creado_por=current_user.usuario if (current_user and current_user.is_authenticated) else "system",
+    )
+    database.session.add(course_enrollment)
+    _crear_indice_avance_curso(course_code)
+    invalidate_user_course_view_cache(username, course_code)
+    create_events_for_student_enrollment(username, course_code)
+    return True
+
+
 @program.route("/program/<codigo>/enroll", methods=["GET", "POST"])
 @login_required
 @perfil_requerido("student")
 def inscribir_programa(codigo: str) -> str | Response:
     """Inscribir usuario a un programa."""
+    print("DEBUG INSCRIBIR PROGRAMA: method:", request.method, "user:", current_user.usuario if current_user else None)
     programa = database.session.execute(database.select(Programa).filter(Programa.codigo == codigo)).scalars().first()
 
     if not programa:
@@ -352,12 +491,58 @@ def inscribir_programa(codigo: str) -> str | Response:
         return redirect(url_for("program.tomar_programa", codigo=codigo))
 
     if request.method == "POST":
-        # Create enrollment
+        if programa.precio and programa.precio > 0:
+            # Check if already has a pending payment for this program
+            existing_pago = (
+                database.session.execute(
+                    database.select(Pago).filter_by(usuario=current_user.usuario, programa=programa.id, estado="pending")
+                )
+                .scalars()
+                .first()
+            )
+
+            if existing_pago:
+                return redirect(url_for("program.program_payment", codigo=codigo, payment_id=existing_pago.id))
+
+            # Create a pending payment
+            from now_lms.vistas.paypal import get_site_currency
+
+            pago = Pago()
+            pago.usuario = current_user.usuario
+            pago.programa = programa.id
+            pago.curso = None
+            pago.moneda = get_site_currency()
+            pago.monto = programa.precio
+            pago.estado = "pending"
+            pago.metodo = "paypal"
+            pago.nombre = current_user.nombre or current_user.usuario
+            pago.apellido = current_user.apellido or ""
+            pago.correo_electronico = current_user.correo_electronico or ""
+            pago.descripcion = _("Pago del programa '%(name)s'", name=programa.nombre)
+            pago.audit = False
+            pago.creado = datetime.now(timezone.utc).date()
+            pago.creado_por = current_user.usuario
+
+            try:
+                database.session.add(pago)
+                database.session.commit()
+                return redirect(url_for("program.program_payment", codigo=codigo, payment_id=pago.id))
+            except Exception:
+                import traceback
+
+                traceback.print_exc()
+                database.session.rollback()
+                flash(_("Error al procesar la inscripción al programa."), "error")
+                return redirect(url_for("program.inscribir_programa", codigo=codigo))
+
+        # Create enrollment for free program
         inscripcion = ProgramaEstudiante(usuario=current_user.usuario, programa=programa.id, creado_por=current_user.usuario)
 
         try:
             database.session.add(inscripcion)
+            inscribir_usuario_en_cursos_de_programa(current_user.usuario, programa)
             database.session.commit()
+            print("PE IN THE VIEW:", database.session.execute(database.select(ProgramaEstudiante)).scalars().all())
             flash(_("Te has inscrito exitosamente al programa."), "success")
             return redirect(url_for("program.tomar_programa", codigo=codigo))
         except OperationalError:
@@ -365,6 +550,49 @@ def inscribir_programa(codigo: str) -> str | Response:
             flash(_("Hubo un error al inscribirte al programa."), "error")
 
     return render_template("learning/programas/inscribir_programa.html", programa=programa)
+
+
+@program.route("/program/<codigo>/payment", methods=["GET"])
+@login_required
+@perfil_requerido("student")
+def program_payment(codigo: str) -> str | Response:
+    """Página de pago con PayPal para un programa."""
+    payment_id = request.args.get("payment_id")
+    pago = None
+    if payment_id:
+        pago = (
+            database.session.execute(database.select(Pago).filter_by(id=payment_id, usuario=current_user.usuario))
+            .scalars()
+            .first()
+        )
+
+    programa = database.session.execute(database.select(Programa).filter_by(codigo=codigo)).scalars().first()
+    if not programa:
+        flash(_("Programa no encontrado."), "error")
+        return redirect(url_for("program.lista_programas"))
+
+    if not (programa.precio and programa.precio > 0):
+        flash(_("Este programa es gratuito."), "info")
+        return redirect(url_for("program.tomar_programa", codigo=codigo))
+
+    # Check if PayPal is enabled
+    from now_lms.vistas.paypal import check_paypal_enabled, get_site_currency
+
+    if not check_paypal_enabled():
+        flash(_("Los pagos con PayPal no están habilitados."), "error")
+        return redirect(url_for("program.tomar_programa", codigo=codigo))
+
+    site_currency = get_site_currency()
+
+    from flask_wtf.csrf import generate_csrf
+
+    return render_template(
+        "learning/programas/program_payment.html",
+        programa=programa,
+        site_currency=site_currency,
+        pago=pago,
+        csrf_token=generate_csrf(),
+    )
 
 
 @program.route("/program/<codigo>/take", methods=["GET"])
@@ -435,6 +663,9 @@ def gestionar_cursos_programa(codigo: str) -> str | Response:
 
         if action == "add_course":
             curso_codigo = request.form.get("curso_codigo")
+            if not curso_codigo:
+                flash(_("Código de curso requerido."), "danger")
+                return redirect(url_for("programs.programa_detalle", codigo=codigo))
 
             # Check if already exists
             existente = database.session.execute(
@@ -444,8 +675,18 @@ def gestionar_cursos_programa(codigo: str) -> str | Response:
             if not existente:
                 nuevo_curso = ProgramaCurso(programa=codigo, curso=curso_codigo, creado_por=current_user.usuario)
                 database.session.add(nuevo_curso)
+
+                # Enroll all students currently in the program in this new course
+                estudiantes = (
+                    database.session.execute(database.select(ProgramaEstudiante).filter_by(programa=programa.id))
+                    .scalars()
+                    .all()
+                )
+                for est in estudiantes:
+                    inscribir_usuario_en_curso_especifico_de_programa(est.usuario, curso_codigo, programa)
+
                 database.session.commit()
-                flash(f"Curso {curso_codigo} agregado al programa.", "success")
+                flash(_("Curso {} agregado al programa.").format(curso_codigo), "success")
             else:
                 flash(_("El curso ya está en el programa."), "warning")
 
@@ -457,9 +698,25 @@ def gestionar_cursos_programa(codigo: str) -> str | Response:
             ).scalar_one_or_none()
 
             if curso_programa:
+                # Unenroll all students currently in the program from this course
+                estudiantes = (
+                    database.session.execute(database.select(ProgramaEstudiante).filter_by(programa=programa.id))
+                    .scalars()
+                    .all()
+                )
+                for est in estudiantes:
+                    enrollment = database.session.execute(
+                        database.select(EstudianteCurso).filter_by(curso=curso_codigo, usuario=est.usuario, vigente=True)
+                    ).scalar_one_or_none()
+                    if enrollment:
+                        enrollment.vigente = False
+                        enrollment.modificado = datetime.now(timezone.utc).date()
+                        enrollment.modificado_por = current_user.usuario
+                        invalidate_user_course_view_cache(est.usuario, curso_codigo)
+
                 database.session.delete(curso_programa)
                 database.session.commit()
-                flash(f"Curso {curso_codigo} removido del programa.", "success")
+                flash(_("Curso {} removido del programa.").format(curso_codigo), "success")
 
         return redirect(url_for("program.gestionar_cursos_programa", codigo=codigo))
 
@@ -499,7 +756,7 @@ def inscribir_usuario_programa(codigo: str) -> str | Response:
             try:
                 database.session.add(inscripcion)
                 database.session.commit()
-                flash(f"Usuario {usuario.nombre} {usuario.apellido} inscrito exitosamente.", "success")
+                flash(_("Usuario {} {} inscrito exitosamente.").format(usuario.nombre, usuario.apellido), "success")
             except OperationalError:
                 database.session.rollback()
                 flash(_("Error al inscribir usuario."), "error")
@@ -517,19 +774,40 @@ def _emitir_certificado_programa(codigo_programa: str, usuario: str, plantilla: 
     ).scalar_one_or_none()
 
     if not programa:
-        flash(_("Programa no encontrado."), "error")
+        try:
+            flash(_("Programa no encontrado."), "error")
+        except RuntimeError:
+            pass
         return
+
+    import json
+
+    # Generate snapshot of courses currently in the program
+    snapshot_dict = {}
+    program_courses = (
+        database.session.execute(database.select(ProgramaCurso).filter_by(programa=programa.codigo)).scalars().all()
+    )
+    for pc in program_courses:
+        c = database.session.execute(database.select(Curso).filter_by(codigo=pc.curso)).scalar_one_or_none()
+        if c:
+            snapshot_dict[c.codigo] = c.nombre
+        else:
+            snapshot_dict[pc.curso] = pc.curso
 
     certificado = CertificacionPrograma(
         programa=programa.id,
         usuario=usuario,
         certificado=plantilla,
+        cursos_snapshot=json.dumps(snapshot_dict),
     )
     certificado.creado = datetime.now(timezone.utc).date()
-    certificado.creado_por = current_user.usuario
+    certificado.creado_por = current_user.usuario if (current_user and current_user.is_authenticated) else usuario
     database.session.add(certificado)
     database.session.commit()
-    flash(_("Certificado de programa emitido por completar todos los cursos."), "success")
+    try:
+        flash(_("Certificado de programa emitido por completar todos los cursos."), "success")
+    except RuntimeError:
+        pass
 
 
 # ---------------------------------------------------------------------------------------
@@ -553,7 +831,7 @@ def _verify_student_and_enrollment(student_username: str) -> dict | None:
         database.select(Usuario).filter_by(usuario=student_username)
     ).scalar_one_or_none()
     if not usuario_existe:
-        return {"msg": f"El usuario '{student_username}' no existe en el sistema.", "cat": "error"}
+        return {"msg": _("El usuario '{}' no existe en el sistema.").format(student_username), "cat": "error"}
     return None
 
 
@@ -576,9 +854,9 @@ def _get_or_create_course_enrollment(course_code, student_username, bypass_payme
     pago.estado = "completed"
     pago.metodo = "admin_program_enrollment"
     pago.monto = 0 if bypass_payment else curso.precio
-    pago.descripcion = f"Inscripción administrativa al programa '{programa.nombre}' por {current_user.usuario}"
+    pago.descripcion = _("Inscripción administrativa al programa '%(name)s' por %(user)s", name=programa.nombre, user=current_user.usuario)
     if notes:
-        pago.descripcion += f" - Notas: {notes}"
+        pago.descripcion += _(" - Notas: %(notes)s", notes=notes)
     pago.audit = not bypass_payment and curso.pagado
     pago.creado = datetime.now(timezone.utc).date()
     pago.creado_por = current_user.usuario
@@ -605,13 +883,14 @@ def _post_enrollment_processing(student_username, enrolled_courses, programa):
 
     for course_code in enrolled_courses:
         _crear_indice_avance_curso(course_code)
+        invalidate_user_course_view_cache(student_username, course_code)
         create_events_for_student_enrollment(student_username, course_code)
 
-    message = f"Estudiante '{student_username}' inscrito exitosamente en el programa '{programa.nombre}'"
+    message = _("Estudiante '{}' inscrito exitosamente en el programa '{}'").format(student_username, programa.nombre)
     if enrolled_courses:
-        message += f" y en {len(enrolled_courses)} curso(s)."
+        message += _(" y en {} curso(s).").format(len(enrolled_courses))
     else:
-        message += ". El estudiante ya estaba inscrito en todos los cursos del programa."
+        message += _(". El estudiante ya estaba inscrito en todos los cursos del programa.")
 
     return message
 
@@ -643,14 +922,14 @@ def admin_program_enrollment(codigo: str) -> str | Response:
         database.select(ProgramaEstudiante).filter_by(programa=programa.id, usuario=student_username)
     ).scalar_one_or_none()
     if existing_enrollment:
-        flash(f"El estudiante '{student_username}' ya está inscrito en este programa.", "warning")
+        flash(_("El estudiante '{}' ya está inscrito en este programa.").format(student_username), "warning")
         return render_template(ADMIN_PROGRAM_ENROLL_TEMPLATE, programa=programa, form=form)
 
     try:
         # Get all courses in the program
-        program_courses = database.session.execute(
-            database.select(ProgramaCurso).filter_by(programa=programa.id)
-        ).scalars().all()
+        program_courses = (
+            database.session.execute(database.select(ProgramaCurso).filter_by(programa=programa.id)).scalars().all()
+        )
 
         # Enroll student in program
         program_enrollment = ProgramaEstudiante(
@@ -679,7 +958,7 @@ def admin_program_enrollment(codigo: str) -> str | Response:
 
     except Exception:
         database.session.rollback()
-        flash("Error al inscribir al estudiante en el programa.", "error")
+        flash(_("Error al inscribir al estudiante en el programa."), "error")
 
     return render_template(ADMIN_PROGRAM_ENROLL_TEMPLATE, programa=programa, form=form)
 
@@ -729,7 +1008,7 @@ def admin_program_unenrollment(codigo: str, student_username: str) -> Response:
     ).scalar_one_or_none()
 
     if not program_enrollment:
-        flash(f"El estudiante '{student_username}' no está inscrito en este programa.", "error")
+        flash(_("El estudiante '{}' no está inscrito en este programa.").format(student_username), "error")
         return redirect(url_for("program.admin_program_enrollments", codigo=codigo))
 
     try:
@@ -752,13 +1031,16 @@ def admin_program_unenrollment(codigo: str, student_username: str) -> Response:
                 course_enrollment.modificado_por = current_user.usuario
                 unenrolled_courses.append(course_code)
 
+        for course_code in unenrolled_courses:
+            invalidate_user_course_view_cache(student_username, course_code)
+
         # Remove program enrollment
         database.session.delete(program_enrollment)
         database.session.commit()
 
-        message = f"Estudiante '{student_username}' desinscrito del programa '{programa.nombre}'"
+        message = _("Estudiante '{}' desinscrito del programa '{}'").format(student_username, programa.nombre)
         if unenrolled_courses:
-            message += f" y de {len(unenrolled_courses)} curso(s)."
+            message += _(" y de {} curso(s).").format(len(unenrolled_courses))
         else:
             message += "."
 
@@ -766,6 +1048,6 @@ def admin_program_unenrollment(codigo: str, student_username: str) -> Response:
 
     except Exception as e:
         database.session.rollback()
-        flash(f"Error al desinscribir al estudiante del programa: {str(e)}", "error")
+        flash(_("Error al desinscribir al estudiante del programa: {}").format(str(e)), "error")
 
     return redirect(url_for("program.admin_program_enrollments", codigo=codigo))

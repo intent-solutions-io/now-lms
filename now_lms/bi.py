@@ -17,6 +17,7 @@ from flask_login import current_user
 from now_lms.db import Curso, CursoRecurso, CursoSeccion, DocenteCurso, EstudianteCurso, ModeradorCurso, Usuario, database
 from now_lms.i18n import _
 from now_lms.logs import log
+from now_lms.cache import invalidate_user_course_view_cache
 
 # pylint: disable=E1101
 
@@ -40,41 +41,45 @@ def modificar_indice_curso(
     indice_back = indice - 1
 
     actual = database.session.execute(
-        database.select(CursoSeccion).filter(CursoSeccion.curso == codigo_curso, CursoSeccion.indice == indice_current)
+        database.select(CursoSeccion)
+        .filter(CursoSeccion.curso == codigo_curso, CursoSeccion.indice == indice_current)
+        .with_for_update()
     ).scalar_one_or_none()
     if actual is None:
         return
     superior = database.session.execute(
-        database.select(CursoSeccion).filter(CursoSeccion.curso == codigo_curso, CursoSeccion.indice == indice_next)
+        database.select(CursoSeccion)
+        .filter(CursoSeccion.curso == codigo_curso, CursoSeccion.indice == indice_next)
+        .with_for_update()
     ).scalar_one_or_none()
     inferior = database.session.execute(
-        database.select(CursoSeccion).filter(CursoSeccion.curso == codigo_curso, CursoSeccion.indice == indice_back)
+        database.select(CursoSeccion)
+        .filter(CursoSeccion.curso == codigo_curso, CursoSeccion.indice == indice_back)
+        .with_for_update()
     ).scalar_one_or_none()
 
     if task == "increment":
         actual.indice = indice_next
         database.session.add(actual)
-        database.session.commit()
         if superior:
             superior.indice = indice_current
             database.session.add(superior)
-            database.session.commit()
-
     else:  # task == decrement
         if actual.indice != 1:  # No convertir indice 1 a 0.
             actual.indice = indice_back
             database.session.add(actual)
-            database.session.commit()
             if inferior:
                 inferior.indice = indice_current
                 database.session.add(inferior)
-                database.session.commit()
+    database.session.commit()
 
 
 def reorganiza_indice_curso(codigo_curso: str | None = None):
     """Al eliminar una sección de un curso se debe generar el indice nuevamente."""
     secciones = (
-        database.session.execute(database.select(CursoSeccion).filter_by(curso=codigo_curso).order_by(CursoSeccion.indice))
+        database.session.execute(
+            database.select(CursoSeccion).filter_by(curso=codigo_curso).order_by(CursoSeccion.indice).with_for_update()
+        )
         .scalars()
         .all()
     )
@@ -83,14 +88,16 @@ def reorganiza_indice_curso(codigo_curso: str | None = None):
         for seccion in secciones:
             seccion.indice = indice
             database.session.add(seccion)
-            database.session.commit()
             indice = indice + 1
+        database.session.commit()
 
 
 def reorganiza_indice_seccion(seccion: str | None = None):
     """Al eliminar una sección de un curso se debe generar el indice nuevamente."""
     recursos = (
-        database.session.execute(database.select(CursoRecurso).filter_by(seccion=seccion).order_by(CursoRecurso.indice))
+        database.session.execute(
+            database.select(CursoRecurso).filter_by(seccion=seccion).order_by(CursoRecurso.indice).with_for_update()
+        )
         .scalars()
         .all()
     )
@@ -99,8 +106,8 @@ def reorganiza_indice_seccion(seccion: str | None = None):
         for recurso in recursos:
             recurso.indice = indice
             database.session.add(recurso)
-            database.session.commit()
             indice = indice + 1
+        database.session.commit()
 
 
 def modificar_indice_seccion(
@@ -170,6 +177,8 @@ def asignar_curso_a_estudiante(curso_codigo: str | None, /, usuario_id: str | No
     )
     database.session.add(ASIGNACION)
     database.session.commit()
+    if curso_codigo and usuario_id:
+        invalidate_user_course_view_cache(usuario_id, curso_codigo)
 
 
 def cambia_tipo_de_usuario_por_id(id_usuario: str | None, /, nuevo_tipo: str | None = None, usuario: str | None = None):
@@ -178,8 +187,12 @@ def cambia_tipo_de_usuario_por_id(id_usuario: str | None, /, nuevo_tipo: str | N
 
     Los valores reconocidos por el sistema son: admin, user, instructor, moderator.
     """
+    from flask import abort
+
     log.trace("Assigning user {id_usuario} the profile: {nuevo_tipo}")
     USUARIO = database.session.execute(database.select(Usuario).filter_by(usuario=id_usuario)).scalar_one_or_none()
+    if not USUARIO:
+        abort(404)
     USUARIO.tipo = nuevo_tipo
     USUARIO.modificado_por = usuario
     database.session.commit()

@@ -39,6 +39,10 @@ build/Release
 
 # Dependency directories
 node_modules/
+# The pattern above ends in a slash, so it matches directories only. A local dev
+# setup that links the bootstrap assets in from elsewhere leaves a *symlink*
+# here, which git treats as a file and would happily commit.
+now_lms/static/node_modules
 jspm_packages/
 venv/
 
@@ -174,6 +178,8 @@ cover/
 
 # Translations
 *.mo
+# Advisory lock taken by now_lms.i18n_autocompile while regenerating *.mo
+now_lms/translations/.compile.lock
 *.pot
 
 # Django stuff:
@@ -228,6 +234,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv*/
 env/
 venv/
 ENV/
@@ -286,3 +293,21 @@ now_lms/static/files/public/themes/nowlearninginstitute
 now_lms/now_lms/
 
 notes.txtcookies.txt
+
+# Beads / Dolt files (added by bd init)
+#
+# .beads/ MUST stay ignored in the tracked .gitignore, not just in
+# .git/info/exclude. The exclude file is machine-local and does not travel with a
+# clone, so without this line a teammate who clones and runs any bd command would
+# see .beads/ as untracked and could commit it. This repository is PUBLIC, and
+# .beads/issues.jsonl here is a ~2 MB export of the whole Intent Solutions estate
+# (1,207 issues under the bd_000-projects prefix), not just now-lms work.
+.beads/
+.dolt/
+.beads-credential-key
+# Teaching content lives in the private intent-solutions-io/intent-curriculum
+# repo and must never be committed here (ADR 000-docs/008-AT-ADEC): this fork is
+# public, and answer keys beside the courses that grade them is an
+# assessment-integrity failure. A local checkout for seeding is fine — that is
+# what CCA_CONTENT_DIR is for; this line stops it becoming a commit.
+content/cca/

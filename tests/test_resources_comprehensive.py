@@ -1011,9 +1011,10 @@ def test_instructor_editar_recurso_meet(app, db_session):
 
 def test_descargar_calendario_ics_meet(app, db_session):
     """Se puede descargar un archivo ICS para un recurso Meet."""
-    crear_usuario(db_session, "instructor", "instructor13")
+    instructor = crear_usuario(db_session, "instructor", "instructor13")
     curso = crear_curso(db_session, "curso_cal_ics")
     seccion = crear_seccion(db_session, curso)
+    asignar_instructor(db_session, curso, instructor)
 
     recurso = CursoRecurso(
         curso=curso.codigo,
@@ -1052,9 +1053,10 @@ def test_descargar_calendario_ics_meet(app, db_session):
 
 def test_google_calendar_link_redireccion(app, db_session):
     """El enlace de Google Calendar redirige correctamente."""
-    crear_usuario(db_session, "instructor", "instructor14")
+    instructor = crear_usuario(db_session, "instructor", "instructor14")
     curso = crear_curso(db_session, "curso_gcal")
     seccion = crear_seccion(db_session, curso)
+    asignar_instructor(db_session, curso, instructor)
 
     recurso = CursoRecurso(
         curso=curso.codigo,
@@ -1091,9 +1093,10 @@ def test_google_calendar_link_redireccion(app, db_session):
 
 def test_outlook_calendar_link_redireccion(app, db_session):
     """El enlace de Outlook Calendar redirige correctamente."""
-    crear_usuario(db_session, "instructor", "instructor15")
+    instructor = crear_usuario(db_session, "instructor", "instructor15")
     curso = crear_curso(db_session, "curso_outlook")
     seccion = crear_seccion(db_session, curso)
+    asignar_instructor(db_session, curso, instructor)
 
     recurso = CursoRecurso(
         curso=curso.codigo,
@@ -1245,7 +1248,7 @@ def test_ver_biblioteca_curso_instructor_asignado(app, db_session):
 def test_ver_biblioteca_curso_estudiante_no_permitido(app, db_session):
     """Un estudiante no puede acceder a la biblioteca (requiere perfil instructor)."""
     estudiante = crear_usuario(db_session, "student", "alumno11")
-    curso = crear_curso(db_session, "curso_biblioteca_estudiante")
+    curso = crear_curso(db_session, "bib_est_no_perm")
     inscribir_estudiante(db_session, curso, estudiante)
 
     client = app.test_client()
@@ -1260,7 +1263,7 @@ def test_ver_biblioteca_curso_estudiante_no_permitido(app, db_session):
 def test_ver_biblioteca_curso_no_inscrito(app, db_session):
     """Un usuario no inscrito no puede ver la biblioteca privada."""
     crear_usuario(db_session, "student", "alumno12")
-    curso = crear_curso(db_session, "curso_biblioteca_privada")
+    curso = crear_curso(db_session, "curso_bib_privada")
 
     client = app.test_client()
     login_usuario(client, "alumno12")

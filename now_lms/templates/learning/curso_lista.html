@@ -89,9 +89,9 @@
                                         </td>
                                         <td class="text-center">
                                             {% if item.publico %}
-                                            <i class="bi bi-check-circle-fill text-success" title="Público"></i>
+                                            <i class="bi bi-check-circle-fill text-success" title="{{ _('Público') }}"></i>
                                             {% else %}
-                                            <i class="bi bi-lock-fill text-secondary" title="Privado"></i>
+                                            <i class="bi bi-lock-fill text-secondary" title="{{ _('Privado') }}"></i>
                                             {% endif %}
                                         </td>
                                         <td>
@@ -133,7 +133,7 @@
                 {% endif %}
 
                 <div class="container" id="user_paginatios">
-                    {{ current_theme.rendizar_paginacion(consulta=consulta, vista="cursos") }}
+                    {{ current_theme.rendizar_paginacion(consulta=consulta, vista="instructor_profile.cursos") }}
                 </div>
             </div>
         </main>

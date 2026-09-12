@@ -16,11 +16,14 @@ from html.parser import HTMLParser
 # ---------------------------------------------------------------------------------------
 from bleach import clean, linkify
 from flask import redirect
+from flask_login import current_user
 from markdown import markdown
+from werkzeug.wrappers import Response
 
 # ---------------------------------------------------------------------------------------
 # Local resources
 # ---------------------------------------------------------------------------------------
+from now_lms.i18n import _
 
 
 # <------------------------------------------------------------------------------------->
@@ -69,7 +72,21 @@ class EstiloAlterta:
 # Constantes globales
 INICIO_SESION = redirect("/user/login")
 
-PANEL_DE_USUARIO = redirect("/home/panel")
+
+def panel_de_usuario() -> Response:
+    """Redirige al panel correspondiente según el tipo de usuario.
+
+    FORK-LOCAL: ``student`` lands on ``/dashboard`` (see
+    ``now_lms.vistas.member_dashboard``) instead of ``/home/panel``. Instructors,
+    moderators and admins are unchanged, so the upstream panels keep their only
+    callers. Re-apply at sync; upstream path is the dashboard blueprint itself.
+    """
+    if current_user.is_authenticated and current_user.tipo == "admin":
+        return redirect("/admin/panel")
+    if current_user.is_authenticated and current_user.tipo == "student":
+        return redirect("/dashboard")
+    return redirect("/home/panel")
+
 
 TIPOS_DE_USUARIO: list[str] = ["admin", "user", "instructor", "moderator"]
 
@@ -99,22 +116,24 @@ HTML_TAGS = [
 ]
 
 CURSO_NIVEL: dict[int, str] = {
-    0: """<i class="bi bi-circle" aria-hidden="true"></i> Nivel Introductorio""",
-    1: """<i class="bi bi-circle-fill" aria-hidden="true"></i> Nivel Principiante""",
-    2: """<i class="bi bi-circle-fill" aria-hidden="true"></i> <i class="bi bi-circle-fill" aria-hidden="true"></i> Nivel Intermedio""",
-    3: """
+    0: _("""<i class="bi bi-circle" aria-hidden="true"></i> Nivel Introductorio"""),
+    1: _("""<i class="bi bi-circle-fill" aria-hidden="true"></i> Nivel Principiante"""),
+    2: _(
+        """<i class="bi bi-circle-fill" aria-hidden="true"></i> <i class="bi bi-circle-fill" aria-hidden="true"></i> Nivel Intermedio"""
+    ),
+    3: _("""
     <i class="bi bi-circle-fill" aria-hidden="true">
     </i> <i class="bi bi-circle-fill" aria-hidden="true">
     </i> <i class="bi bi-circle-fill" aria-hidden="true"></i>
     Nivel Avanzado
-    """,
+    """),
 }
 
 GENEROS: dict[str, str] = {
     "male": """<i class="bi bi-gender-male" aria-hidden="true"></i>""",
     "female": """<i class="bi bi-gender-female" aria-hidden="true"></i>""",
     "other": """<i class="bi bi-gender-ambiguous" aria-hidden="true"></i>""",
-    "none": """No espeficicado.""",
+    "none": _("No especificado."),
 }
 
 TIPOS_RECURSOS: dict[str, str] = {

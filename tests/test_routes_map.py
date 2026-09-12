@@ -26,6 +26,12 @@ ADMIN_REDIRECT_ALLOWED_PATHS = {
     "/setting/delete_site_logo",
     "/setting/mail_check",
     "/user/forgot_password",
+    "/home/panel",
+    # Deliberate: the Hub is the single reader for global announcements, so this
+    # second reader redirects to the dashboard rather than rendering a duplicate.
+    # One channel for community communication is a product decision (ADR-9), not
+    # a broken route.
+    "/dashboard/announcements",
 }
 EXCLUDED_PATHS = {
     "/ads.txt",
@@ -91,6 +97,30 @@ def _assert_response(route: str, role: str, allow_redirects: bool, response):
 
     content_type = response.headers.get("Content-Type", "").lower()
     assert "html" in content_type, f"{route} para {role} devolvió Content-Type {content_type}"
+
+
+@pytest.fixture(autouse=True)
+def _enable_contact(app):
+    """Fork-local: the fork's /contact honors enable_contact (404 while
+    disabled — offered upstream as U1). This walk visits /contact for every
+    role, so enable the toggle per test and restore it after."""
+    from now_lms.db import Configuracion, database
+
+    with app.app_context():
+        config = database.session.execute(database.select(Configuracion)).scalars().first()
+        previous = bool(config.enable_contact)
+        config.enable_contact = True
+        database.session.commit()
+    yield
+    # Defensive teardown, matching conftest's own pattern — see the twin fixture
+    # in tests/test_contact_blueprint.py for the full rationale.
+    with app.app_context():
+        try:
+            config = database.session.execute(database.select(Configuracion)).scalars().first()
+            config.enable_contact = previous
+            database.session.commit()
+        except Exception:  # pragma: no cover - only on an already-failing test
+            database.session.rollback()
 
 
 @pytest.mark.parametrize("role, credentials, allow_redirects", ROLE_MATRIX)

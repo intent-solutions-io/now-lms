@@ -23,10 +23,12 @@ from werkzeug.wrappers import Response
 # ---------------------------------------------------------------------------------------
 from now_lms.auth import perfil_requerido
 from now_lms.bi import cambia_tipo_de_usuario_por_id
-from now_lms.cache import cache
+from now_lms.cache import cache, cache_key_with_auth_state
 from now_lms.config import DIRECTORIO_PLANTILLAS
-from now_lms.db import MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA, Curso, EstudianteCurso, Usuario, database
+from now_lms.db import MAXIMO_RESULTADOS_EN_CONSULTA_PAGINADA, Certificacion, ContactMessage, Curso, CursoRecurso
+from now_lms.db import EstudianteCurso, Usuario, database
 from now_lms.db import Pago
+from now_lms.i18n import _
 
 # Constants
 ADMIN_USERS_ROUTE = "admin_profile.usuarios"
@@ -39,7 +41,7 @@ admin_profile = Blueprint("admin_profile", __name__, template_folder=DIRECTORIO_
 @admin_profile.route("/admin/panel", methods=["GET"])
 @login_required
 @perfil_requerido("admin")
-@cache.cached(timeout=90)
+@cache.cached(timeout=90, key_prefix=cache_key_with_auth_state)  # type: ignore[arg-type]
 def pagina_admin() -> str:
     """Perfil de usuario administrador."""
     # Get admin statistics
@@ -58,6 +60,16 @@ def pagina_admin() -> str:
 
     # Get total enrollments
     total_enrollments = database.session.execute(database.select(func.count(EstudianteCurso.id))).scalar() or 0
+
+    # Get content and engagement statistics
+    recursos_creados = database.session.execute(database.select(func.count(CursoRecurso.id))).scalar() or 0
+    certificados_emitidos = database.session.execute(database.select(func.count(Certificacion.id))).scalar() or 0
+    mensajes_sin_leer = (
+        database.session.execute(
+            database.select(func.count(ContactMessage.id)).filter(ContactMessage.status == "not_seen")
+        ).scalar()
+        or 0
+    )
 
     from sqlalchemy import cast, Numeric
 
@@ -84,13 +96,16 @@ def pagina_admin() -> str:
         cursos_recientes=cursos_recientes,
         total_payments=total_payments,
         total_ingresos=total_ingresos,
+        recursos_creados=recursos_creados,
+        certificados_emitidos=certificados_emitidos,
+        mensajes_sin_leer=mensajes_sin_leer,
     )
 
 
 @admin_profile.route("/admin/users/list", methods=["GET"])
 @login_required
 @perfil_requerido("admin")
-@cache.cached(timeout=60)
+@cache.cached(timeout=60, key_prefix=cache_key_with_auth_state)  # type: ignore[arg-type]
 def usuarios() -> str:
     """Lista de usuarios con acceso a al aplicación."""
     CONSULTA = database.paginate(
@@ -118,9 +133,9 @@ def activar_usuario(user_id: str) -> Response:
     if not perfil_usuario.activo:
         perfil_usuario.activo = True
         database.session.commit()
-        flash("Usuario definido como activo", "info")
+        flash(_("Usuario definido como activo"), "info")
     else:
-        flash("Usuario ya se encuentra definido como activo", "warning")
+        flash(_("Usuario ya se encuentra definido como activo"), "warning")
     cache.delete(CACHE_VIEW_PREFIX + url_for(ADMIN_USERS_ROUTE))
     return redirect(url_for(ADMIN_USERS_ROUTE))
 
@@ -137,9 +152,9 @@ def inactivar_usuario(user_id: str) -> Response:
     if perfil_usuario.activo:
         perfil_usuario.activo = False
         database.session.commit()
-        flash("Usuario definido como inactivo", "info")
+        flash(_("Usuario definido como inactivo"), "info")
     else:
-        flash("Usuario ya se encuentra definido como inactivo", "warning")
+        flash(_("Usuario ya se encuentra definido como inactivo"), "warning")
     cache.delete(CACHE_VIEW_PREFIX + url_for(ADMIN_USERS_ROUTE))
     return redirect(url_for(ADMIN_USERS_ROUTE))
 
@@ -152,14 +167,14 @@ def eliminar_usuario(user_id: str) -> Response:
     database.session.execute(delete(Usuario).where(Usuario.id == user_id))
     database.session.commit()
     cache.delete(CACHE_VIEW_PREFIX + url_for(ADMIN_USERS_ROUTE))
-    flash("Usuario eliminado correctamente.", "info")
+    flash(_("Usuario eliminado correctamente."), "info")
     return redirect(url_for(request.form.get("ruta", default="home", type=str)))
 
 
 @admin_profile.route("/admin/users/list_inactive", methods=["GET"])
 @login_required
 @perfil_requerido("admin")
-@cache.cached(timeout=60)
+@cache.cached(timeout=60, key_prefix=cache_key_with_auth_state)  # type: ignore[arg-type]
 def usuarios_inactivos() -> str:
     """Lista de usuarios con acceso a al aplicación."""
     CONSULTA = database.paginate(
@@ -178,7 +193,7 @@ def usuarios_inactivos() -> str:
 @admin_profile.route("/admin/users/list_unverified", methods=["GET"])
 @login_required
 @perfil_requerido("admin")
-@cache.cached(timeout=60)
+@cache.cached(timeout=60, key_prefix=cache_key_with_auth_state)  # type: ignore[arg-type]
 def usuarios_sin_verificar() -> str:
     """Lista de usuarios que no han verificado su correo electrónico."""
     CONSULTA = database.paginate(
@@ -207,7 +222,7 @@ def verificar_email_usuario(user_id: str) -> Response:
 
     row = database.session.execute(database.select(Usuario).filter(Usuario.id == user_id)).first()
     if row is None:
-        flash("Usuario no encontrado.", "error")
+        flash(_("Usuario no encontrado."), "error")
         return redirect(url_for(ADMIN_UNVERIFIED_USERS_ROUTE))
 
     perfil_usuario = row[0]
@@ -219,10 +234,10 @@ def verificar_email_usuario(user_id: str) -> Response:
 
     try:
         database.session.commit()
-        flash(f"Correo electrónico de {perfil_usuario.usuario} verificado exitosamente.", "success")
+        flash(_("Correo electrónico de {user} verificado exitosamente.").format(user=perfil_usuario.usuario), "success")
     except Exception as e:
         database.session.rollback()
-        flash(f"Error al verificar el correo electrónico: {str(e)}", "error")
+        flash(_("Error al verificar el correo electrónico: {error}").format(error=str(e)), "error")
 
     # Clear cache
     cache.delete(CACHE_VIEW_PREFIX + url_for(ADMIN_UNVERIFIED_USERS_ROUTE))
@@ -243,7 +258,7 @@ def rechazar_usuario_sin_verificar(user_id: str) -> Response:
 
     row = database.session.execute(database.select(Usuario).filter(Usuario.id == user_id)).first()
     if row is None:
-        flash("Usuario no encontrado.", "error")
+        flash(_("Usuario no encontrado."), "error")
         return redirect(url_for(ADMIN_UNVERIFIED_USERS_ROUTE))
 
     perfil_usuario = row[0]
@@ -254,10 +269,10 @@ def rechazar_usuario_sin_verificar(user_id: str) -> Response:
 
     try:
         database.session.commit()
-        flash(f"Usuario {perfil_usuario.usuario} rechazado e inactivado.", "info")
+        flash(_("Usuario {user} rechazado e inactivado.").format(user=perfil_usuario.usuario), "info")
     except Exception as e:
         database.session.rollback()
-        flash(f"Error al rechazar el usuario: {str(e)}", "error")
+        flash(_("Error al rechazar el usuario: {error}").format(error=str(e)), "error")
 
     # Clear cache
     cache.delete(CACHE_VIEW_PREFIX + url_for(ADMIN_UNVERIFIED_USERS_ROUTE))
@@ -313,7 +328,7 @@ def pagos() -> str:
         if end_date_raw:
             end_date = date.fromisoformat(end_date_raw)
     except ValueError:
-        flash("El rango de fechas no es válido.", "warning")
+        flash(_("El rango de fechas no es válido."), "warning")
         start_date_raw = ""
         end_date_raw = ""
 

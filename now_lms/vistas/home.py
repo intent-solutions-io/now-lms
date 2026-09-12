@@ -11,7 +11,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------------------
 # Third-party libraries
 # ---------------------------------------------------------------------------------------
-from flask import Blueprint, redirect, render_template, request
+from flask import Blueprint, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 from werkzeug.wrappers import Response
@@ -26,16 +26,12 @@ from now_lms.db import (
     BlogPost,
     Certificacion,
     Configuracion,
-    ContactMessage,
     Curso,
-    CursoRecurso,
     EstudianteCurso,
-    Usuario,
     database,
     select,
 )
 from now_lms.db.tools import get_current_theme
-from now_lms.logs import log
 from now_lms.themes import get_home_template
 
 # ---------------------------------------------------------------------------------------
@@ -100,26 +96,11 @@ def panel() -> str | Response:
     if not current_user.is_authenticated:
         return redirect("/")
 
+    if current_user.tipo == "admin":
+        return redirect(url_for("admin_profile.pagina_admin"))
+
     # Use structural pattern matching for user types (Python 3.10+)
     match current_user.tipo:
-        case "admin":
-            cursos_actuales = database.session.execute(select(func.count(Curso.id))).scalar()
-            usuarios_registrados = database.session.execute(select(func.count(Usuario.usuario))).scalar()
-            recursos_creados = database.session.execute(select(func.count(CursoRecurso.id))).scalar()
-            certificados_emitidos = database.session.execute(select(func.count(Certificacion.id))).scalar()
-            mensajes_sin_leer = database.session.execute(
-                select(func.count(ContactMessage.id)).filter(ContactMessage.status == "not_seen")
-            ).scalar()
-            cursos_por_fecha = database.session.execute(select(Curso).order_by(Curso.creado).limit(5)).scalars().all()
-            return render_template(
-                "inicio/panel_admin.html",
-                cursos_actuales=cursos_actuales,
-                usuarios_registrados=usuarios_registrados,
-                recursos_creados=recursos_creados,
-                cursos_por_fecha=cursos_por_fecha,
-                certificados_emitidos=certificados_emitidos,
-                mensajes_sin_leer=mensajes_sin_leer,
-            )
         case "student":
             cuenta_cursos = database.session.execute(
                 select(func.count(EstudianteCurso.id)).filter(EstudianteCurso.usuario == current_user.usuario)
@@ -136,7 +117,6 @@ def panel() -> str | Response:
                 .scalars()
                 .all()
             )
-            log.warning(mis_cursos)
             return render_template(
                 "inicio/panel_user.html",
                 cuenta_cursos=cuenta_cursos,
@@ -238,23 +218,19 @@ def panel() -> str | Response:
             return redirect("/")
 
 
-@home.route("/custom/<page>", methods=["GET"])
+@home.route("/static/<page>", methods=["GET"])
 @cache.cached(timeout=180)
-def custom_page(page: str) -> str | Response:
-    """Muestra páginas personalizadas por tema."""
-    THEME = get_current_theme()
+def static_page(page: str) -> str | Response:
+    """Muestra páginas estáticas definidas en el tema."""
+    THEME = get_current_theme() or "now_lms"
 
     if any(c in page for c in ["/", "\\", ".", "$"]):
         return redirect("/")
 
-    if THEME and THEME != "now_lms":
-        THEMES_DIRECTORY = "themes/"
-        custom_page_path = Path(path.join(str(DIRECTORIO_PLANTILLAS), THEMES_DIRECTORY, THEME, "custom_pages", f"{page}.j2"))
+    THEMES_DIRECTORY = "themes/"
+    static_page_path = Path(path.join(str(DIRECTORIO_PLANTILLAS), THEMES_DIRECTORY, THEME, "static_pages", f"{page}.j2"))
 
-        if custom_page_path.exists():
-            template_path = f"{THEMES_DIRECTORY}{THEME}/custom_pages/{page}.j2"
-            return render_template(template_path)
-        return redirect("/")
-
-    # Si no existe la página personalizada, redirigir al inicio
+    if static_page_path.exists():
+        template_path = f"{THEMES_DIRECTORY}{THEME}/static_pages/{page}.j2"
+        return render_template(template_path)
     return redirect("/")

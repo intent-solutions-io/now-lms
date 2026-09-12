@@ -7,7 +7,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------------------
 # Third-party libraries
 # ---------------------------------------------------------------------------------------
-from flask import redirect, request, url_for
+from flask import flash, redirect, request, url_for
 from flask_login import login_required
 from sqlalchemy import delete
 from werkzeug.wrappers import Response
@@ -15,6 +15,7 @@ from werkzeug.wrappers import Response
 # ---------------------------------------------------------------------------------------
 # Local resources
 # ---------------------------------------------------------------------------------------
+from now_lms.cache import invalidar_cache_curso
 from now_lms.auth import perfil_requerido
 from now_lms.bi import (
     cambia_curso_publico,
@@ -26,6 +27,8 @@ from now_lms.bi import (
     reorganiza_indice_seccion,
 )
 from now_lms.db import CursoRecurso, CursoSeccion, database
+from now_lms.i18n import _
+from now_lms.vistas._helpers import safe_commit
 from now_lms.vistas.courses.base import course, VISTA_ADMINISTRAR_CURSO, VISTA_CURSOS
 
 
@@ -34,11 +37,17 @@ from now_lms.vistas.courses.base import course, VISTA_ADMINISTRAR_CURSO, VISTA_C
 @perfil_requerido("instructor")
 def incrementar_indice_seccion(course_code: str, indice: str) -> Response:
     """Actualiza indice de secciones."""
+    try:
+        indice_int = int(indice)
+    except (ValueError, TypeError):
+        flash(_("Índice inválido."), "danger")
+        return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
     modificar_indice_curso(
         codigo_curso=course_code,
-        indice=int(indice),
+        indice=indice_int,
         task="increment",
     )
+    invalidar_cache_curso(course_code)
     return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
 
 
@@ -47,11 +56,17 @@ def incrementar_indice_seccion(course_code: str, indice: str) -> Response:
 @perfil_requerido("instructor")
 def reducir_indice_seccion(course_code: str, indice: str) -> Response:
     """Actualiza indice de secciones."""
+    try:
+        indice_int = int(indice)
+    except (ValueError, TypeError):
+        flash(_("Índice inválido."), "danger")
+        return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
     modificar_indice_curso(
         codigo_curso=course_code,
-        indice=int(indice),
+        indice=indice_int,
         task="decrement",
     )
+    invalidar_cache_curso(course_code)
     return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=course_code))
 
 
@@ -60,11 +75,17 @@ def reducir_indice_seccion(course_code: str, indice: str) -> Response:
 @perfil_requerido("instructor")
 def modificar_orden_recurso(cource_code: str, seccion_id: str, resource_index: str, task: str) -> Response:
     """Actualiza indice de recursos."""
+    try:
+        indice_int = int(resource_index)
+    except (ValueError, TypeError):
+        flash(_("Índice inválido."), "danger")
+        return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=cource_code))
     modificar_indice_seccion(
         seccion_id=seccion_id,
-        indice=int(resource_index),
+        indice=indice_int,
         task=task,
     )
+    invalidar_cache_curso(cource_code)
     return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=cource_code))
 
 
@@ -74,8 +95,9 @@ def modificar_orden_recurso(cource_code: str, seccion_id: str, resource_index: s
 def eliminar_recurso(curso_code: str, seccion: str, id_: str) -> Response:
     """Elimina un recurso del curso y reorganiza índices."""
     database.session.execute(delete(CursoRecurso).where(CursoRecurso.id == id_))
-    database.session.commit()
+    safe_commit()
     reorganiza_indice_seccion(seccion=seccion)
+    invalidar_cache_curso(curso_code)
     return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=curso_code))
 
 
@@ -85,8 +107,9 @@ def eliminar_recurso(curso_code: str, seccion: str, id_: str) -> Response:
 def eliminar_seccion(curso_id: str, id_: str) -> Response:
     """Elimina una sección del curso y reorganiza índices."""
     database.session.execute(delete(CursoSeccion).where(CursoSeccion.id == id_))
-    database.session.commit()
+    safe_commit()
     reorganiza_indice_curso(codigo_curso=curso_id)
+    invalidar_cache_curso(curso_id)
     return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=curso_id))
 
 
@@ -98,6 +121,7 @@ def elimina_logo(course_code: str) -> Response:
     from now_lms.db.tools import elimina_logo_perzonalizado_curso
 
     elimina_logo_perzonalizado_curso(course_code=course_code)
+    invalidar_cache_curso(course_code)
     return redirect(url_for("course.editar_curso", course_code=course_code))
 
 
@@ -109,7 +133,9 @@ def cambiar_estatus_curso() -> Response:
     cambia_estado_curso_por_id(
         request.args.get("curse"), nuevo_estado=request.args.get("status"), usuario=request.args.get("usuario")
     )
-    return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=request.args.get("curse")))
+    curse = request.args.get("curse", "")
+    invalidar_cache_curso(curse)
+    return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=curse))
 
 
 @course.route("/course/change_curse_public")
@@ -117,10 +143,12 @@ def cambiar_estatus_curso() -> Response:
 @perfil_requerido("instructor")
 def cambiar_curso_publico() -> Response:
     """Actualiza el estado público de un curso."""
+    curse = request.args.get("curse", "")
     cambia_curso_publico(
-        id_curso=request.args.get("curse"),
+        id_curso=curse,
     )
-    return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=request.args.get("curse")))
+    invalidar_cache_curso(curse)
+    return redirect(url_for(VISTA_ADMINISTRAR_CURSO, course_code=curse))
 
 
 @course.route("/course/change_curse_seccion_public")
@@ -128,7 +156,9 @@ def cambiar_curso_publico() -> Response:
 @perfil_requerido("instructor")
 def cambiar_seccion_publico() -> Response:
     """Actualiza el estado público de una sección."""
+    course_code = request.args.get("course_code", "")
     cambia_seccion_publico(
         codigo=request.args.get("codigo"),
     )
+    invalidar_cache_curso(course_code)
     return redirect(url_for(VISTA_CURSOS, course_code=request.args.get("course_code")))

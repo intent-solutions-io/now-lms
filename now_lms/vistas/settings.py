@@ -56,15 +56,47 @@ def _save_theme_asset(config: Style, field_name: str, filename: str, config_attr
 
 def _configuration_form(config: Configuracion) -> ConfigForm:
     """Build the general settings form from persisted configuration."""
-    values = {field: getattr(config, field) for field in (
-        "titulo", "descripcion", "moneda", "lang", "enable_programs", "enable_masterclass", "enable_resources",
-        "enable_blog", "enable_contact", "show_latest_blog_posts_on_home", "enable_file_uploads", "max_file_size",
-        "enable_html_preformatted_descriptions", "enable_footer", "verify_user_by_email", "allow_unverified_email_login",
-        "titulo_html", "hero", "enable_feature_section", "custom_feature_section", "custom_text1", "custom_text2",
-        "custom_text3", "custom_text4", "eslogan", "social_facebook", "social_twitter", "social_linkedin",
-        "social_youtube", "social_instagram", "social_github", "contact_address", "contact_email", "contact_phone",
-        "contact_mobile", "contact_whatsapp",
-    )}
+    values = {
+        field: getattr(config, field)
+        for field in (
+            "titulo",
+            "descripcion",
+            "moneda",
+            "lang",
+            "enable_programs",
+            "enable_masterclass",
+            "enable_resources",
+            "enable_blog",
+            "enable_contact",
+            "show_latest_blog_posts_on_home",
+            "enable_file_uploads",
+            "max_file_size",
+            "enable_html_preformatted_descriptions",
+            "enable_footer",
+            "verify_user_by_email",
+            "allow_unverified_email_login",
+            "titulo_html",
+            "hero",
+            "enable_feature_section",
+            "custom_feature_section",
+            "custom_text1",
+            "custom_text2",
+            "custom_text3",
+            "custom_text4",
+            "eslogan",
+            "social_facebook",
+            "social_twitter",
+            "social_linkedin",
+            "social_youtube",
+            "social_instagram",
+            "social_github",
+            "contact_address",
+            "contact_email",
+            "contact_phone",
+            "contact_mobile",
+            "contact_whatsapp",
+        )
+    }
     values["timezone"] = config.time_zone
     return ConfigForm(**values)
 
@@ -72,13 +104,42 @@ def _configuration_form(config: Configuracion) -> ConfigForm:
 def _update_configuration(config: Configuracion, form: ConfigForm) -> None:
     """Copy editable general settings from the form to the model."""
     fields = (
-        "titulo", "descripcion", "moneda", "lang", "enable_programs", "enable_masterclass", "enable_resources",
-        "enable_blog", "enable_contact", "show_latest_blog_posts_on_home", "enable_file_uploads", "max_file_size",
-        "enable_html_preformatted_descriptions", "enable_footer", "verify_user_by_email", "allow_unverified_email_login",
-        "titulo_html", "hero", "enable_feature_section", "custom_feature_section", "custom_text1", "custom_text2",
-        "custom_text3", "custom_text4", "eslogan", "social_facebook", "social_twitter", "social_linkedin",
-        "social_youtube", "social_instagram", "social_github", "contact_address", "contact_email", "contact_phone",
-        "contact_mobile", "contact_whatsapp",
+        "titulo",
+        "descripcion",
+        "moneda",
+        "lang",
+        "enable_programs",
+        "enable_masterclass",
+        "enable_resources",
+        "enable_blog",
+        "enable_contact",
+        "show_latest_blog_posts_on_home",
+        "enable_file_uploads",
+        "max_file_size",
+        "enable_html_preformatted_descriptions",
+        "enable_footer",
+        "verify_user_by_email",
+        "allow_unverified_email_login",
+        "titulo_html",
+        "hero",
+        "enable_feature_section",
+        "custom_feature_section",
+        "custom_text1",
+        "custom_text2",
+        "custom_text3",
+        "custom_text4",
+        "eslogan",
+        "social_facebook",
+        "social_twitter",
+        "social_linkedin",
+        "social_youtube",
+        "social_instagram",
+        "social_github",
+        "contact_address",
+        "contact_email",
+        "contact_phone",
+        "contact_mobile",
+        "contact_whatsapp",
     )
     for field in fields:
         setattr(config, field, getattr(form, field).data)
@@ -345,7 +406,7 @@ def mail_check() -> str | Response:
                 background=False,
                 no_config=True,
                 _log="Correo de prueba enviado desde NOW LMS",
-                _flush="Correo de prueba enviado.",
+                _flush=_("Correo de prueba enviado."),
             )
             config.email_verificado = True
             database.session.commit()
@@ -577,7 +638,7 @@ def _validate_paypal_enabled(form: PayaplForm, config: PaypalConfig) -> bool:
     if validation["valid"]:
         return True
 
-    flash(f"Error en la configuración de PayPal: {validation['message']}", "error")
+    flash(_("Error en la configuración de PayPal: %(message)s", message=validation["message"]), "error")
     return False
 
 

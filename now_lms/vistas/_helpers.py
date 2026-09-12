@@ -10,14 +10,35 @@ from __future__ import annotations
 from pathlib import Path
 
 # ---------------------------------------------------------------------------------------
+# Third-party libraries
+# ---------------------------------------------------------------------------------------
+from flask import flash
+from sqlalchemy.exc import OperationalError
+
+# ---------------------------------------------------------------------------------------
 # Local resources
 # ---------------------------------------------------------------------------------------
 from now_lms.config import DIRECTORIO_ARCHIVOS_PUBLICOS
+from now_lms.i18n import _
 
-# ---------------------------------------------------------------------------------------
-# Third-party libraries
-# ---------------------------------------------------------------------------------------
 IMAGES_PATH = "/images/"
+
+
+def safe_commit() -> bool:
+    """Safely commit database session with error handling.
+
+    Returns:
+        True if commit succeeded, False otherwise.
+    """
+    from now_lms.db import database
+
+    try:
+        database.session.commit()
+        return True
+    except OperationalError:
+        database.session.rollback()
+        flash(_("Error de base de datos. Intente de nuevo."), "danger")
+        return False
 
 
 def get_current_course_logo(course_code: str) -> str | None:
@@ -94,19 +115,19 @@ def favicon_personalizado() -> bool:
         return False
 
 
-def get_footer_pages():
-    """Get static pages to be shown in the footer."""
+def get_custom_pages():
+    """Get custom pages to be shown in the footer."""
     from now_lms.cache import cache
-    from now_lms.db import StaticPage, database
+    from now_lms.db import CustomPage, database
 
     @cache.memoize(timeout=300)
-    def _get_footer_pages():
+    def _get_custom_pages():
         try:
             pages = (
                 database.session.execute(
-                    database.select(StaticPage)
-                    .filter(StaticPage.is_active.is_(True), StaticPage.mostrar_en_footer.is_(True))
-                    .order_by(StaticPage.title)
+                    database.select(CustomPage)
+                    .filter(CustomPage.is_active.is_(True), CustomPage.mostrar_en_footer.is_(True))
+                    .order_by(CustomPage.title)
                 )
                 .scalars()
                 .all()
@@ -115,7 +136,7 @@ def get_footer_pages():
         except Exception:
             return []
 
-    return _get_footer_pages()
+    return _get_custom_pages()
 
 
 def get_footer_enlaces():

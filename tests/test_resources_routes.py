@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2025 - 2026 BMO Soluciones, S.A.
 
 import datetime
+import re
 
 
 from now_lms.auth import proteger_passwd
@@ -11,7 +12,10 @@ from now_lms.db import (
     CursoRecursoAvance,
     CursoSeccion,
     CursoUsuarioAvance,
+    DocenteCurso,
     EstudianteCurso,
+    Evaluation,
+    EvaluationAttempt,
     Pago,
     Usuario,
 )
@@ -136,19 +140,49 @@ def _crear_recurso_texto(db_session, curso: Curso, seccion: CursoSeccion) -> Cur
     return recurso
 
 
-def test_marcar_recurso_completado_crea_avance(app, db_session):
+def test_marcar_recurso_completado_crea_avance(app, db_session, monkeypatch):
     _crear_instructor(db_session)
     estudiante = _crear_estudiante(db_session)
     curso = _crear_curso(db_session)
     seccion = _crear_seccion(db_session, curso)
     recurso = _crear_recurso_texto(db_session, curso, seccion)
     _inscribir_estudiante(db_session, curso, estudiante)
+    evaluation = Evaluation(
+        section_id=seccion.id,
+        title="Practice quiz",
+        description="Quiz description",
+        passing_score=70.0,
+        max_attempts=2,
+    )
+    db_session.add(evaluation)
+    db_session.commit()
+    attempt = EvaluationAttempt(
+        evaluation_id=evaluation.id,
+        user_id=estudiante.usuario,
+        started_at=datetime.datetime(2026, 8, 26, 9, 0),
+        submitted_at=datetime.datetime(2026, 8, 26, 9, 18),
+        score=75.0,
+        passed=True,
+    )
+    db_session.add(attempt)
+    db_session.commit()
 
     client = app.test_client()
     _login(client, estudiante.usuario, "alumno")
 
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
+    page = client.get(f"/course/{curso.codigo}/resource/{recurso.tipo}/{recurso.id}")
+    assert page.status_code == 200
+    assert f"/evaluation/attempt/{attempt.id}/result".encode() in page.data
+    token_match = re.search(rb'name="csrf_token"[^>]*value="([^"]+)"', page.data)
+    assert token_match is not None
+
+    get_resp = client.get(f"/course/{curso.codigo}/resource/{recurso.tipo}/{recurso.id}/complete")
+    assert get_resp.status_code == 405
+
     resp = client.post(
         f"/course/{curso.codigo}/resource/{recurso.tipo}/{recurso.id}/complete",
+        data={"csrf_token": token_match.group(1).decode()},
         follow_redirects=False,
     )
 
@@ -185,9 +219,11 @@ def test_descargar_calendario_meet_generado(app, db_session):
 
 
 def test_google_calendar_link_redirecciona(app, db_session):
-    _crear_instructor(db_session)
+    instructor = _crear_instructor(db_session)
     curso = _crear_curso(db_session, code="c_google")
     seccion = _crear_seccion(db_session, curso)
+    db_session.add(DocenteCurso(curso=curso.codigo, usuario=instructor.usuario, vigente=True))
+    db_session.commit()
     recurso = _crear_recurso_meet(db_session, curso, seccion)
 
     client = app.test_client()

@@ -9,6 +9,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------------------
 # Standard library
 # ---------------------------------------------------------------------------------------
+from contextlib import nullcontext
 from datetime import datetime, time, timedelta, timezone
 from os import environ, listdir, makedirs, path
 from shutil import copyfile, copytree
@@ -24,6 +25,7 @@ from ulid import ULID
 # ---------------------------------------------------------------------------------------
 from now_lms.auth import proteger_passwd
 from now_lms.config import DIRECTORIO_ARCHIVOS, DIRECTORIO_BASE_ARCHIVOS_USUARIO
+from now_lms.i18n import _
 from now_lms.db import (
     BlogPost,
     BlogTag,
@@ -64,14 +66,39 @@ if TYPE_CHECKING:
 
 
 def system_info(app: "Flask") -> None:
-    """Información básica de la instalación."""
-    with app.app_context():
-        version_sistema = SystemInfo(param="version", val=VERSION)
-        version_sistema_mayor = SystemInfo(param="version_mayor", val=str(MAYOR))
-        version_sistema_menor = SystemInfo(param="version_menor", val=str(MENOR))
+    """Información básica de la instalación.
 
-        for i in version_sistema, version_sistema_mayor, version_sistema_menor:
-            database.session.add(i)
+    Reutiliza el application context activo si ya existe en lugar de anidar uno
+    nuevo. Anidarlo no era inocuo: al salir del context interno Flask ejecuta
+    ``teardown_appcontext``, y flask-alembic responde invalidando la conexión
+    que dejó cacheada la última operación de Alembic (``initial_setup()`` llama
+    ``alembic.stamp()`` justo antes de esta función). Contra una base en disco
+    eso sólo fuerza una reconexión, pero contra ``sqlite:///:memory:`` esa
+    conexión *es* la base de datos: se perdía el esquema recién creado y el
+    bootstrap fallaba con ``no such table: ad_sense`` (la primera tabla del
+    flush, no la única ausente).
+
+    Las demás funciones de carga inicial ya dependen del context del llamador;
+    esta era la excepción.
+    """
+    from flask import has_app_context
+
+    contexto = nullcontext() if has_app_context() else app.app_context()
+
+    with contexto:
+        try:
+            existing = {row.param for row in database.session.query(SystemInfo.param).all()}
+        except Exception:
+            existing = set()
+        entries = []
+        if "version" not in existing:
+            entries.append(SystemInfo(param="version", val=VERSION))
+        if "version_mayor" not in existing:
+            entries.append(SystemInfo(param="version_mayor", val=str(MAYOR)))
+        if "version_menor" not in existing:
+            entries.append(SystemInfo(param="version_menor", val=str(MENOR)))
+        for entry in entries:
+            database.session.add(entry)
         database.session.commit()
 
 
@@ -90,10 +117,10 @@ def crear_etiquetas() -> None:
 def crear_categorias() -> None:
     """Crea categorias de demostración."""
     log.trace("Creating demonstration categories.")
-    cat1 = Categoria(nombre="Learning", descripcion="Cursos sobre aprendizaje")
-    cat2 = Categoria(nombre="Programing", descripcion=DESCRIPCION_CURSOS_PROGRAMACION)
-    cat3 = Categoria(nombre="Python", descripcion=DESCRIPCION_CURSOS_PROGRAMACION)
-    cat4 = Categoria(nombre="Databases", descripcion=DESCRIPCION_CURSOS_PROGRAMACION)
+    cat1 = Categoria(nombre="Learning", descripcion=_("Cursos sobre aprendizaje"))
+    cat2 = Categoria(nombre="Programing", descripcion=_(DESCRIPCION_CURSOS_PROGRAMACION))
+    cat3 = Categoria(nombre="Python", descripcion=_(DESCRIPCION_CURSOS_PROGRAMACION))
+    cat4 = Categoria(nombre="Databases", descripcion=_(DESCRIPCION_CURSOS_PROGRAMACION))
 
     for i in cat1, cat2, cat3, cat4:
         database.session.add(i)
@@ -254,7 +281,7 @@ def crear_curso_demo() -> None:
         hora_fin=time(hour=15, minute=00),
         notes="Google Meet",
         publico=True,  # Make it public for easier testing
-        requerido=2,
+        requerido="optional",
     )
     nuevo_recurso3.tipo = "meet"
     database.session.add(nuevo_recurso3)
@@ -268,7 +295,7 @@ def crear_curso_demo() -> None:
         descripcion="A image file.",
         indice=4,
         publico=True,
-        requerido=3,
+        requerido="substitute",
         base_doc_url="images",
         doc="resources/logo_large.png",
     )
@@ -283,7 +310,7 @@ def crear_curso_demo() -> None:
         descripcion="A text in markdown.",
         indice=5,
         publico=False,
-        requerido=3,
+        requerido="substitute",
         text="# NOW - Learning Management System.",
     )
     nuevo_recurso5.tipo = "text"
@@ -324,7 +351,7 @@ def crear_curso_demo() -> None:
         url="https://www.youtube.com/watch?v=TWQFHRt3dNg",
         indice=9,
         publico=False,
-        requerido=2,
+        requerido="optional",
     )
     nuevo_recurso9.tipo = "youtube"
     database.session.add(nuevo_recurso9)
@@ -438,7 +465,7 @@ def crear_certificados() -> None:
         html=HTML,
         css=CSS,
         titulo="Demo Certificado",
-        descripcion="Puede verificar la generación de PDF con este certificado.",
+        descripcion=_("Puede verificar la generación de PDF con este certificado."),
         code="demo",
         habilitado=False,
         publico=False,
@@ -708,8 +735,8 @@ def crear_evaluacion_predeterminada() -> None:
     question1 = Question(
         evaluation_id=evaluacion.id,
         type="multiple",
-        text="¿Cuál es una de las principales ventajas de la enseñanza en línea?",
-        explanation="La flexibilidad es una de las características más importantes de la educación en línea, permitiendo a estudiantes e instructores adaptar horarios.",
+        text=_("¿Cuál es una de las principales ventajas de la enseñanza en línea?"),
+        explanation=_("La flexibilidad es una de las características más importantes de la educación en línea, permitiendo a estudiantes e instructores adaptar horarios."),
         order=1,
         creado_por=ADMIN_USER_WITH_FALLBACK,
     )
@@ -720,25 +747,25 @@ def crear_evaluacion_predeterminada() -> None:
     options1 = [
         QuestionOption(
             question_id=question1.id,
-            text="Mayor costo de implementación",
+            text=_("Mayor costo de implementación"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=question1.id,
-            text="Flexibilidad de horarios",
+            text=_("Flexibilidad de horarios"),
             is_correct=True,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=question1.id,
-            text="Menos interacción con estudiantes",
+            text=_("Menos interacción con estudiantes"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=question1.id,
-            text="Mayor dificultad técnica",
+            text=_("Mayor dificultad técnica"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
@@ -750,8 +777,8 @@ def crear_evaluacion_predeterminada() -> None:
     question2 = Question(
         evaluation_id=evaluacion.id,
         type="boolean",
-        text="Los cursos en línea requieren mayor autodisciplina por parte de los estudiantes.",
-        explanation="Verdadero. Los estudiantes en línea deben gestionar su tiempo y motivación de manera más independiente.",
+        text=_("Los cursos en línea requieren mayor autodisciplina por parte de los estudiantes."),
+        explanation=_("Verdadero. Los estudiantes en línea deben gestionar su tiempo y motivación de manera más independiente."),
         order=2,
         creado_por=ADMIN_USER_WITH_FALLBACK,
     )
@@ -762,13 +789,13 @@ def crear_evaluacion_predeterminada() -> None:
     options2 = [
         QuestionOption(
             question_id=question2.id,
-            text="Verdadero",
+            text=_("Verdadero"),
             is_correct=True,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=question2.id,
-            text="Falso",
+            text=_("Falso"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
@@ -780,8 +807,8 @@ def crear_evaluacion_predeterminada() -> None:
     question3 = Question(
         evaluation_id=evaluacion.id,
         type="multiple",
-        text="¿Qué elemento es esencial para estructurar un curso en línea efectivo?",
-        explanation="Los objetivos claros de aprendizaje son fundamentales para guiar tanto al instructor como a los estudiantes.",
+        text=_("¿Qué elemento es esencial para estructurar un curso en línea efectivo?"),
+        explanation=_("Los objetivos claros de aprendizaje son fundamentales para guiar tanto al instructor como a los estudiantes."),
         order=3,
         creado_por=ADMIN_USER_WITH_FALLBACK,
     )
@@ -792,25 +819,25 @@ def crear_evaluacion_predeterminada() -> None:
     options3 = [
         QuestionOption(
             question_id=question3.id,
-            text="Videos de larga duración",
+            text=_("Videos de larga duración"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=question3.id,
-            text="Objetivos de aprendizaje claros",
+            text=_("Objetivos de aprendizaje claros"),
             is_correct=True,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=question3.id,
-            text="Múltiples exámenes",
+            text=_("Múltiples exámenes"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=question3.id,
-            text="Contenido exclusivamente textual",
+            text=_("Contenido exclusivamente textual"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
@@ -1632,11 +1659,18 @@ def populate_custmon_data_dir() -> None:
     from now_lms.config import DIRECTORIO_ARCHIVOS_BASE
 
     if DIRECTORIO_ARCHIVOS != DIRECTORIO_ARCHIVOS_BASE:
-        # Check if directory doesn't exist or is empty
+        # Populate when the data dir is missing/empty, OR when the bundled frontend assets
+        # (node_modules — Bootstrap etc.) are absent. The empty-only check never fires in
+        # practice: initial_setup() writes default-course files into the data dir before this
+        # runs, so the dir is already non-empty and node_modules was never copied, leaving the
+        # UI unstyled (Flask static_folder points at DIRECTORIO_ARCHIVOS). copytree(dirs_exist_ok
+        # =True) merges without clobbering existing uploads.
         should_populate = False
         try:
-            if not path.exists(DIRECTORIO_ARCHIVOS) or (
-                path.isdir(DIRECTORIO_ARCHIVOS) and len(listdir(DIRECTORIO_ARCHIVOS)) == 0
+            if (
+                not path.exists(DIRECTORIO_ARCHIVOS)
+                or (path.isdir(DIRECTORIO_ARCHIVOS) and len(listdir(DIRECTORIO_ARCHIVOS)) == 0)
+                or not path.exists(path.join(DIRECTORIO_ARCHIVOS, "node_modules"))
             ):
                 should_populate = True
         except OSError:
@@ -1685,10 +1719,10 @@ def crear_curso_autoaprendizaje() -> None:
 
     # Crear el curso principal
     curso_training = Curso(
-        nombre="Guía Completa de NOW LMS",
+        nombre=_("Guía Completa de NOW LMS"),
         codigo="lms-training",
-        descripcion_corta="Curso completo para aprender a usar NOW LMS como administrador e instructor.",
-        descripcion="""# Guía Completa de NOW LMS
+        descripcion_corta=_("Curso completo para aprender a usar NOW LMS como administrador e instructor."),
+        descripcion=_("""# Guía Completa de NOW LMS
 
 Este curso te enseñará paso a paso cómo utilizar todas las funcionalidades de NOW LMS tanto para administradores como para instructores.
 
@@ -1701,7 +1735,7 @@ Este curso te enseñará paso a paso cómo utilizar todas las funcionalidades de
 - **Análisis y reportes**: Cómo interpretar las métricas del sistema
 - **Mejores prácticas**: Consejos para maximizar el valor de tu LMS
 
-¡Empecemos este viaje de aprendizaje juntos!""",
+¡Empecemos este viaje de aprendizaje juntos!"""),
         portada=False,  # No logo needed for training course
         nivel=1,  # Principiante
         duracion=120,  # 2 horas estimadas
@@ -1734,12 +1768,12 @@ Este curso te enseñará paso a paso cómo utilizar todas las funcionalidades de
 
     # Crear secciones básicas del curso
     secciones_data = [
-        {"nombre": "Introducción a NOW LMS", "descripcion": "Conoce las características principales del sistema"},
-        {"nombre": "Administración de Usuarios", "descripcion": "Aprende a gestionar usuarios, roles y permisos"},
-        {"nombre": "Gestión de Cursos", "descripcion": "Cómo crear, configurar y administrar cursos"},
-        {"nombre": "Sistema de Evaluaciones", "descripcion": "Configurar exámenes, cuestionarios y certificaciones"},
-        {"nombre": "Análisis y Reportes", "descripcion": "Interpretar métricas y generar reportes útiles"},
-        {"nombre": "Mejores Prácticas", "descripcion": "Consejos avanzados para maximizar el valor educativo"},
+        {"nombre": _("Introducción a NOW LMS"), "descripcion": _("Conoce las características principales del sistema")},
+        {"nombre": _("Administración de Usuarios"), "descripcion": _("Aprende a gestionar usuarios, roles y permisos")},
+        {"nombre": _("Gestión de Cursos"), "descripcion": _("Cómo crear, configurar y administrar cursos")},
+        {"nombre": _("Sistema de Evaluaciones"), "descripcion": _("Configurar exámenes, cuestionarios y certificaciones")},
+        {"nombre": _("Análisis y Reportes"), "descripcion": _("Interpretar métricas y generar reportes útiles")},
+        {"nombre": _("Mejores Prácticas"), "descripcion": _("Consejos avanzados para maximizar el valor educativo")},
     ]
 
     secciones_creadas = []
@@ -1759,25 +1793,25 @@ Este curso te enseñará paso a paso cómo utilizar todas las funcionalidades de
     # Crear algunos recursos básicos de ejemplo
     recursos_ejemplo: list[Dict[str, Any]] = [
         {
-            "seccion": secciones_creadas[0],  # Introducción
-            "nombre": "¿Qué es NOW LMS?",
-            "descripcion": "Introducción al sistema LMS",
+            "seccion": secciones_creadas[0],
+            "nombre": _("¿Qué es NOW LMS?"),
+            "descripcion": _("Introducción al sistema LMS"),
             "tipo": "text",
-            "contenido": "# ¿Qué es NOW LMS?\n\nNOW LMS es un sistema de gestión de aprendizaje diseñado para ser simple, potente y fácil de usar.\n\n## Características principales:\n- Fácil instalación\n- Interfaz intuitiva\n- Gestión completa de usuarios y cursos\n- Sistema de evaluaciones\n- Reportes detallados\n- Configuración flexible para administradores",
+            "contenido": _("# ¿Qué es NOW LMS?\n\nNOW LMS es un sistema de gestión de aprendizaje diseñado para ser simple, potente y fácil de usar.\n\n## Características principales:\n- Fácil instalación\n- Interfaz intuitiva\n- Gestión completa de usuarios y cursos\n- Sistema de evaluaciones\n- Reportes detallados\n- Configuración flexible para administradores"),
         },
         {
-            "seccion": secciones_creadas[1],  # Usuarios
-            "nombre": "Tipos de Usuario",
-            "descripcion": "Roles y permisos en el sistema",
+            "seccion": secciones_creadas[1],
+            "nombre": _("Tipos de Usuario"),
+            "descripcion": _("Roles y permisos en el sistema"),
             "tipo": "text",
-            "contenido": "# Tipos de Usuario\n\n## Roles disponibles:\n1. **admin**: Control total del sistema\n2. **instructor**: Crear y gestionar cursos\n3. **moderator**: Moderar contenido\n4. **student**: Acceso básico de estudiante\n\nCada rol tiene permisos específicos para garantizar la seguridad y organización del sistema. Los administradores tienen acceso completo.",
+            "contenido": _("# Tipos de Usuario\n\n## Roles disponibles:\n1. **admin**: Control total del sistema\n2. **instructor**: Crear y gestionar cursos\n3. **moderator**: Moderar contenido\n4. **student**: Acceso básico de estudiante\n\nCada rol tiene permisos específicos para garantizar la seguridad y organización del sistema. Los administradores tienen acceso completo."),
         },
         {
-            "seccion": secciones_creadas[2],  # Cursos
-            "nombre": "Modalidades de Curso",
-            "descripcion": "Diferentes modalidades disponibles",
+            "seccion": secciones_creadas[2],
+            "nombre": _("Modalidades de Curso"),
+            "descripcion": _("Diferentes modalidades disponibles"),
             "tipo": "text",
-            "contenido": "# Modalidades de Curso\n\n## 1. Self-paced\n- Estudiantes aprenden a su ritmo\n- Sin fechas fijas\n\n## 2. Time-based\n- Fechas de inicio y fin\n- Aprendizaje en cohort\n\n## 3. Live\n- Sesiones en tiempo real\n- Interacción directa\n\nCada modalidad tiene sus ventajas según el tipo de contenido y audiencia. Los instructores pueden elegir la modalidad apropiada.",
+            "contenido": _("# Modalidades de Curso\n\n## 1. Self-paced\n- Estudiantes aprenden a su ritmo\n- Sin fechas fijas\n\n## 2. Time-based\n- Fechas de inicio y fin\n- Aprendizaje en cohort\n\n## 3. Live\n- Sesiones en tiempo real\n- Interacción directa\n\nCada modalidad tiene sus ventajas según el tipo de contenido y audiencia. Los instructores pueden elegir la modalidad apropiada."),
         },
     ]
 
@@ -1808,8 +1842,8 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     # Evaluación básica para la sección de usuarios
     evaluacion_usuarios = Evaluation(
         section_id=secciones[1].id,  # Sección de usuarios
-        title="Evaluación: Gestión de Usuarios",
-        description="Evalúa tu comprensión sobre la gestión de usuarios en NOW LMS",
+        title=_("Evaluación: Gestión de Usuarios"),
+        description=_("Evalúa tu comprensión sobre la gestión de usuarios en NOW LMS"),
         is_exam=False,
         passing_score=70.0,
         max_attempts=3,  # REQUERIMIENTO: máximo 3 intentos
@@ -1822,8 +1856,8 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     pregunta1 = Question(
         evaluation_id=evaluacion_usuarios.id,
         type="multiple",
-        text="¿Cuáles son los cuatro tipos de usuario disponibles en NOW LMS?",
-        explanation="NOW LMS maneja cuatro roles principales para organizar permisos y funcionalidades.",
+        text=_("¿Cuáles son los cuatro tipos de usuario disponibles en NOW LMS?"),
+        explanation=_("NOW LMS maneja cuatro roles principales para organizar permisos y funcionalidades."),
         order=1,
         creado_por=ADMIN_USER_WITH_FALLBACK,
     )
@@ -1834,19 +1868,19 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     opciones1 = [
         QuestionOption(
             question_id=pregunta1.id,
-            text="admin, instructor, student, guest",
+            text=_("admin, instructor, student, guest"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=pregunta1.id,
-            text="admin, instructor, moderator, student",
+            text=_("admin, instructor, moderator, student"),
             is_correct=True,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=pregunta1.id,
-            text="admin, teacher, moderator, student",
+            text=_("admin, teacher, moderator, student"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
@@ -1858,8 +1892,8 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     pregunta2 = Question(
         evaluation_id=evaluacion_usuarios.id,
         type="boolean",
-        text="Los instructores pueden crear y gestionar cualquier curso en el sistema.",
-        explanation="Falso. Los instructores solo pueden gestionar los cursos que han creado o a los que han sido asignados.",
+        text=_("Los instructores pueden crear y gestionar cualquier curso en el sistema."),
+        explanation=_("Falso. Los instructores solo pueden gestionar los cursos que han creado o a los que han sido asignados."),
         order=2,
         creado_por=ADMIN_USER_WITH_FALLBACK,
     )
@@ -1870,13 +1904,13 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     opciones2 = [
         QuestionOption(
             question_id=pregunta2.id,
-            text="Verdadero",
+            text=_("Verdadero"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=pregunta2.id,
-            text="Falso",
+            text=_("Falso"),
             is_correct=True,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
@@ -1887,8 +1921,8 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     # Evaluación para modalidades de curso
     evaluacion_cursos = Evaluation(
         section_id=secciones[2].id,  # Sección de cursos
-        title="Evaluación: Modalidades de Curso",
-        description="Verifica tu conocimiento sobre las diferentes modalidades de curso",
+        title=_("Evaluación: Modalidades de Curso"),
+        description=_("Verifica tu conocimiento sobre las diferentes modalidades de curso"),
         is_exam=False,
         passing_score=70.0,
         max_attempts=3,  # REQUERIMIENTO: máximo 3 intentos
@@ -1901,8 +1935,8 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     pregunta3 = Question(
         evaluation_id=evaluacion_cursos.id,
         type="multiple",
-        text="¿Cuál es la principal característica de un curso con modalidad 'self_paced'?",
-        explanation="Los cursos self-paced permiten flexibilidad total en el ritmo de aprendizaje.",
+        text=_("¿Cuál es la principal característica de un curso con modalidad 'self_paced'?"),
+        explanation=_("Los cursos self-paced permiten flexibilidad total en el ritmo de aprendizaje."),
         order=1,
         creado_por=ADMIN_USER_WITH_FALLBACK,
     )
@@ -1913,19 +1947,19 @@ def crear_evaluaciones_training(secciones: list[CursoSeccion]) -> None:
     opciones3 = [
         QuestionOption(
             question_id=pregunta3.id,
-            text="Tiene fechas fijas de inicio y fin",
+            text=_("Tiene fechas fijas de inicio y fin"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=pregunta3.id,
-            text="Los estudiantes aprenden a su propio ritmo",
+            text=_("Los estudiantes aprenden a su propio ritmo"),
             is_correct=True,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
         QuestionOption(
             question_id=pregunta3.id,
-            text="Requiere sesiones en vivo",
+            text=_("Requiere sesiones en vivo"),
             is_correct=False,
             creado_por=ADMIN_USER_WITH_FALLBACK,
         ),
@@ -2017,16 +2051,27 @@ The pandemic accelerated a trend that was already underway. Online learning is n
     log.debug("Default blog post created successfully.")
 
 
-def crear_paginas_estaticas_predeterminadas() -> None:
-    """Create default static pages (About Us, Privacy Policy) with translatable content."""
-    from now_lms.i18n import get_configuracion
+#: The language the default custom pages fall back to. Named once so the
+#: fallback inside paginas_predeterminadas() and the language reported by
+#: sincronizar_paginas_predeterminadas() cannot drift apart, and so adding a
+#: fourth shipped language is a single edit here.
+IDIOMA_PREDETERMINADO = "en"
 
-    log.trace("Creating default static pages.")
+#: Languages the default custom pages ship in.
+IDIOMAS_PAGINAS_PREDETERMINADAS = (IDIOMA_PREDETERMINADO, "es", "pt_BR")
 
-    # Get system language from configuration
-    config = get_configuracion()
-    lang = config.lang if config else "en"
 
+def paginas_predeterminadas(lang: str = "en") -> Dict[str, Dict[str, str]]:
+    """Return the default custom pages for ``lang``, keyed by slug.
+
+    The single source of truth for what a default page says. Both
+    :func:`crear_paginas_estaticas_predeterminadas` (fresh install) and
+    :func:`sincronizar_paginas_predeterminadas` (repair) read this, so the seeder
+    and the repair can never end up disagreeing about the shipped copy.
+
+    An unknown language falls back to English, matching the original seeding
+    behaviour.
+    """
     # Define content in different languages
     about_us_content = {
         "en": """<h2>About Us</h2>
@@ -2194,47 +2239,158 @@ def crear_paginas_estaticas_predeterminadas() -> None:
     }
 
     # Get content based on system language, fallback to English
-    about_content = about_us_content.get(lang, about_us_content["en"])
-    privacy_content = privacy_policy_content.get(lang, privacy_policy_content["en"])
-    about_title = about_us_titles.get(lang, about_us_titles["en"])
-    privacy_title = privacy_policy_titles.get(lang, privacy_policy_titles["en"])
+    return {
+        "about-us": {
+            "title": about_us_titles.get(lang, about_us_titles[IDIOMA_PREDETERMINADO]),
+            "content": about_us_content.get(lang, about_us_content[IDIOMA_PREDETERMINADO]),
+        },
+        "privacy-policy": {
+            "title": privacy_policy_titles.get(lang, privacy_policy_titles[IDIOMA_PREDETERMINADO]),
+            "content": privacy_policy_content.get(lang, privacy_policy_content[IDIOMA_PREDETERMINADO]),
+        },
+    }
 
-    # Check if pages already exist
-    from now_lms.db import StaticPage
 
-    existing_about = database.session.execute(
-        database.select(StaticPage).filter(StaticPage.slug == "about-us")
-    ).scalar_one_or_none()
+def crear_paginas_estaticas_predeterminadas() -> None:
+    """Create default static pages (About Us, Privacy Policy) with translatable content."""
+    from now_lms.db import CustomPage
+    from now_lms.i18n import get_configuracion
 
-    if not existing_about:
-        about_page = StaticPage(
-            slug="about-us",
-            title=about_title,
-            content=about_content,
-            is_active=True,
-            mostrar_en_footer=True,
+    log.trace("Creating default static pages.")
+
+    # Get system language from configuration
+    config = get_configuracion()
+    lang = config.lang if config else IDIOMA_PREDETERMINADO
+
+    for slug, pagina in paginas_predeterminadas(lang).items():
+        existente = database.session.execute(
+            database.select(CustomPage).filter(CustomPage.slug == slug)
+        ).scalar_one_or_none()
+
+        if existente:
+            log.debug(f"Custom page {slug} already exists.")
+            continue
+
+        database.session.add(
+            CustomPage(
+                slug=slug,
+                title=pagina["title"],
+                content=pagina["content"],
+                is_active=True,
+                mostrar_en_footer=True,
+            )
         )
-        database.session.add(about_page)
-        log.debug("About Us page created.")
-    else:
-        log.debug("About Us page already exists.")
-
-    existing_privacy = database.session.execute(
-        database.select(StaticPage).filter(StaticPage.slug == "privacy-policy")
-    ).scalar_one_or_none()
-
-    if not existing_privacy:
-        privacy_page = StaticPage(
-            slug="privacy-policy",
-            title=privacy_title,
-            content=privacy_content,
-            is_active=True,
-            mostrar_en_footer=True,
-        )
-        database.session.add(privacy_page)
-        log.debug("Privacy Policy page created.")
-    else:
-        log.debug("Privacy Policy page already exists.")
+        log.debug(f"Custom page {slug} created.")
 
     database.session.commit()
     log.debug("Default static pages created successfully.")
+
+
+def sincronizar_paginas_predeterminadas(lang: str | None = None, *, aplicar: bool = False) -> list[Dict[str, Any]]:
+    """Report, and optionally repair, default custom pages left in a stale language.
+
+    :func:`crear_paginas_estaticas_predeterminadas` only ever creates a page that
+    is absent, and it runs once, from ``initial_setup``, which does not re-run on
+    a populated database. Changing ``Configuracion.lang`` afterwards — through
+    ``lmsctl settings lang_set`` or the admin settings form — therefore leaves
+    About Us and Privacy Policy frozen in whatever language the site was first
+    seeded in, with no error and no log line. This function is the missing
+    correction path.
+
+    A row is rewritten **only** when its stored title and content are byte
+    identical to a default this version ships, in one of
+    :data:`IDIOMAS_PAGINAS_PREDETERMINADAS`. That equality is the only available
+    proof that nobody has edited the page: ``custom_pages`` carries no language
+    column and no edited flag. Anything else is reported as ``personalizada`` and
+    left exactly as it is, so an administrator's own words cannot be overwritten
+    here.
+
+    Returns one record per default slug — ``slug``, ``estado``, the ``idioma`` the
+    stored row is written in where that is knowable, and its current ``titulo``.
+    ``estado`` is one of ``faltante`` (no row), ``al-dia`` (matches the target
+    language), ``desactualizada`` (an untouched default in a different language)
+    or ``personalizada`` (edited; never touched).
+
+    Writes nothing at all unless ``aplicar`` is true.
+    """
+    from now_lms.cache import invalidate_all_cache
+    from now_lms.db import CustomPage
+    from now_lms.i18n import get_configuracion
+
+    if lang is None:
+        config = get_configuracion()
+        lang = config.lang if config else IDIOMA_PREDETERMINADO
+
+    # paginas_predeterminadas() falls back to English for a language it does not
+    # ship, so an unsupported Configuracion.lang must be resolved to the language
+    # actually written before it is reported. Reporting the raw code would have
+    # the report claim a page is in, say, French, when the row holds the English
+    # default, and reporting truthfully is this function's whole job.
+    idioma_efectivo = lang if lang in IDIOMAS_PAGINAS_PREDETERMINADAS else IDIOMA_PREDETERMINADO
+
+    objetivo = paginas_predeterminadas(lang)
+    conocidas = {idioma: paginas_predeterminadas(idioma) for idioma in IDIOMAS_PAGINAS_PREDETERMINADAS}
+
+    reporte: list[Dict[str, Any]] = []
+    escrituras = 0
+
+    for slug, pagina in objetivo.items():
+        fila = database.session.execute(
+            database.select(CustomPage).filter(CustomPage.slug == slug)
+        ).scalar_one_or_none()
+
+        if fila is None:
+            registro: Dict[str, Any] = {"slug": slug, "estado": "faltante", "idioma": None, "titulo": None}
+        elif (fila.title, fila.content) == (pagina["title"], pagina["content"]):
+            registro = {"slug": slug, "estado": "al-dia", "idioma": idioma_efectivo, "titulo": fila.title}
+        else:
+            idioma_actual = next(
+                (
+                    idioma
+                    for idioma, paginas in conocidas.items()
+                    if (fila.title, fila.content) == (paginas[slug]["title"], paginas[slug]["content"])
+                ),
+                None,
+            )
+            registro = {
+                "slug": slug,
+                "estado": "desactualizada" if idioma_actual else "personalizada",
+                "idioma": idioma_actual,
+                "titulo": fila.title,
+            }
+
+        if aplicar and registro["estado"] in ("faltante", "desactualizada"):
+            if fila is None:
+                database.session.add(
+                    CustomPage(
+                        slug=slug,
+                        title=pagina["title"],
+                        content=pagina["content"],
+                        is_active=True,
+                        mostrar_en_footer=True,
+                    )
+                )
+            else:
+                # Title and content only, deliberately. The insert branch above
+                # sets is_active and mostrar_en_footer because it is creating a
+                # page that does not exist yet; here an administrator may have
+                # hidden this page or taken it out of the footer on purpose, and
+                # a language correction is not a reason to undo that. The
+                # asymmetry with the insert branch is intended, not an omission.
+                fila.title = pagina["title"]
+                fila.content = pagina["content"]
+            escrituras += 1
+            log.debug(f"Custom page {slug} synchronised to {idioma_efectivo}.")
+
+        reporte.append(registro)
+
+    if aplicar and escrituras:
+        database.session.commit()
+        # A corrected page the cache hides for five more minutes is not a
+        # corrected page: the footer helper is memoized and /page/<slug> is a
+        # cached view. Both are dropped through the same helper a theme change
+        # already uses, rather than reaching into flask-caching's memoize keys
+        # for a function that is nested inside get_custom_pages().
+        invalidate_all_cache()
+
+    return reporte

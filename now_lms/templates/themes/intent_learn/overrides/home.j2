@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="{{ current_locale() }}">
+    {% from 'macros/blog_section.j2' import render_blog_section %}
+    {% set current_theme = current_theme() %}
+    {% set site_config = config() %}
+    {% set S = url_for('static', filename='themes/intent_learn') %}
+    {# The access CTA now lands on the stored intake at /request-access; the
+       mailto path lives there as the secondary "prefer email?" channel. #}
+    {% set access_url = url_for('request_access.request_access') %}
+    {% set team = [
+        {'photo': 'jeremy-longshore.jpeg', 'name': _('Jeremy Longshore'), 'role': _('Founder & CEO')},
+        {'photo': 'opeyemi-ariyo.jpeg',    'name': _('Opeyemi Ariyo'),    'role': _('Co-Founder & Chief Technical Officer')},
+        {'photo': 'pablo-perez.jpeg',      'name': _('Pablo Perez'),      'role': _('Co-Founder & Project Manager')},
+        {'photo': 'max-sheahan.jpeg',      'name': _('Max Sheahan'),      'role': _('Lead Instructor')},
+        {'photo': 'tim-neunzig.png',       'name': _('Tim Neunzig'),      'role': _('Head of German Operations')},
+        {'photo': 'tolulope-ariyo.jpeg',   'name': _('Tolulope Ariyo'),   'role': _('Software & Design Engineer')}
+    ] %}
+    <head>
+        {{ current_theme.headertags() }} {{ current_theme.local_style() }}
+        <title>{{ site_config.titulo_html or _('Intent Solutions Learn') }}</title>
+
+        <link rel="stylesheet" href="{{ S }}/front-door.css" />
+        {# Umami analytics — same-origin via the edge proxy; rationale + guard:
+           tests/test_intent_learn_front_door.py::test_umami_tracker_is_same_origin #}
+        <script
+            defer
+            src="/u.js"
+            data-website-id="9350d174-bb53-4f1d-be75-c8221a3f4717"
+            data-host-url="/u"
+        ></script>
+    </head>
+
+    <body class="isl-root" id="top">
+        <nav class="isl-network" aria-label="{{ _('Intent Solutions network') }}">
+            <div class="isl-wrap">
+                <a href="https://intentsolutions.io/">{{ _('Intent Solutions') }}</a>
+                <a href="https://labs.intentsolutions.io/">{{ _('Labs') }}</a>
+                <a href="https://evals.intentsolutions.io/">{{ _('Evals') }}</a>
+                <a href="https://learn.intentsolutions.io/" aria-current="page">{{ _('Learn') }}</a>
+            </div>
+        </nav>
+        <header class="isl-header">
+            <div class="isl-wrap">
+                <a class="isl-brand" href="#top" aria-label="{{ _('Intent Solutions Learn — home') }}">
+                    <img src="{{ S }}/logo-mark.png" alt="" width="30" height="30" />
+                    <span class="word">{{ _('Intent') }}<span class="s">{{ _('Solutions') }}</span></span>
+                </a>
+                <nav class="isl-nav" aria-label="{{ _('Primary navigation') }}">
+                    <a class="link" href="#practice">{{ _('The practice') }}</a>
+                    <a class="link" href="#method">{{ _('How we evaluate') }}</a>
+                    <a class="link" href="#paths">{{ _('Proof paths') }}</a>
+                    <span class="isl-nav-actions">
+                        {% if current_user.is_authenticated %}
+                        <a class="isl-btn isl-btn-secondary isl-btn-sm" href="{{ url_for('course.lista_cursos') }}">{{ _('Tracks') }}</a>
+                        <a class="isl-btn isl-btn-primary isl-btn-sm" href="{{ url_for('home.panel') }}">{{ _('Dashboard') }}</a>
+                        {% else %}
+                        <a class="isl-btn isl-btn-secondary isl-btn-sm" href="{{ url_for('user.inicio_sesion') }}">{{ _('Sign in') }}</a>
+                        <a class="isl-btn isl-btn-primary isl-btn-sm" href="{{ access_url }}">{{ _('Request access') }}</a>
+                        {% endif %}
+                    </span>
+                </nav>
+            </div>
+        </header>
+
+        <main>
+            <section class="isl-hero" aria-labelledby="hero-title">
+                <div class="isl-wrap isl-hero-grid">
+                    <div class="isl-hero-copy">
+                        <p class="isl-kicker">{{ _('Separate practice · shared proof standard') }}</p>
+                        <h1 id="hero-title">{{ _('Learn the method.') }} <span class="isl-hl">{{ _('Prove the work.') }}</span></h1>
+                        <p class="lede">
+                            {{ _('Learn is the Intent Solutions practice for serious practitioners building agentic systems.') }}
+                            <strong>{{ _('We teach the same evaluation method used in Intent Labs: define done, test the claim, and publish the evidence.') }}</strong>
+                        </p>
+                        <div class="isl-cta-row">
+                            {% if current_user.is_authenticated %}
+                            <a class="isl-btn isl-btn-primary" href="{{ url_for('home.panel') }}">{{ _('Enter your practice') }} <span aria-hidden="true">→</span></a>
+                            {% else %}
+                            <a class="isl-btn isl-btn-primary" href="{{ access_url }}">{{ _('Request access') }} <span aria-hidden="true">→</span></a>
+                            {% endif %}
+                            <a class="isl-btn isl-btn-secondary" href="https://labs.intentsolutions.io/start/">{{ _('Study the evaluation method') }}</a>
+                        </div>
+                        <p class="isl-fit-note">{{ _('Credentials are optional. Production standards are not.') }}</p>
+                    </div>
+
+                    <aside class="isl-standard" aria-label="{{ _('Inside the practice') }}">
+                        <p class="isl-standard-label">{{ _('The shared evaluation loop') }}</p>
+                        <div class="isl-standard-step">
+                            <span class="n">01</span>
+                            <div><h2>{{ _('Define done') }}</h2><p>{{ _('Name the outcome, constraints, authority, and evidence before the work starts.') }}</p></div>
+                        </div>
+                        <div class="isl-standard-step">
+                            <span class="n">02</span>
+                            <div><h2>{{ _('Test the claim') }}</h2><p>{{ _('Use evals, adversarial cases, review gates, and production-shaped failure modes.') }}</p></div>
+                        </div>
+                        <div class="isl-standard-step">
+                            <span class="n">03</span>
+                            <div><h2>{{ _('Publish the evidence') }}</h2><p>{{ _('Make the result, failures, and limits inspectable instead of asking for trust.') }}</p></div>
+                        </div>
+                        <p class="isl-standard-foot"><strong>{{ _('Learn teaches it.') }}</strong> {{ _('Labs demonstrates it. Evals defines the result.') }}</p>
+                    </aside>
+                </div>
+            </section>
+
+            <div class="isl-proof" aria-label="{{ _('Practice principles') }}">
+                <div class="isl-wrap isl-proof-grid">
+                    <div class="isl-proof-item"><span class="n">{{ _('01 / ROLE') }}</span><strong>{{ _('Separate practice') }}</strong><span>{{ _('Learn has its own room and member experience.') }}</span></div>
+                    <div class="isl-proof-item"><span class="n">{{ _('02 / METHOD') }}</span><strong>{{ _('Shared standard') }}</strong><span>{{ _('Frame, build, prove, and operate the Intent Solutions way.') }}</span></div>
+                    <div class="isl-proof-item"><span class="n">{{ _('03 / PROOF') }}</span><strong>{{ _('Public evidence') }}</strong><span>{{ _('Intent Labs shows the method working, including the failures.') }}</span></div>
+                    <div class="isl-proof-item"><span class="n">{{ _('04 / ACCESS') }}</span><strong>{{ _('Selective by design') }}</strong><span>{{ _('Peer density matters more than member volume.') }}</span></div>
+                </div>
+            </div>
+
+            <section class="isl-section" id="practice" aria-labelledby="practice-title">
+                <div class="isl-wrap">
+                    <div class="isl-section-head">
+                        <p class="isl-kicker">{{ _('How the room works') }}</p>
+                        <h2 id="practice-title">{{ _('A practice,') }} <span class="isl-hl">{{ _('not a course catalog.') }}</span></h2>
+                        <p>{{ _('The public door states the standard. Inside, practitioners learn one operating method and choose the proof paths that fit their work. The deepest room is never a checkout button.') }}</p>
+                    </div>
+                    <div class="isl-journey">
+                        <article class="isl-stage" data-step="1">
+                            <span class="step">{{ _('Stage 01 · Public door') }}</span>
+                            <h3>{{ _('Request the room') }}</h3>
+                            <p>{{ _('Show us what you are building, how you think, and where you want sharper production judgment.') }}</p>
+                            <span class="gate">{{ _('Fit over volume') }}</span>
+                        </article>
+                        <article class="isl-stage" data-step="2">
+                            <span class="step">{{ _('Stage 02 · Practice') }}</span>
+                            <h3>{{ _('Learn the house way') }}</h3>
+                            <p>{{ _('Use shared systems, live review, real artifacts, and optional proof paths alongside people doing the work.') }}</p>
+                            <span class="gate">{{ _('Standard required') }}</span>
+                        </article>
+                        <article class="isl-stage" data-step="3">
+                            <span class="step">{{ _('Stage 03 · Inner circle') }}</span>
+                            <h3>{{ _('Earn deeper trust') }}</h3>
+                            <p>{{ _('Judgment, contribution, and operating fit can lead to a founder invitation into the deeper arena.') }}</p>
+                            <span class="gate">{{ _('Invitation only') }}</span>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section class="isl-section alt" id="method" aria-labelledby="method-title">
+                <div class="isl-wrap">
+                    <div class="isl-section-head center">
+                        <p class="isl-kicker">{{ _('How Intent Labs evaluates') }}</p>
+                        <h2 id="method-title">{{ _('Define done.') }} <span class="isl-hl">{{ _('Show the receipts.') }}</span></h2>
+                        <p>{{ _('Learn teaches the operating method. Labs publishes the evidence. Evals provides the definitions, scoring language, and result states behind that evidence.') }}</p>
+                    </div>
+                    <div class="isl-method-grid">
+                        <article class="isl-method-card">
+                            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 7h8M8 11h6"/></svg></span>
+                            <div><h3>{{ _('Frame with judgment') }}</h3><p>{{ _('Clarify the outcome, constraints, authority, evidence, and stopping conditions before an agent starts generating.') }}</p></div>
+                        </article>
+                        <article class="isl-method-card">
+                            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+                            <div><h3>{{ _('Build with agents') }}</h3><p>{{ _('Design context, tools, handoffs, and human control so the system is useful beyond a single impressive prompt.') }}</p></div>
+                        </article>
+                        <article class="isl-method-card">
+                            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+                            <div><h3>{{ _('Prove before trust') }}</h3><p>{{ _('Use evals, tests, adversarial cases, receipts, and review gates to separate demonstrated behavior from confident claims.') }}</p></div>
+                        </article>
+                        <article class="isl-method-card">
+                            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="4"/></svg></span>
+                            <div><h3>{{ _('Operate the whole system') }}</h3><p>{{ _('Ship with rollback, secrets discipline, observability, cost awareness, and clear ownership when the model is wrong.') }}</p></div>
+                        </article>
+                    </div>
+                    <div class="isl-method-links" aria-label="{{ _('Evaluation resources') }}">
+                        <a href="https://labs.intentsolutions.io/start/"><strong>{{ _('See the evaluation guide') }}</strong><span>{{ _('Start with the plain-language proof loop in Intent Labs.') }}</span></a>
+                        <a href="https://evals.intentsolutions.io/"><strong>{{ _('Read the evaluation definitions') }}</strong><span>{{ _('Use the canonical result language behind the Lab.') }}</span></a>
+                    </div>
+                </div>
+            </section>
+
+            <section class="isl-section" id="paths" aria-labelledby="paths-title">
+                <div class="isl-wrap isl-paths">
+                    <div class="isl-section-head">
+                        <p class="isl-kicker">{{ _('Optional proof paths') }}</p>
+                        <h2 id="paths-title">{{ _('One practice.') }} <span class="isl-hl">{{ _('Several ways to prove it.') }}</span></h2>
+                        <p>{{ _('Everyone shares the house core. From there, members can pursue role-shaped practice, including relevant credentials, without turning the room into separate vendor fan clubs.') }}</p>
+                        <div class="isl-cta-row">
+                            <a class="isl-btn isl-btn-secondary" href="{{ url_for('course.lista_cursos') }}">{{ _('View current practice tracks') }} <span aria-hidden="true">→</span></a>
+                        </div>
+                    </div>
+                    <div class="isl-core">
+                        <span class="tag">{{ _('Shared first') }}</span>
+                        <h3>{{ _('Intent Solutions house core') }}</h3>
+                        <p>{{ _('Systems thinking, agentic delivery, evaluation, governance, production operations, and peer review.') }}</p>
+                        <span class="arrow" aria-hidden="true">↓</span>
+                        <div class="isl-path-list">
+                            <div class="isl-path"><span class="dot" aria-hidden="true"></span><span><strong>{{ _('Production architecture') }}</strong><span>{{ _('System design, risk, and technical judgment') }}</span></span></div>
+                            <div class="isl-path"><span class="dot" aria-hidden="true"></span><span><strong>{{ _('Agent building and orchestration') }}</strong><span>{{ _('Tools, context, coordination, and failure handling') }}</span></span></div>
+                            <div class="isl-path"><span class="dot" aria-hidden="true"></span><span><strong>{{ _('Evaluation and governance') }}</strong><span>{{ _('Evidence, policy, auditability, and release confidence') }}</span></span></div>
+                            <div class="isl-path"><span class="dot" aria-hidden="true"></span><span><strong>{{ _('No credential required') }}</strong><span>{{ _('Shipping well remains a valid proof path') }}</span></span></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="isl-section alt" id="team" aria-labelledby="team-title">
+                <div class="isl-wrap">
+                    <div class="isl-section-head center">
+                        <p class="isl-kicker">{{ _('Built by practitioners') }}</p>
+                        <h2 id="team-title">{{ _('The people behind') }} <span class="isl-hl">{{ _('Intent Solutions') }}</span></h2>
+                        <p>{{ _('Operators and builders teaching from systems they actually run.') }}</p>
+                    </div>
+                    <div class="isl-team-grid">
+                        {% for m in team %}
+                        <article class="isl-team-card">
+                            {% if m.photo %}
+                            <img class="isl-team-photo" src="{{ S }}/team/{{ m.photo }}" alt="{{ m.name }}, {{ m.role }}" width="58" height="58" loading="lazy" />
+                            {% else %}
+                            <span class="isl-team-initials" aria-hidden="true">{{ m.name.split()[0][0] }}{{ m.name.split()[-1][0] }}</span>
+                            {% endif %}
+                            <div><p class="isl-team-name">{{ m.name }}</p><p class="isl-team-role">{{ m.role }}</p></div>
+                        </article>
+                        {% endfor %}
+                    </div>
+                    <div class="isl-cred">
+                        {# Credly's official embedded_badge iframe — deliberately NOT their
+                           script-based embed: that loader comes from Credly's CDN host, which
+                           violates the theme's no-CDN-script rule and is blocked by upstream
+                           v2.0.0's CSP (script-src). A plain https iframe passes both
+                           (frame-src 'self' https:) and renders identically. The front-door
+                           tests enforce this. #}
+                        <iframe
+                            src="https://www.credly.com/embedded_badge/ddf22fb4-0aa6-46b3-a93b-0b45b509e471"
+                            width="150"
+                            height="270"
+                            loading="lazy"
+                            title="{{ _('Anthropic Claude Partner badge — Claude Code, verified on Credly') }}"></iframe>
+                        <p class="isl-cred-note">{{ _('Verified Anthropic partner credential') }}</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="isl-final" aria-labelledby="final-title">
+                <div class="isl-wrap">
+                    <p class="isl-kicker">{{ _('Standards over spectacle') }}</p>
+                    <h2 id="final-title">{{ _('Looking for a room that takes the work seriously?') }}</h2>
+                    <p>{{ _('Tell us what you are building and where you want sharper judgment. Access is selective because the quality of the room is the product.') }}</p>
+                    <div class="isl-cta-row">
+                        {% if current_user.is_authenticated %}
+                        <a class="isl-btn isl-btn-primary" href="{{ url_for('home.panel') }}">{{ _('Go to your dashboard') }} <span aria-hidden="true">→</span></a>
+                        {% else %}
+                        <a class="isl-btn isl-btn-primary" href="{{ access_url }}">{{ _('Request access') }} <span aria-hidden="true">→</span></a>
+                        <a class="isl-btn isl-btn-secondary" href="{{ url_for('user.inicio_sesion') }}">{{ _('Member sign in') }}</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </section>
+
+            {% if show_blog_posts %} {{ render_blog_section(latest_blog_posts, 'rgb(243 246 244)') }} {% endif %}
+        </main>
+
+        <footer class="isl-footer">
+            <div class="isl-wrap">
+                <div class="isl-footer-main">
+                    <div>
+                        <span class="fb"><img src="{{ S }}/logo-mark.png" alt="" width="22" height="22" /> {{ _('Intent Solutions Learn') }}</span>
+                        <p class="isl-footer-note">{{ _('The separate Intent Solutions practice that teaches the evaluation method demonstrated in Labs and defined in Evals.') }}</p>
+                    </div>
+                    <nav class="isl-legal" aria-label="{{ _('Legal') }}">
+                        <a href="https://intentsolutions.io/terms">{{ _('Terms of Service') }}</a>
+                        <a href="https://intentsolutions.io/privacy">{{ _('Privacy Policy') }}</a>
+                        <a href="https://intentsolutions.io/acceptable-use">{{ _('Acceptable Use') }}</a>
+                    </nav>
+                </div>
+                <div class="isl-footer-bottom">
+                    <span>{{ _('© Intent Solutions. All rights reserved.') }}</span>
+                    <a href="https://intentsolutions.io">{{ _('intentsolutions.io') }}</a>
+                </div>
+            </div>
+        </footer>
+    </body>
+</html>

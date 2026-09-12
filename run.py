@@ -8,14 +8,31 @@ import platform
 from os import environ
 
 # ---------------------------------------------------------------------------------------
+# Auto-compile stale .mo catalogs BEFORE any other import.
+# .mo is .gitignored; a stale .mo (older than its .po) means Babel falls back
+# to the Spanish msgid for every translation added post-compile - which is the
+# demo "Gender rendered in Spanish" bug class. See now_lms/i18n_autocompile.py.
+# ---------------------------------------------------------------------------------------
+from now_lms.i18n_autocompile import ensure_translations_compiled
+
+ensure_translations_compiled()
+
+# ---------------------------------------------------------------------------------------
 # Local resources
 # ---------------------------------------------------------------------------------------
-from now_lms import lms_app, init_app, alembic
-from now_lms.logs import log
-from now_lms.session_config import ensure_session_storage
-from now_lms.worker_config import get_worker_config_from_env
+from now_lms import lms_app, init_app  # noqa: E402
+from now_lms.logs import log  # noqa: E402
+from now_lms.session_config import ensure_session_storage  # noqa: E402
+from now_lms.worker_config import get_worker_config_from_env  # noqa: E402
 
 PORT = environ.get("PORT") or 8080
+
+# When running behind a trusted reverse proxy that terminates TLS (e.g. Caddy/Nginx),
+# set NOW_LMS_TRUSTED_PROXY to the proxy's address ("*" to trust any, safe when the app
+# is bound to loopback and only the proxy can reach it). Without this, Waitress strips the
+# X-Forwarded-* headers (clear_untrusted_proxy_headers defaults True), so NOW_LMS_FORCE_HTTPS
+# never sees X-Forwarded-Proto=https and redirect-loops. Default None keeps current behavior.
+TRUSTED_PROXY = environ.get("NOW_LMS_TRUSTED_PROXY") or None
 
 # Get WSGI server from environment variable (defaults to waitress)
 WSGI_SERVER = environ.get("WSGI_SERVER", "waitress").lower()
@@ -24,11 +41,16 @@ if WSGI_SERVER not in {"gunicorn", "waitress"}:
     raise SystemExit(f"Unsupported WSGI_SERVER={WSGI_SERVER!r}; expected 'gunicorn' or 'waitress'")
 
 # ---------------------------------------------------------------------------------------
-# Update the database schema
+# Initialize the database schema.
+#
+# init_app() is the single owner of schema management and does the right thing per DB
+# state: on a fresh database it runs initial_setup() (create_all() + alembic.stamp(head));
+# on an already-populated database it runs alembic.upgrade() (when NOW_LMS_AUTO_MIGRATE is
+# set). Calling alembic.upgrade() here unconditionally — before init_app() — broke fresh
+# deployments: on an empty database the migration chain runs from base and fails (e.g. a
+# migration creates course_library with a FK to the not-yet-created curso table), and after
+# a create_all() it collides with unguarded CREATE TABLE migrations. Let init_app() decide.
 # ---------------------------------------------------------------------------------------
-with lms_app.app_context():
-    alembic.upgrade()
-
 if init_app():
     log.info("Iniciando NOW Learning Management System")
 
@@ -99,8 +121,7 @@ if init_app():
             from waitress import serve
 
             log.info(f"Starting Waitress WSGI server on port {PORT} with {threads} threads")
-            serve(
-                lms_app,
+            waitress_kwargs = dict(
                 host="0.0.0.0",
                 port=PORT,
                 threads=threads,
@@ -108,6 +129,15 @@ if init_app():
                 cleanup_interval=30,
                 _quiet=False,
             )
+            if TRUSTED_PROXY:
+                # Trust the reverse proxy so X-Forwarded-* headers survive to the app.
+                waitress_kwargs.update(
+                    trusted_proxy=TRUSTED_PROXY,
+                    trusted_proxy_headers={"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"},
+                    clear_untrusted_proxy_headers=True,
+                )
+                log.info(f"Waitress trusting reverse proxy: {TRUSTED_PROXY}")
+            serve(lms_app, **waitress_kwargs)
         except ImportError:
             log.error("Waitress no está instalado. Por favor instálalo con: pip install waitress")
             log.error("No se pudo iniciar NOW Learning Management System.")

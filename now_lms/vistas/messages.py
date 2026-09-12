@@ -28,6 +28,7 @@ from now_lms.auth import email_verificado_requerido, perfil_requerido
 from now_lms.config import DIRECTORIO_PLANTILLAS
 from now_lms.db import Curso, DocenteCurso, EstudianteCurso, Message, MessageThread, ModeradorCurso, database, select
 from now_lms.forms import MessageReplyForm, MessageReportForm, MessageThreadForm
+from now_lms.i18n import _
 
 # ---------------------------------------------------------------------------------------
 # Interfaz de mensajes
@@ -46,18 +47,14 @@ def _get_course_codes_for_user(user) -> list[str]:
     """Get list of course codes the user has access to."""
     if user.tipo == "student":
         student_courses = (
-            database.session.execute(select(EstudianteCurso).filter_by(usuario=user.usuario, vigente=True))
-            .scalars()
-            .all()
+            database.session.execute(select(EstudianteCurso).filter_by(usuario=user.usuario, vigente=True)).scalars().all()
         )
         return [sc.curso for sc in student_courses]
 
     if user.tipo == "instructor":
         return [
             dc.curso
-            for dc in database.session.execute(
-                select(DocenteCurso).filter_by(usuario=user.usuario, vigente=True)
-            )
+            for dc in database.session.execute(select(DocenteCurso).filter_by(usuario=user.usuario, vigente=True))
             .scalars()
             .all()
         ]
@@ -65,9 +62,7 @@ def _get_course_codes_for_user(user) -> list[str]:
     if user.tipo == "moderator":
         return [
             mc.curso
-            for mc in database.session.execute(
-                select(ModeradorCurso).filter_by(usuario=user.usuario, vigente=True)
-            )
+            for mc in database.session.execute(select(ModeradorCurso).filter_by(usuario=user.usuario, vigente=True))
             .scalars()
             .all()
         ]
@@ -80,11 +75,7 @@ def _get_accessible_messages(course_codes: list[str]) -> list[dict]:
     if not course_codes:
         return []
 
-    threads = (
-        database.session.execute(select(MessageThread).filter(MessageThread.course_id.in_(course_codes)))
-        .scalars()
-        .all()
-    )
+    threads = database.session.execute(select(MessageThread).filter(MessageThread.course_id.in_(course_codes))).scalars().all()
 
     accessible_messages = []
     for thread in threads:
@@ -96,7 +87,7 @@ def _get_accessible_messages(course_codes: list[str]) -> list[dict]:
                     "id": message.id,
                     "content": content,
                     "sender": f"{message.sender.nombre} {message.sender.apellido}",
-                    "thread_title": f"Curso: {thread.course.nombre}",
+                    "thread_title": _("Curso: %(name)s", name=thread.course.nombre),
                     "timestamp": message.timestamp.strftime("%d/%m/%Y %H:%M"),
                 }
             )
@@ -278,7 +269,7 @@ def new_thread(course_code: str) -> str | Response:
         database.session.add(message)
         database.session.commit()
 
-        flash("Mensaje enviado correctamente.", "success")
+        flash(_("Mensaje enviado correctamente."), "success")
         return redirect(url_for(ROUTE_MSG_VIEW_THREAD, thread_id=thread.id))
 
     return render_template("learning/mensajes/new_thread.html", form=form, course=course)
@@ -340,7 +331,7 @@ def reply_to_thread(thread_id: int) -> str | Response:
 
     # Check if thread is closed
     if thread.status == "closed":
-        flash("No se puede responder a un hilo cerrado.", "error")
+        flash(_("No se puede responder a un hilo cerrado."), "error")
         return redirect(url_for(ROUTE_MSG_VIEW_THREAD, thread_id=thread_id))
 
     form = MessageReplyForm()
@@ -355,7 +346,7 @@ def reply_to_thread(thread_id: int) -> str | Response:
         database.session.add(message)
         database.session.commit()
 
-        flash("Respuesta enviada correctamente.", "success")
+        flash(_("Respuesta enviada correctamente."), "success")
 
     return redirect(url_for(ROUTE_MSG_VIEW_THREAD, thread_id=thread_id))
 
@@ -382,7 +373,7 @@ def change_thread_status(thread_id: int, new_status: str) -> Response:
     valid_transitions = {"open": ["fixed", "closed"], "fixed": ["closed"], "closed": []}
 
     if new_status not in valid_transitions.get(thread.status, []):
-        flash("Transición de estado no válida.", "error")
+        flash(_("Transición de estado no válida."), "error")
         return redirect(url_for(ROUTE_MSG_VIEW_THREAD, thread_id=thread_id))
 
     thread.status = new_status
@@ -391,7 +382,7 @@ def change_thread_status(thread_id: int, new_status: str) -> Response:
 
     database.session.commit()
 
-    flash(f"Estado del hilo cambiado a {new_status}.", "success")
+    flash(_("Estado del hilo cambiado a {status}.").format(status=new_status), "success")
     return redirect(url_for(ROUTE_MSG_VIEW_THREAD, thread_id=thread_id))
 
 
@@ -423,7 +414,7 @@ def report_message(message_id: int) -> Response:
 
         database.session.commit()
 
-        flash("Mensaje reportado correctamente.", "success")
+        flash(_("Mensaje reportado correctamente."), "success")
 
     return redirect(url_for(ROUTE_MSG_VIEW_THREAD, thread_id=message.thread_id))
 
@@ -452,13 +443,13 @@ def resolve_report(message_id: int) -> Response:
 
     message = database.session.execute(select(Message).filter_by(id=message_id)).scalars().first()
     if not message:
-        return jsonify({"success": False, "message": "Mensaje no encontrado"})
+        return jsonify({"success": False, "message": _("Mensaje no encontrado")})
 
     message.is_reported = False
     message.reported_reason = None
     database.session.commit()
 
-    return jsonify({"success": True, "message": "Reporte resuelto"})
+    return jsonify({"success": True, "message": _("Reporte resuelto")})
 
 
 @msg.route("/message/report/", methods=["GET", "POST"])
@@ -477,17 +468,17 @@ def standalone_report_message() -> str | Response:
     reason = request.form.get("reason")
 
     if not message_id or not reason:
-        flash("Debe seleccionar un mensaje y proporcionar un motivo.", "error")
+        flash(_("Debe seleccionar un mensaje y proporcionar un motivo."), "error")
         return render_template(TEMPLATE_STANDALONE_REPORT, messages=accessible_messages)
 
     message = database.session.execute(select(Message).filter_by(id=message_id)).scalars().first()
     if not message:
-        flash("Mensaje no encontrado.", "error")
+        flash(_("Mensaje no encontrado."), "error")
         return render_template(TEMPLATE_STANDALONE_REPORT, messages=accessible_messages)
 
     thread = database.session.execute(select(MessageThread).filter_by(id=message.thread_id)).scalars().first()
     if not thread:
-        flash("Hilo de conversación no encontrado.", "error")
+        flash(_("Hilo de conversación no encontrado."), "error")
         return render_template(TEMPLATE_STANDALONE_REPORT, messages=accessible_messages)
 
     has_access = (
@@ -502,5 +493,5 @@ def standalone_report_message() -> str | Response:
     message.reported_reason = reason
     database.session.commit()
 
-    flash("Mensaje reportado correctamente. El administrador será notificado.", "success")
+    flash(_("Mensaje reportado correctamente. El administrador será notificado."), "success")
     return redirect(url_for("home.panel"))
