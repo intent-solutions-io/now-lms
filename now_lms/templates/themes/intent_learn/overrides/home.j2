@@ -254,6 +254,14 @@
             {% if show_blog_posts %} {{ render_blog_section(latest_blog_posts, 'rgb(243 246 244)') }} {% endif %}
         </main>
 
+        <nav class="isl-mobile-action" aria-label="{{ _('Quick action') }}">
+            {% if current_user.is_authenticated %}
+            <a class="isl-btn isl-btn-primary" href="{{ url_for('home.panel') }}">{{ _('Go to your dashboard') }} <span aria-hidden="true">→</span></a>
+            {% else %}
+            <a class="isl-btn isl-btn-primary" href="{{ access_url }}">{{ _('Request access') }} <span aria-hidden="true">→</span></a>
+            {% endif %}
+        </nav>
+
         <footer class="isl-footer">
             <div class="isl-wrap">
                 <div class="isl-footer-main">

@@ -3,6 +3,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="{{ _('Practitioner AI-native software training from Intent Solutions.') }}" />
 <meta name="author" content="Intent Solutions" />
+<meta property="og:title" content="{{ config().titulo_html or _('Intent Solutions Learn') }}" />
+<meta property="og:description" content="{{ _('Practitioner AI-native software training from Intent Solutions.') }}" />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="{{ url_for('static', filename='themes/intent_learn/logo-mark.png', _external=True) }}" />
+<meta property="og:site_name" content="Intent Solutions Learn" />
 
 <meta name="theme-color" content="#f97316" />
 <meta name="msapplication-TileColor" content="#18171b" />

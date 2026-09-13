@@ -18,6 +18,13 @@
         header Cache-Control "public, max-age=86400"
     }
 
+    @public_discovery path /robots.txt /sitemap.xml
+    handle @public_discovery {
+        root * /app/now_lms/static/themes/intent_learn
+        file_server
+        header Cache-Control "public, max-age=3600"
+    }
+
     reverse_proxy localhost:8000 {
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}

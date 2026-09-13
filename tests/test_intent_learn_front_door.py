@@ -16,6 +16,10 @@ HEADER_PATH = Path("now_lms/templates/themes/intent_learn/header.j2")
 BASE_PATH = Path("now_lms/templates/themes/intent_learn/base.j2")
 JS_PATH = Path("now_lms/templates/themes/intent_learn/js.j2")
 REQUEST_ACCESS_PATH = Path("now_lms/templates/themes/intent_learn/pages/request_access.html")
+ROBOTS_PATH = Path("now_lms/static/themes/intent_learn/robots.txt")
+SITEMAP_PATH = Path("now_lms/static/themes/intent_learn/sitemap.xml")
+ERROR_404_PATH = Path("now_lms/templates/error_pages/404.html")
+CADDY_PATH = Path("now_lms/config/Caddyfile")
 
 
 def _template() -> str:
@@ -29,6 +33,25 @@ def _css() -> str:
 def test_front_door_template_parses() -> None:
     """Catch malformed Jinja before the fork-local theme reaches production."""
     Environment().parse(_template())
+
+
+def test_public_discovery_and_share_contracts() -> None:
+    """Keep search discovery, social previews, and the branded error path present."""
+    header = HEADER_PATH.read_text(encoding="utf-8")
+    robots = ROBOTS_PATH.read_text(encoding="utf-8")
+    sitemap = SITEMAP_PATH.read_text(encoding="utf-8")
+    error_page = ERROR_404_PATH.read_text(encoding="utf-8")
+
+    for property_name in ("og:title", "og:description", "og:type", "og:image"):
+        assert f'property="{property_name}"' in header
+    assert "Sitemap: https://learn.intentsolutions.io/sitemap.xml" in robots
+    assert "https://learn.intentsolutions.io/" in sitemap
+    caddy = CADDY_PATH.read_text(encoding="utf-8")
+    assert "@public_discovery path /robots.txt /sitemap.xml" in caddy
+    assert "root * /app/now_lms/static/themes/intent_learn" in caddy
+    assert '<meta name="robots" content="noindex" />' in error_page
+    assert "BMO Soluciones" not in error_page
+    assert "NOW LMS" not in error_page
 
 
 @pytest.mark.skipif(importlib.util.find_spec("flask_alembic") is None, reason="full app dependencies are not installed")
@@ -155,6 +178,9 @@ def test_front_door_carries_mobile_overflow_and_accessibility_guards() -> None:
     assert '<html lang="{{ current_locale() }}">' in template
     assert 'loading="lazy"' in template
     assert "isl-team-initials" in template
+    assert 'class="isl-mobile-action"' in template
+    assert ".isl-mobile-action" in css
+    assert "env(safe-area-inset-bottom)" in css
 
     # The mailto assembly lives on the request-access page now; same guards there.
     ra_template = REQUEST_ACCESS_PATH.read_text(encoding="utf-8")
