@@ -133,6 +133,25 @@ def test_post_confirmation_page_carries_the_locked_copy(client, db_session, fast
     assert "fit beats speed" in confirm
 
 
+def test_post_confirmation_credits_the_independent_practice_resource(client, db_session, fast_ok):
+    """The post-submit next step is accurate, attributed, and measurable."""
+    resp = _post(client, _get_ts_token(client))
+    confirm = client.get(resp.headers["Location"]).data.decode("utf-8")
+
+    assert "AI Certificates" in confirm
+    assert "Matthew Hartman" in confirm
+    for exam_code in ("CCAO-F", "CCDV-F", "CCAR-F", "CCAR-P"):
+        assert exam_code in confirm
+    assert "one full-length practice form" in confirm
+    assert "no account required" in confirm
+    assert "Additional practice sets are sold separately" in confirm
+    assert "No referral fees or paid placement" in confirm
+    assert "https://aicertificates.study/?utm_source=learn.intentsolutions.io" in confirm
+    assert 'data-umami-event="AI Certificates practice resource"' in confirm
+    assert 'target="_blank"' in confirm
+    assert 'rel="noopener noreferrer"' in confirm
+
+
 def test_honeypot_drops_the_submission_silently(client, db_session, fast_ok):
     resp = _post(client, _get_ts_token(client), website="https://spam.example")
     # A bot sees success; nothing stores.
