@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="{{ current_locale() }}">
+    <body style="margin: 0; padding: 0; background: #f3f6f4; color: #161b1d; font-family: Arial, sans-serif">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: #f3f6f4">
+            <tr>
+                <td align="center" style="padding: 32px 16px">
+                    <table
+                        role="presentation"
+                        width="100%"
+                        cellspacing="0"
+                        cellpadding="0"
+                        style="max-width: 620px; border: 1px solid #d3dbd7; background: #ffffff"
+                    >
+                        <tr>
+                            <td style="padding: 24px 32px; border-bottom: 1px solid #d3dbd7; font-size: 16px; font-weight: 700">
+                                Intent<span style="color: #ef5a24">Solutions</span> Learn
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 36px 32px 18px">
+                                <h1 style="margin: 0 0 16px; font-size: 30px; line-height: 1.15">{{ _('Your request is in.') }}</h1>
+                                <p style="margin: 0; color: #4f5b60; font-size: 16px; line-height: 1.65">
+                                    {{ _('Thanks, %(name)s. A person will review your request, and we’ll contact you when there is a fit and a seat.', name=applicant_name) }}
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 18px 32px 36px">
+                                <div style="border-top: 1px solid #d3dbd7; padding-top: 28px">
+                                    <h2 style="margin: 0 0 12px; font-size: 23px; line-height: 1.2">{{ _('Practice while you wait.') }}</h2>
+                                    <p style="margin: 0 0 14px; color: #4f5b60; font-size: 15px; line-height: 1.65">
+                                        {{ _('AI Certificates offers one free full-length practice form for each of the four Claude certifications, with no signup. Every answer option is explained, including the wrong ones.') }}
+                                    </p>
+                                    <p style="margin: 0 0 22px; color: #4f5b60; font-size: 15px; line-height: 1.65">
+                                        {{ _('The questions and explanations are original work by Matthew Hartman.') }}
+                                    </p>
+                                    <a
+                                        href="{{ practice_url }}"
+                                        style="display: inline-block; padding: 13px 18px; background: #ef5a24; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none"
+                                    >{{ _('Start a free practice exam') }}</a>
+                                    <p style="margin: 16px 0 0; color: #697478; font-size: 12px; line-height: 1.55">
+                                        {{ _('Independent resource · Additional practice sets are sold separately · No referral fees or paid placement') }}
+                                    </p>
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+</html>
