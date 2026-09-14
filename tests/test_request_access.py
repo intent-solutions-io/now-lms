@@ -108,7 +108,8 @@ def test_public_request_access_page_includes_the_independent_practice_resource(c
     assert "AI Certificates" in body
     assert "Matthew Hartman" in body
     assert "About the author: Matthew Hartman" in body
-    assert 'href="https://www.linkedin.com/in/matthewhartman"' in body
+    assert "utm_content=about_author" in body
+    assert "utm_content=try_free" in body
     assert "independent practice exams for all four Claude certifications" in body
     assert "One full-length exam for each is free" in body
     assert "every answer option is explained" in body
@@ -154,14 +155,16 @@ def test_post_confirmation_credits_the_independent_practice_resource(client, db_
     assert "AI Certificates" in confirm
     assert "Matthew Hartman" in confirm
     assert "About the author: Matthew Hartman" in confirm
-    assert 'href="https://www.linkedin.com/in/matthewhartman"' in confirm
+    assert "utm_content=about_author" in confirm
+    assert "utm_content=try_free" in confirm
     assert "independent practice exams for all four Claude certifications" in confirm
     assert "One full-length exam for each is free" in confirm
     assert "every answer option is explained" in confirm
     assert "Additional practice sets are paid" in confirm
     assert "Intent Solutions receives no referral fee" in confirm
     assert (
-        "https://aicertificates.study/?utm_source=intentsolutions&amp;utm_medium=referral&amp;" "utm_campaign=learn_listing"
+        "https://aicertificates.study/?utm_source=intentsolutions&amp;utm_medium=referral&amp;"
+        "utm_campaign=learn_listing&amp;utm_content=try_free"
     ) in confirm
     assert 'data-umami-event="AI Certificates practice resource"' in confirm
     assert 'data-umami-event-placement="request-access confirmation"' in confirm
