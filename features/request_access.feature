@@ -10,8 +10,9 @@
 Feature: Request access intake
   The waiting list is the only public conversion path. Submissions store
   durably in the native contact_messages table with an "[ACCESS] " subject
-  discriminator; Slack notification is best-effort and never breaks a
-  submission.
+  discriminator; the applicant receipt is best-effort and never breaks a
+  submission. Staff notifications are delivered by estate automation that
+  observes the durable row.
 
   Background:
     Given the platform is deployed with the intent_learn theme
@@ -29,10 +30,10 @@ Feature: Request access intake
     Then a contact_messages row is stored with subject prefix "[ACCESS] "
     And the vetting fields are composed into the message as a labeled template
     And the visitor is redirected to the post-submit confirmation
-    And a best-effort Slack ping is attempted after the database commit
+    And a best-effort applicant receipt is queued after the database commit
 
-  Scenario: Slack being down never loses a submission
-    Given the Slack webhook is unreachable
+  Scenario: Mail being unavailable never loses a submission
+    Given applicant mail delivery is unavailable
     When a visitor submits a valid request
     Then the contact_messages row is still stored
     And the visitor still reaches the confirmation page

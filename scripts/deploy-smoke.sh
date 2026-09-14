@@ -49,11 +49,6 @@ if grep -o 'mailto:[^"?]*' <<<"${ra}" | grep -q '%40'; then
     fail "mailto address is still percent-encoded (%40)"
 fi
 
-# The Slack ping is optional by env contract, but on THIS deployment it must be
-# wired: an unset var silently drops the alert path for real leads.
-webhook="$(docker compose exec -T app printenv SLACK_WEBHOOK_LEADS_CONTACT 2>/dev/null || true)"
-[ -n "${webhook}" ] || fail "SLACK_WEBHOOK_LEADS_CONTACT is empty inside the app container"
-
 # 5. The catalog is the doctrine teaser: no course cards, no vendor names.
 teaser="$(curl -fsS --max-time 20 -H 'X-Forwarded-Proto: https' http://127.0.0.1:8080/course/explore)"
 grep -q 'isl-tracks-list' <<<"${teaser}" || fail "/course/explore is not serving the practice-tracks teaser"
