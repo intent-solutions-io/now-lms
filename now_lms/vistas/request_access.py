@@ -52,6 +52,11 @@ from now_lms.logs import log
 request_access_bp = Blueprint("request_access", __name__, template_folder=DIRECTORIO_PLANTILLAS)
 
 TEMPLATE = "themes/intent_learn/pages/request_access.html"
+EMAIL_TEMPLATE = "themes/intent_learn/email/request_access_confirmation.html"
+AI_CERTIFICATES_EMAIL_URL = (
+    "https://aicertificates.study/"
+    "?utm_source=learn.intentsolutions.io&utm_medium=email&utm_campaign=request-access-confirmation"
+)
 
 # ASCII discriminator for waiting-list rows in contact_messages. Never wrapped in
 # gettext: the admin filter and the canonical query
@@ -254,9 +259,10 @@ def _notify_slack(name: str, building_snippet: str) -> None:
 def _store_request(form: RequestAccessForm) -> None:
     """Persist the access request as a native contact message row."""
     name = _strip_crlf(form.name.data)[:NAME_MAX]
+    email = _strip_crlf(form.email.data)[:EMAIL_MAX]
     contact_msg = ContactMessage(
         name=name,
-        email=_strip_crlf(form.email.data)[:EMAIL_MAX],
+        email=email,
         subject=(ACCESS_SUBJECT_PREFIX + name)[:SUBJECT_MAX],
         message=_compose_message(form),
         status="not_seen",
@@ -264,6 +270,56 @@ def _store_request(form: RequestAccessForm) -> None:
     database.session.add(contact_msg)
     database.session.commit()
     _notify_slack(name, form.building.data.strip().splitlines()[0] if form.building.data.strip() else "")
+    _send_access_confirmation(name, email)
+
+
+def _send_access_confirmation(name: str, email: str) -> None:
+    """Send the applicant a best-effort receipt after the database commit."""
+    from flask_mail import Message
+
+    from now_lms.mail import mail_delivery_available, resolve_sender, send_mail
+
+    if not mail_delivery_available():
+        log.warning("Mail is not configured; access request stored without an applicant confirmation email.")
+        return
+
+    clean_name = _strip_crlf(name)[:NAME_MAX]
+    try:
+        msg = Message(
+            subject=_("We received your Intent Solutions Learn access request"),
+            recipients=[email],
+            sender=resolve_sender(),
+        )
+        msg.body = "\n\n".join(
+            [
+                _("Hi %(name)s,") % {"name": clean_name},
+                _(
+                    "Your access request is in. A person will review it, and we will contact you when there is a fit "
+                    "and a seat."
+                ),
+                _(
+                    "While you wait, AI Certificates offers one free full-length practice form for each of the four "
+                    "Claude certifications, with no signup. Every answer option is explained, including the wrong ones. "
+                    "The questions and explanations are original work by Matthew Hartman."
+                ),
+                f"{_('Start a free practice exam')}: {AI_CERTIFICATES_EMAIL_URL}",
+                _(
+                    "AI Certificates is an independent resource. Additional practice sets are sold separately. There "
+                    "are no referral fees or paid placement."
+                ),
+                _("Intent Solutions Learn"),
+            ]
+        )
+        msg.html = render_template(
+            EMAIL_TEMPLATE,
+            applicant_name=clean_name,
+            practice_url=AI_CERTIFICATES_EMAIL_URL,
+        )
+        send_mail(msg, background=True)
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        # The database row is already committed. Email is a receipt, never the
+        # durability boundary for the access request.
+        log.warning(f"Applicant confirmation email could not be queued: {error}")
 
 
 @request_access_bp.route("/request-access", methods=["GET", "POST"])

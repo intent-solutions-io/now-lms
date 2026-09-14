@@ -10,6 +10,7 @@ tests live here too: both surfaces exist so the public site never leaks course
 or vendor names to anonymous visitors.
 """
 
+import importlib
 import re
 from collections import deque
 from pathlib import Path
@@ -86,7 +87,7 @@ def _use_intent_learn_theme(db_session):
 # ---------------------------------------------------------------------------------------
 
 
-def test_request_access_renders_anonymously(client, db_session):
+def test_public_request_access_page_includes_the_independent_practice_resource(client, db_session):
     resp = client.get("/request-access")
     assert resp.status_code == 200
     body = resp.data.decode("utf-8")
@@ -102,8 +103,15 @@ def test_request_access_renders_anonymously(client, db_session):
     for href in hrefs:
         address = href[len("mailto:") :].split("?", 1)[0]
         assert "@" in address and "%40" not in address
-    # No vendor or course names leak from the public door.
-    for leaked in ("Claude", "Anthropic", "CCA-"):
+    # The named independent resource is deliberate; internal course/vendor
+    # inventory still stays behind the gate.
+    assert "AI Certificates" in body
+    assert "Matthew Hartman" in body
+    assert "one full-length practice form for each exam free" in body
+    assert "Every answer option is explained, including the wrong ones" in body
+    assert "utm_campaign=request-access-page" in body
+    assert 'data-umami-event-placement="request-access page"' in body
+    for leaked in ("Anthropic", "CCA-"):
         assert leaked not in body
 
 
@@ -131,6 +139,73 @@ def test_post_confirmation_page_carries_the_locked_copy(client, db_session, fast
     confirm = client.get(resp.headers["Location"]).data.decode("utf-8")
     assert "Got it" in confirm and "on the list" in confirm
     assert "fit beats speed" in confirm
+
+
+def test_post_confirmation_credits_the_independent_practice_resource(client, db_session, fast_ok):
+    """The post-submit next step is accurate, attributed, and measurable."""
+    resp = _post(client, _get_ts_token(client))
+    confirm = client.get(resp.headers["Location"]).data.decode("utf-8")
+
+    assert "AI Certificates" in confirm
+    assert "Matthew Hartman" in confirm
+    for exam_code in ("CCAO-F", "CCDV-F", "CCAR-F", "CCAR-P"):
+        assert exam_code in confirm
+    assert "one full-length practice form" in confirm
+    assert "no signup" in confirm
+    assert "Every answer option is explained, including the wrong ones" in confirm
+    assert "Additional practice sets are sold separately" in confirm
+    assert "No referral fees or paid placement" in confirm
+    assert (
+        "https://aicertificates.study/?utm_source=learn.intentsolutions.io&amp;utm_medium=referral&amp;"
+        "utm_campaign=request-access-confirmation"
+    ) in confirm
+    assert 'data-umami-event="AI Certificates practice resource"' in confirm
+    assert 'data-umami-event-placement="request-access confirmation"' in confirm
+    assert 'target="_blank"' in confirm
+    assert 'rel="noopener noreferrer"' in confirm
+
+
+def test_post_sends_an_applicant_receipt_with_the_practice_cta(client, db_session, fast_ok, monkeypatch):
+    """The stored request is followed by a branded, attributed receipt email."""
+    sent = {}
+    mail_module = importlib.import_module("now_lms.mail")
+
+    monkeypatch.setattr(mail_module, "mail_delivery_available", lambda: True)
+    monkeypatch.setattr(mail_module, "resolve_sender", lambda: ("Intent Solutions Learn", "learn@example.com"))
+
+    def capture_mail(msg, background=True):
+        sent["message"] = msg
+        sent["background"] = background
+
+    monkeypatch.setattr(mail_module, "send_mail", capture_mail)
+
+    resp = _post(client, _get_ts_token(client))
+
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert len(_stored_rows(db_session)) == 1
+    assert sent["background"] is True
+    msg = sent["message"]
+    assert msg.recipients == ["ada@example.com"]
+    assert "Intent Solutions Learn access request" in msg.subject
+    for content in (msg.body, msg.html):
+        assert "AI Certificates" in content
+        assert "Matthew Hartman" in content
+        assert "Every answer option is explained, including the wrong ones" in content
+        assert "utm_medium=email" in content
+        assert "request-access-confirmation" in content
+
+
+def test_mail_failure_never_loses_the_stored_request(client, db_session, fast_ok, monkeypatch):
+    """The database remains the durability boundary when mail cannot queue."""
+    mail_module = importlib.import_module("now_lms.mail")
+    monkeypatch.setattr(mail_module, "mail_delivery_available", lambda: True)
+    monkeypatch.setattr(mail_module, "resolve_sender", lambda: ("Intent Solutions Learn", "learn@example.com"))
+    monkeypatch.setattr(mail_module, "send_mail", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("SMTP down")))
+
+    resp = _post(client, _get_ts_token(client))
+
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    assert len(_stored_rows(db_session)) == 1
 
 
 def test_honeypot_drops_the_submission_silently(client, db_session, fast_ok):

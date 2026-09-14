@@ -71,7 +71,28 @@
                                 {{ _('A person reads every request; no timelines promised, because fit beats speed.') }}
                                 {{ _('If email suits you better:') }} <a href="{{ access_email }}">{{ access_contact }}</a>.
                             </p>
-                            <a class="isl-btn isl-btn-secondary" href="/">{{ _('Back to the front door') }}</a>
+                            <div class="isl-ra-resource" aria-labelledby="ra-resource-title-confirm">
+                                <h3 id="ra-resource-title-confirm">{{ _('While we review, test your exam readiness.') }}</h3>
+                                <p>
+                                    {{ _('AI Certificates offers one full-length practice form for each of the four Claude certifications — CCAO-F, CCDV-F, CCAR-F, and CCAR-P — free, with no signup. Every answer option is explained, including the wrong ones.') }}
+                                </p>
+                                <p>
+                                    {{ _('The questions and explanations are original work by Matthew Hartman.') }}
+                                    <a href="https://aicertificates.study/about" target="_blank" rel="noopener noreferrer">{{ _('About the author') }}</a>
+                                </p>
+                                <a
+                                    class="isl-btn isl-btn-primary"
+                                    href="https://aicertificates.study/?utm_source=learn.intentsolutions.io&amp;utm_medium=referral&amp;utm_campaign=request-access-confirmation"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    data-umami-event="AI Certificates practice resource"
+                                    data-umami-event-placement="request-access confirmation"
+                                >{{ _('Start a free practice exam') }}<span class="visually-hidden"> {{ _('(opens in a new tab)') }}</span></a>
+                                <p class="isl-ra-resource-note">
+                                    {{ _('Independent resource · Additional practice sets are sold separately · No referral fees or paid placement') }}
+                                </p>
+                            </div>
+                            <a class="isl-ra-return" href="/">{{ _('Back to the front door') }}</a>
                         </div>
                         {% else %}
                         <form class="isl-ra-form" method="post" action="{{ url_for('request_access.request_access') }}" novalidate>
@@ -127,6 +148,24 @@
                                 <a href="https://intentsolutions.io/privacy">{{ _('Privacy Policy') }}</a>
                             </p>
                         </form>
+                        <div class="isl-ra-resource isl-ra-resource-public" aria-labelledby="ra-resource-title-public">
+                            <h3 id="ra-resource-title-public">{{ _('Preparing for a Claude certification?') }}</h3>
+                            <p>
+                                {{ _('AI Certificates offers one full-length practice form for each exam free, with no signup. Every answer option is explained, including the wrong ones. The questions and explanations are original work by Matthew Hartman.') }}
+                                <a href="https://aicertificates.study/about" target="_blank" rel="noopener noreferrer">{{ _('About the author') }}</a>
+                            </p>
+                            <a
+                                class="isl-btn isl-btn-secondary"
+                                href="https://aicertificates.study/?utm_source=learn.intentsolutions.io&amp;utm_medium=referral&amp;utm_campaign=request-access-page"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-umami-event="AI Certificates practice resource"
+                                data-umami-event-placement="request-access page"
+                            >{{ _('Explore the practice exams') }}<span class="visually-hidden"> {{ _('(opens in a new tab)') }}</span></a>
+                            <p class="isl-ra-resource-note">
+                                {{ _('Independent resource · Additional practice sets are sold separately · No referral fees or paid placement') }}
+                            </p>
+                        </div>
                         {% endif %}
                     </div>
                 </div>
