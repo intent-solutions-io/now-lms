@@ -51,6 +51,7 @@ EMAIL_TEMPLATE = "themes/intent_learn/email/request_access_confirmation.html"
 AI_CERTIFICATES_EMAIL_URL = (
     "https://aicertificates.study/" "?utm_source=intentsolutions&utm_medium=email&utm_campaign=learn_confirmation"
 )
+MATTHEW_HARTMAN_LINKEDIN_URL = "https://www.linkedin.com/in/matthewhartman"
 
 # ASCII discriminator for waiting-list rows in contact_messages. Never wrapped in
 # gettext: the admin filter and the canonical query
@@ -248,6 +249,7 @@ def _send_access_confirmation(name: str, email: str) -> None:
                     "While you wait, Matthew Hartman's AI Certificates has independent practice exams for all four "
                     "Claude certifications. One full-length exam for each is free, and every answer option is explained."
                 ),
+                f"{_('About the author: Matthew Hartman')}: {MATTHEW_HARTMAN_LINKEDIN_URL}",
                 f"{_('Start a free practice exam')}: {AI_CERTIFICATES_EMAIL_URL}",
                 _(
                     "AI Certificates is an independent resource. Additional practice sets are paid. Intent Solutions "
@@ -259,6 +261,7 @@ def _send_access_confirmation(name: str, email: str) -> None:
         msg.html = render_template(
             EMAIL_TEMPLATE,
             applicant_name=clean_name,
+            author_url=MATTHEW_HARTMAN_LINKEDIN_URL,
             practice_url=AI_CERTIFICATES_EMAIL_URL,
         )
         send_mail(msg, background=True)
