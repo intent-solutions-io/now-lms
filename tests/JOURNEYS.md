@@ -12,7 +12,7 @@ untested steps are flagged with the linked REQ's MoSCoW severity.
 | 2. Click deeper → `/course/explore` teaser (REQ-004) | L3/L6 | front-door tests, `gating_boundary.feature`, smoke | covered |
 | 3. Hit a gated course link → 302 to intake (REQ-005) | L3/L6 | `gating_boundary.feature`, front-door tests | covered |
 | 4. `GET /request-access` form (REQ-001) | L3/L7 | `test_request_access.py`, smoke | covered |
-| 5. Submit → row + best-effort ping (REQ-001/002/003) | L3/L4 | `test_request_access.py` | covered |
+| 5. Submit → row + best-effort applicant receipt (REQ-001/002/003) | L3/L4 | `test_request_access.py` | covered |
 | 6. Post-submit confirmation copy (founder-locked) | L3 | `test_request_access.py` | covered |
 
 ## J2 — Member works a course (P1)
@@ -28,7 +28,7 @@ untested steps are flagged with the linked REQ's MoSCoW severity.
 
 | Step | Layer | Exercised by | Status |
 |---|---|---|---|
-| 1. Slack ping arrives in #leads-contact | L4 | manual (one real end-to-end submission verified at ship; not CI-automatable — external service) | partial, accepted |
+| 1. Owner email and private `leads` post arrive from the estate watcher | L4 | manual end-to-end verification in `intent-os`; the LMS row is the durability boundary | external, covered operationally |
 | 2. Review `/admin/contact-messages?q=[ACCESS]` | L3 | `test_static_pages_admin.py` | covered |
 | 3. Status workflow (new → reviewing → resolved) | L3 | inherited contact-messages suite | covered |
 | 4. Outreach (manual email until MXroute wiring, bead `now-lms-kyv`) | — | out of test scope (human step) | n/a |
@@ -43,5 +43,6 @@ untested steps are flagged with the linked REQ's MoSCoW severity.
 
 ## Flagged
 
-- J3 step 1 is manual-by-nature (external Slack); accepted, documented here so
-  it is a decision, not an oversight.
+- J3 step 1 belongs to the estate-side watcher in `intent-os`, not this public
+  request path. It is documented here so the cross-repository boundary is
+  explicit.
