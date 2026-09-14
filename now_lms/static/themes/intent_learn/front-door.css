@@ -485,9 +485,9 @@
 .isl-ra-resource h3 { max-width: 24ch; margin: 0 0 0.8rem; color: var(--graphite); font-family: var(--font-display); font-size: clamp(1.3rem, 2vw, 1.65rem); font-weight: 650; letter-spacing: -0.025em; line-height: 1.15; text-wrap: balance; }
 .isl-ra-resource p { margin-bottom: 0.85rem; font-size: 0.9rem; line-height: 1.6; }
 .isl-ra-resource .isl-btn { margin-top: 0.35rem; }
-.isl-ra-resource .isl-ra-resource-note { max-width: 62ch; margin: 0.8rem 0 0; color: rgb(var(--ink-faint)); font-family: var(--font-mono); font-size: 0.66rem; line-height: 1.5; }
+.isl-ra-resource .isl-ra-resource-note { max-width: 62ch; margin: 0.8rem 0 0; color: rgb(var(--ink-faint)); font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.5; }
 .isl-ra-resource-public { margin-bottom: 0; }
-.isl-ra-return { display: inline-flex; min-height: 44px; align-items: center; color: var(--blueprint) !important; font-size: 0.8rem; font-weight: 650; text-decoration: underline !important; text-underline-offset: 0.22em; }
+.isl-ra-confirm .isl-ra-return { display: inline-flex; min-height: 44px; align-items: center; color: var(--blueprint); font-size: 0.8rem; font-weight: 650; text-decoration: underline; text-underline-offset: 0.22em; }
 
 /* Practice-tracks teaser (/course/explore) — the click-deeper page. */
 .isl-tracks-list { display: grid; gap: 0; }

@@ -290,17 +290,26 @@ def _send_access_confirmation(name: str, email: str) -> None:
             recipients=[email],
             sender=resolve_sender(),
         )
-        msg.body = _(
-            "Hi %(name)s,\n\n"
-            "Your access request is in. A person will review it, and we will contact you when there is a fit and a seat.\n\n"
-            "While you wait, AI Certificates offers one free full-length practice form for each of the four Claude "
-            "certifications, with no signup. Every answer option is explained, including the wrong ones. The questions "
-            "and explanations are original work by Matthew Hartman.\n\n"
-            "Start a free practice exam: %(practice_url)s\n\n"
-            "AI Certificates is an independent resource. Additional practice sets are sold separately. There are no "
-            "referral fees or paid placement.\n\n"
-            "— Intent Solutions Learn"
-        ) % {"name": clean_name, "practice_url": AI_CERTIFICATES_EMAIL_URL}
+        msg.body = "\n\n".join(
+            [
+                _("Hi %(name)s,") % {"name": clean_name},
+                _(
+                    "Your access request is in. A person will review it, and we will contact you when there is a fit "
+                    "and a seat."
+                ),
+                _(
+                    "While you wait, AI Certificates offers one free full-length practice form for each of the four "
+                    "Claude certifications, with no signup. Every answer option is explained, including the wrong ones. "
+                    "The questions and explanations are original work by Matthew Hartman."
+                ),
+                f"{_('Start a free practice exam')}: {AI_CERTIFICATES_EMAIL_URL}",
+                _(
+                    "AI Certificates is an independent resource. Additional practice sets are sold separately. There "
+                    "are no referral fees or paid placement."
+                ),
+                _("Intent Solutions Learn"),
+            ]
+        )
         msg.html = render_template(
             EMAIL_TEMPLATE,
             applicant_name=clean_name,

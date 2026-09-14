@@ -87,7 +87,7 @@ def _use_intent_learn_theme(db_session):
 # ---------------------------------------------------------------------------------------
 
 
-def test_request_access_renders_anonymously(client, db_session):
+def test_public_request_access_page_includes_the_independent_practice_resource(client, db_session):
     resp = client.get("/request-access")
     assert resp.status_code == 200
     body = resp.data.decode("utf-8")
@@ -155,8 +155,12 @@ def test_post_confirmation_credits_the_independent_practice_resource(client, db_
     assert "Every answer option is explained, including the wrong ones" in confirm
     assert "Additional practice sets are sold separately" in confirm
     assert "No referral fees or paid placement" in confirm
-    assert "https://aicertificates.study/?utm_source=learn.intentsolutions.io" in confirm
+    assert (
+        "https://aicertificates.study/?utm_source=learn.intentsolutions.io&amp;utm_medium=referral&amp;"
+        "utm_campaign=request-access-confirmation"
+    ) in confirm
     assert 'data-umami-event="AI Certificates practice resource"' in confirm
+    assert 'data-umami-event-placement="request-access confirmation"' in confirm
     assert 'target="_blank"' in confirm
     assert 'rel="noopener noreferrer"' in confirm
 
