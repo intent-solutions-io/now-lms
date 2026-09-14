@@ -89,11 +89,6 @@ services:
       REDIS_URL: redis://redis:6379/0
       WSGI_SERVER: waitress          # single-process; Redis-backed sessions clear the multi-worker path when we scale
       FLASK_ENV: production          # flips SESSION_COOKIE_SECURE on (session_config.py keys off this)
-      # Optional: best-effort Slack ping for /request-access submissions. The
-      # :- default means a deploy never fails on a notification var; unset just
-      # logs a warning and the DB row remains the source of truth.
-      SLACK_WEBHOOK_LEADS_CONTACT: ${SLACK_WEBHOOK_LEADS_CONTACT:-}
-
       # MXroute SMTP. now_lms/mail.py only sets mail_configured=True when
       # MAIL_SERVER, MAIL_PORT, MAIL_USERNAME and MAIL_PASSWORD are ALL present,
       # so password-reset mail stays off until every one is set. There is no

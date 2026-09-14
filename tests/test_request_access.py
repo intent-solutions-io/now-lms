@@ -4,7 +4,7 @@
 """End-to-end and contract tests for the access-request intake (/request-access).
 
 The intake stores to the native contact_messages table with the ``[ACCESS] ``
-subject discriminator, pings Slack best-effort, and defends itself (CSRF,
+subject discriminator, sends an applicant receipt best-effort, and defends itself (CSRF,
 honeypot, timed token, rate limit, length caps). The practice-tracks teaser
 tests live here too: both surfaces exist so the public site never leaks course
 or vendor names to anonymous visitors.
@@ -107,9 +107,11 @@ def test_public_request_access_page_includes_the_independent_practice_resource(c
     # inventory still stays behind the gate.
     assert "AI Certificates" in body
     assert "Matthew Hartman" in body
-    assert "one full-length practice form for each exam free" in body
-    assert "Every answer option is explained, including the wrong ones" in body
-    assert "utm_campaign=request-access-page" in body
+    assert "independent practice exams for all four Claude certifications" in body
+    assert "One full-length exam for each is free" in body
+    assert "every answer option is explained" in body
+    assert "utm_source=intentsolutions" in body
+    assert "utm_campaign=learn_listing" in body
     assert 'data-umami-event-placement="request-access page"' in body
     for leaked in ("Anthropic", "CCA-"):
         assert leaked not in body
@@ -131,6 +133,7 @@ def test_post_stores_a_parseable_access_request(client, db_session, fast_ok):
     assert "What are you building / where do you want sharper judgment:" in row.message
     assert "Current role or company:\nFounder" in row.message
     assert "How they found us:\nA post" in row.message
+    assert "Attribution:\nutm_source: -\nutm_medium: -\nutm_campaign: -\nutm_content: -" in row.message
     assert "-- Submitted via /request-access" in row.message
 
 
@@ -148,16 +151,13 @@ def test_post_confirmation_credits_the_independent_practice_resource(client, db_
 
     assert "AI Certificates" in confirm
     assert "Matthew Hartman" in confirm
-    for exam_code in ("CCAO-F", "CCDV-F", "CCAR-F", "CCAR-P"):
-        assert exam_code in confirm
-    assert "one full-length practice form" in confirm
-    assert "no signup" in confirm
-    assert "Every answer option is explained, including the wrong ones" in confirm
-    assert "Additional practice sets are sold separately" in confirm
-    assert "No referral fees or paid placement" in confirm
+    assert "independent practice exams for all four Claude certifications" in confirm
+    assert "One full-length exam for each is free" in confirm
+    assert "every answer option is explained" in confirm
+    assert "Additional practice sets are paid" in confirm
+    assert "Intent Solutions receives no referral fee" in confirm
     assert (
-        "https://aicertificates.study/?utm_source=learn.intentsolutions.io&amp;utm_medium=referral&amp;"
-        "utm_campaign=request-access-confirmation"
+        "https://aicertificates.study/?utm_source=intentsolutions&amp;utm_medium=referral&amp;" "utm_campaign=learn_listing"
     ) in confirm
     assert 'data-umami-event="AI Certificates practice resource"' in confirm
     assert 'data-umami-event-placement="request-access confirmation"' in confirm
@@ -190,9 +190,35 @@ def test_post_sends_an_applicant_receipt_with_the_practice_cta(client, db_sessio
     for content in (msg.body, msg.html):
         assert "AI Certificates" in content
         assert "Matthew Hartman" in content
-        assert "Every answer option is explained, including the wrong ones" in content
+        assert "every answer option is explained" in content
         assert "utm_medium=email" in content
-        assert "request-access-confirmation" in content
+        assert "learn_confirmation" in content
+
+
+def test_inbound_campaign_tags_are_stored_with_the_request(client, db_session, fast_ok):
+    """Umami tracks the visit; the intake record keeps the same attribution per lead."""
+    page = client.get(
+        "/request-access?utm_source=aicertificates&utm_medium=referral" "&utm_campaign=exam_access&utm_content=hub_sponsorship"
+    ).data.decode("utf-8")
+    token = re.search(r'name="ts"[^>]*value="([^"]+)"', page) or re.search(r'value="([^"]+)"[^>]*name="ts"', page)
+    assert token
+
+    resp = _post(
+        client,
+        token.group(1),
+        utm_source="aicertificates",
+        utm_medium="referral",
+        utm_campaign="exam_access",
+        utm_content="hub_sponsorship",
+    )
+
+    assert resp.status_code in REDIRECT_STATUS_CODES
+    row = _stored_rows(db_session)[0]
+    assert "Attribution:\n" in row.message
+    assert "utm_source: aicertificates" in row.message
+    assert "utm_medium: referral" in row.message
+    assert "utm_campaign: exam_access" in row.message
+    assert "utm_content: hub_sponsorship" in row.message
 
 
 def test_mail_failure_never_loses_the_stored_request(client, db_session, fast_ok, monkeypatch):
@@ -381,60 +407,6 @@ def test_subject_truncates_to_the_column_limit(app, db_session):
     assert len(row.subject) <= ra_module.SUBJECT_MAX
     assert len(row.name) <= ra_module.NAME_MAX
     assert row.subject.startswith("[ACCESS] ")
-
-
-# ---------------------------------------------------------------------------------------
-# Slack ping (best-effort by contract)
-# ---------------------------------------------------------------------------------------
-
-
-def test_slack_ping_sends_name_but_never_email(client, db_session, fast_ok, monkeypatch):
-    sent = {}
-
-    class _FakeResponse:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-    def fake_urlopen(req, timeout=0):
-        sent["url"] = req.full_url
-        sent["body"] = req.data.decode("utf-8")
-        return _FakeResponse()
-
-    monkeypatch.setenv("SLACK_WEBHOOK_LEADS_CONTACT", "https://hooks.slack.example/T000/B000")
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-
-    resp = _post(client, _get_ts_token(client))
-    assert resp.status_code in REDIRECT_STATUS_CODES
-    assert sent["url"] == "https://hooks.slack.example/T000/B000"
-    assert "Ada Lovelace" in sent["body"]
-    assert "ada@example.com" not in sent["body"], "the ping must not carry the applicant's email"
-    assert '"unfurl_links": false' in sent["body"]
-    # The admin link is a path, never a host-derived external URL: a crafted
-    # Host header on the public POST must not be able to poison the staff link.
-    assert "/admin/contact-messages" in sent["body"]
-    assert "localhost" not in sent["body"]
-
-
-def test_slack_failure_never_breaks_the_submission(client, db_session, fast_ok, monkeypatch):
-    def exploding_urlopen(*args, **kwargs):
-        raise OSError("slack is down")
-
-    monkeypatch.setenv("SLACK_WEBHOOK_LEADS_CONTACT", "https://hooks.slack.example/T000/B000")
-    monkeypatch.setattr("urllib.request.urlopen", exploding_urlopen)
-
-    resp = _post(client, _get_ts_token(client))
-    assert resp.status_code in REDIRECT_STATUS_CODES
-    assert len(_stored_rows(db_session)) == 1
-
-
-def test_unset_webhook_env_still_stores(client, db_session, fast_ok, monkeypatch):
-    monkeypatch.delenv("SLACK_WEBHOOK_LEADS_CONTACT", raising=False)
-    resp = _post(client, _get_ts_token(client))
-    assert resp.status_code in REDIRECT_STATUS_CODES
-    assert len(_stored_rows(db_session)) == 1
 
 
 # ---------------------------------------------------------------------------------------
