@@ -107,6 +107,8 @@ def test_public_request_access_page_includes_the_independent_practice_resource(c
     # inventory still stays behind the gate.
     assert "AI Certificates" in body
     assert "Matthew Hartman" in body
+    assert "About the author: Matthew Hartman" in body
+    assert 'href="https://www.linkedin.com/in/matthewhartman"' in body
     assert "independent practice exams for all four Claude certifications" in body
     assert "One full-length exam for each is free" in body
     assert "every answer option is explained" in body
@@ -151,6 +153,8 @@ def test_post_confirmation_credits_the_independent_practice_resource(client, db_
 
     assert "AI Certificates" in confirm
     assert "Matthew Hartman" in confirm
+    assert "About the author: Matthew Hartman" in confirm
+    assert 'href="https://www.linkedin.com/in/matthewhartman"' in confirm
     assert "independent practice exams for all four Claude certifications" in confirm
     assert "One full-length exam for each is free" in confirm
     assert "every answer option is explained" in confirm
@@ -190,6 +194,8 @@ def test_post_sends_an_applicant_receipt_with_the_practice_cta(client, db_sessio
     for content in (msg.body, msg.html):
         assert "AI Certificates" in content
         assert "Matthew Hartman" in content
+        assert "About the author: Matthew Hartman" in content
+        assert "https://www.linkedin.com/in/matthewhartman" in content
         assert "every answer option is explained" in content
         assert "utm_medium=email" in content
         assert "learn_confirmation" in content
