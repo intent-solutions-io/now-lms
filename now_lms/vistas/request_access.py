@@ -8,11 +8,9 @@ submission as a native :class:`ContactMessage` row so the stock admin surface at
 waiting list without a new table or migration. Requests are discriminated by an
 ASCII subject prefix (``[ACCESS] ``) so they stay trivially queryable.
 
-The optional Slack webhook notification papers over a genuine upstream gap (no
-notification hook on new contact messages); it is best-effort by design — the
-database row is the durability, the ping is only the alert. Once a generic
-``CONTACT_WEBHOOK_URL`` feature lands upstream this module's ping code is
-dropped in its favor.
+The database row is the durability boundary. Estate-side automation observes
+new rows and delivers staff notifications without coupling the public request
+path to a chat provider.
 
 This file deliberately imports nothing from ``static_pages.py`` (that module is
 removed by the upstream v2.0.0 split) so the route survives the sync.
@@ -23,12 +21,9 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------------------
 # Standard library
 # ---------------------------------------------------------------------------------------
-import json
 import re
 import threading
-import urllib.request
 from collections import deque
-from os import environ
 from time import time
 
 # ---------------------------------------------------------------------------------------
@@ -54,8 +49,7 @@ request_access_bp = Blueprint("request_access", __name__, template_folder=DIRECT
 TEMPLATE = "themes/intent_learn/pages/request_access.html"
 EMAIL_TEMPLATE = "themes/intent_learn/email/request_access_confirmation.html"
 AI_CERTIFICATES_EMAIL_URL = (
-    "https://aicertificates.study/"
-    "?utm_source=learn.intentsolutions.io&utm_medium=email&utm_campaign=request-access-confirmation"
+    "https://aicertificates.study/" "?utm_source=intentsolutions&utm_medium=email&utm_campaign=learn_confirmation"
 )
 
 # ASCII discriminator for waiting-list rows in contact_messages. Never wrapped in
@@ -72,6 +66,8 @@ LINKS_MAX = 2000
 BUILDING_MAX = 4000
 ROLE_MAX = 200
 SOURCE_MAX = 200
+UTM_MAX = 100
+UTM_FIELDS = ("utm_source", "utm_medium", "utm_campaign", "utm_content")
 
 # Anti-abuse: a human cannot fill four required fields in under this many seconds.
 MIN_SUBMIT_SECONDS = 3
@@ -111,6 +107,12 @@ class RequestAccessForm(FlaskForm):
     )
     role_context = StringField(_l("Current role or company"), validators=[Length(max=ROLE_MAX)])
     source = StringField(_l("How did you find us?"), validators=[Length(max=SOURCE_MAX)])
+    # Umami owns aggregate analytics. Preserve the same campaign tags with the
+    # individual request so staff can attribute a specific application too.
+    utm_source = HiddenField(validators=[Length(max=UTM_MAX)])
+    utm_medium = HiddenField(validators=[Length(max=UTM_MAX)])
+    utm_campaign = HiddenField(validators=[Length(max=UTM_MAX)])
+    utm_content = HiddenField(validators=[Length(max=UTM_MAX)])
     # Honeypot: hidden from humans by CSS; any value means a bot filled it.
     website = StringField()
     # Signed issue-time token: too-young means a bot, too-old means a stale tab.
@@ -184,6 +186,9 @@ def _strip_crlf(value: str) -> str:
 
 def _compose_message(form: RequestAccessForm) -> str:
     """Compose the labeled, parseable message body stored in ContactMessage."""
+    attribution = "\n".join(
+        f"{field}: {_strip_crlf(getattr(form, field).data or '-')[:UTM_MAX] or '-'}" for field in UTM_FIELDS
+    )
     return (
         "Links to work:\n"
         f"{form.links.data.strip()[:LINKS_MAX]}\n\n"
@@ -193,67 +198,10 @@ def _compose_message(form: RequestAccessForm) -> str:
         f"{_strip_crlf(form.role_context.data or '-')[:ROLE_MAX] or '-'}\n\n"
         "How they found us:\n"
         f"{_strip_crlf(form.source.data or '-')[:SOURCE_MAX] or '-'}\n\n"
+        "Attribution:\n"
+        f"{attribution}\n\n"
         "-- Submitted via /request-access"
     )
-
-
-def _notify_slack(name: str, building_snippet: str) -> None:
-    """Best-effort Slack ping to the leads channel. Never raises.
-
-    Temporary fork-local mechanism pending an upstream CONTACT_WEBHOOK_URL
-    feature. Sends only the applicant's name and a snippet of what they are
-    building plus the admin deep-link — never the email address or employer.
-    """
-    webhook = environ.get("SLACK_WEBHOOK_LEADS_CONTACT")
-    if not webhook:
-        log.warning("SLACK_WEBHOOK_LEADS_CONTACT is not set; access request stored without a Slack ping.")
-        return
-    # Scheme allow-list before urlopen: the `# nosec B310` below suppresses
-    # exactly the check that would otherwise catch a misconfigured file:// or
-    # ftp:// value, so assert it here. Operator-controlled input, but a typo in
-    # a deploy env should not turn a notification into a local file read.
-    if not webhook.startswith("https://"):
-        log.warning("SLACK_WEBHOOK_LEADS_CONTACT is not an https URL; skipping the Slack ping.")
-        return
-    try:
-        # Path only, never _external=True: an external URL would be derived from
-        # the request Host header, letting a crafted POST poison the staff-facing
-        # link (Greptile P1 on PR #25). Staff open it against the admin origin.
-        admin_path = url_for("contact.list_contact_messages") + "?q=%5BACCESS%5D"
-        payload = {
-            "text": f"New access request: {name}",
-            "unfurl_links": False,
-            "unfurl_media": False,
-            "blocks": [
-                {
-                    "type": "header",
-                    "text": {"type": "plain_text", "text": "New access request", "emoji": False},
-                },
-                {
-                    "type": "section",
-                    "fields": [
-                        {"type": "plain_text", "text": name[:150], "emoji": False},
-                        {"type": "plain_text", "text": building_snippet[:250] or "-", "emoji": False},
-                    ],
-                },
-                {
-                    "type": "section",
-                    "text": {"type": "plain_text", "text": f"Review in the admin panel: {admin_path}", "emoji": False},
-                },
-            ],
-        }
-        req = urllib.request.Request(
-            webhook,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=5):  # nosec B310 - env-provided https webhook
-            pass
-    except Exception as error:  # pylint: disable=broad-exception-caught
-        # The DB row is the durability; a notification failure must never
-        # surface to the visitor or roll back the stored request.
-        log.warning(f"Slack ping for access request failed: {error}")
 
 
 def _store_request(form: RequestAccessForm) -> None:
@@ -269,7 +217,6 @@ def _store_request(form: RequestAccessForm) -> None:
     )
     database.session.add(contact_msg)
     database.session.commit()
-    _notify_slack(name, form.building.data.strip().splitlines()[0] if form.building.data.strip() else "")
     _send_access_confirmation(name, email)
 
 
@@ -298,14 +245,13 @@ def _send_access_confirmation(name: str, email: str) -> None:
                     "and a seat."
                 ),
                 _(
-                    "While you wait, AI Certificates offers one free full-length practice form for each of the four "
-                    "Claude certifications, with no signup. Every answer option is explained, including the wrong ones. "
-                    "The questions and explanations are original work by Matthew Hartman."
+                    "While you wait, Matthew Hartman's AI Certificates has independent practice exams for all four "
+                    "Claude certifications. One full-length exam for each is free, and every answer option is explained."
                 ),
                 f"{_('Start a free practice exam')}: {AI_CERTIFICATES_EMAIL_URL}",
                 _(
-                    "AI Certificates is an independent resource. Additional practice sets are sold separately. There "
-                    "are no referral fees or paid placement."
+                    "AI Certificates is an independent resource. Additional practice sets are paid. Intent Solutions "
+                    "receives no referral fee."
                 ),
                 _("Intent Solutions Learn"),
             ]
@@ -368,4 +314,6 @@ def request_access() -> str | Response | tuple[str, int]:
 
     form = RequestAccessForm()
     form.ts.data = _issue_ts_token()
+    for field in UTM_FIELDS:
+        getattr(form, field).data = _strip_crlf(request.args.get(field, ""))[:UTM_MAX]
     return render_template(TEMPLATE, form=form, sent=request.args.get("sent") == "1", form_error=None)

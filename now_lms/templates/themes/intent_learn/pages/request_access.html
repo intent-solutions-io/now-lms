@@ -72,24 +72,21 @@
                                 {{ _('If email suits you better:') }} <a href="{{ access_email }}">{{ access_contact }}</a>.
                             </p>
                             <div class="isl-ra-resource" aria-labelledby="ra-resource-title-confirm">
-                                <h3 id="ra-resource-title-confirm">{{ _('While we review, test your exam readiness.') }}</h3>
+                                <h3 id="ra-resource-title-confirm">{{ _('Practice while we review.') }}</h3>
                                 <p>
-                                    {{ _('AI Certificates offers one full-length practice form for each of the four Claude certifications — CCAO-F, CCDV-F, CCAR-F, and CCAR-P — free, with no signup. Every answer option is explained, including the wrong ones.') }}
-                                </p>
-                                <p>
-                                    {{ _('The questions and explanations are original work by Matthew Hartman.') }}
+                                    {{ _("Matthew Hartman’s AI Certificates has independent practice exams for all four Claude certifications. One full-length exam for each is free, and every answer option is explained.") }}
                                     <a href="https://aicertificates.study/about" target="_blank" rel="noopener noreferrer">{{ _('About the author') }}</a>
                                 </p>
                                 <a
                                     class="isl-btn isl-btn-primary"
-                                    href="https://aicertificates.study/?utm_source=learn.intentsolutions.io&amp;utm_medium=referral&amp;utm_campaign=request-access-confirmation"
+                                    href="https://aicertificates.study/?utm_source=intentsolutions&amp;utm_medium=referral&amp;utm_campaign=learn_listing"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     data-umami-event="AI Certificates practice resource"
                                     data-umami-event-placement="request-access confirmation"
                                 >{{ _('Start a free practice exam') }}<span class="visually-hidden"> {{ _('(opens in a new tab)') }}</span></a>
                                 <p class="isl-ra-resource-note">
-                                    {{ _('Independent resource · Additional practice sets are sold separately · No referral fees or paid placement') }}
+                                    {{ _('Independent resource · Additional practice sets are paid · Intent Solutions receives no referral fee') }}
                                 </p>
                             </div>
                             <a class="isl-ra-return" href="/">{{ _('Back to the front door') }}</a>
@@ -98,6 +95,10 @@
                         <form class="isl-ra-form" method="post" action="{{ url_for('request_access.request_access') }}" novalidate>
                             {{ form.csrf_token }}
                             {{ form.ts }}
+                            {{ form.utm_source }}
+                            {{ form.utm_medium }}
+                            {{ form.utm_campaign }}
+                            {{ form.utm_content }}
 
                             {% if form_error %}
                             <p class="isl-ra-error" role="alert">{{ form_error }}</p>
@@ -149,21 +150,21 @@
                             </p>
                         </form>
                         <div class="isl-ra-resource isl-ra-resource-public" aria-labelledby="ra-resource-title-public">
-                            <h3 id="ra-resource-title-public">{{ _('Preparing for a Claude certification?') }}</h3>
+                            <h3 id="ra-resource-title-public">{{ _('Free Claude certification practice') }}</h3>
                             <p>
-                                {{ _('AI Certificates offers one full-length practice form for each exam free, with no signup. Every answer option is explained, including the wrong ones. The questions and explanations are original work by Matthew Hartman.') }}
+                                {{ _("Matthew Hartman’s AI Certificates has independent practice exams for all four Claude certifications. One full-length exam for each is free, and every answer option is explained.") }}
                                 <a href="https://aicertificates.study/about" target="_blank" rel="noopener noreferrer">{{ _('About the author') }}</a>
                             </p>
                             <a
                                 class="isl-btn isl-btn-secondary"
-                                href="https://aicertificates.study/?utm_source=learn.intentsolutions.io&amp;utm_medium=referral&amp;utm_campaign=request-access-page"
+                                href="https://aicertificates.study/?utm_source=intentsolutions&amp;utm_medium=referral&amp;utm_campaign=learn_listing"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 data-umami-event="AI Certificates practice resource"
                                 data-umami-event-placement="request-access page"
-                            >{{ _('Explore the practice exams') }}<span class="visually-hidden"> {{ _('(opens in a new tab)') }}</span></a>
+                            >{{ _('Try a free practice exam') }}<span class="visually-hidden"> {{ _('(opens in a new tab)') }}</span></a>
                             <p class="isl-ra-resource-note">
-                                {{ _('Independent resource · Additional practice sets are sold separately · No referral fees or paid placement') }}
+                                {{ _('Independent resource · Additional practice sets are paid · Intent Solutions receives no referral fee') }}
                             </p>
                         </div>
                         {% endif %}
