@@ -407,6 +407,76 @@ def test_marcar_recurso_completado_crea_registro_avance(app, db_session):
     assert avance.completado is True
 
 
+def test_completar_sin_indice_previo_cuenta_en_el_avance_del_curso(app, db_session):
+    """A learner enrolled outside the enrollment views has no pre-built index.
+
+    Regression: the fallback row was created without ``requerido``, so the
+    course rollup counted every finished lesson as zero and the dashboard
+    showed "not started" for a learner who had completed the whole course.
+    """
+    from now_lms.db import CursoUsuarioAvance
+
+    estudiante = crear_usuario(db_session, "student", "alumno_sin_indice")
+    curso = crear_curso(db_session, "curso_sin_indice")
+    seccion = crear_seccion(db_session, curso)
+    inscribir_estudiante(db_session, curso, estudiante)
+
+    recursos = []
+    for i in range(1, 3):
+        recurso = CursoRecurso(
+            curso=curso.codigo,
+            seccion=seccion.id,
+            tipo="text",
+            nombre=f"Leccion {i}",
+            descripcion="Requerida",
+            requerido="required",
+            indice=i,
+            publico=False,
+            text="Contenido",
+        )
+        db_session.add(recurso)
+        recursos.append(recurso)
+    db_session.commit()
+
+    client = app.test_client()
+    login_usuario(client, "alumno_sin_indice")
+
+    client.post(f"/course/{curso.codigo}/resource/text/{recursos[0].id}/complete", follow_redirects=False)
+
+    fila = db_session.execute(
+        select(CursoRecursoAvance).filter_by(curso=curso.codigo, recurso=recursos[0].id, usuario=estudiante.usuario)
+    ).scalar_one()
+    assert fila.requerido == "required"
+
+    avance = db_session.execute(
+        select(CursoUsuarioAvance).filter_by(curso=curso.codigo, usuario=estudiante.usuario)
+    ).scalar_one()
+    assert avance.recursos_requeridos == 2
+    assert avance.recursos_completados == 1
+    assert avance.avance == 50
+
+    client.post(f"/course/{curso.codigo}/resource/text/{recursos[1].id}/complete", follow_redirects=False)
+    db_session.expire_all()
+    avance = db_session.execute(
+        select(CursoUsuarioAvance).filter_by(curso=curso.codigo, usuario=estudiante.usuario)
+    ).scalar_one()
+    assert avance.recursos_completados == 2
+    assert avance.avance == 100
+    assert avance.completado is True
+
+
+def test_completar_recurso_de_otro_curso_devuelve_404(app, db_session):
+    """A resource id that does not belong to the course in the URL is rejected."""
+    estudiante = crear_usuario(db_session, "student", "alumno_cruce")
+    curso = crear_curso(db_session, "curso_cruce_a")
+    inscribir_estudiante(db_session, curso, estudiante)
+
+    client = app.test_client()
+    login_usuario(client, "alumno_cruce")
+    resp = client.post(f"/course/{curso.codigo}/resource/text/no-existe/complete", follow_redirects=False)
+    assert resp.status_code == 404
+
+
 def test_marcar_multiples_recursos_completados(app, db_session):
     """Un estudiante puede marcar múltiples recursos como completados."""
     estudiante = crear_usuario(db_session, "student", "alumno8")

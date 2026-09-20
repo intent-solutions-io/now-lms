@@ -283,10 +283,30 @@ def marcar_recurso_completado(curso_id: str, resource_type: str, codigo: str) ->
         .scalars()
         .first()
     )
+    recurso = database.session.execute(select(CursoRecurso).filter_by(id=codigo, curso=curso_id)).scalars().first()
+    if not recurso:
+        abort(404)
+
     if avance:
         avance.completado = True
+        # Rows created before this fix carry no flag; the course rollup only
+        # counts rows flagged "required", so repair it on the way through.
+        if avance.requerido is None:
+            avance.requerido = recurso.requerido
     else:
-        database.session.add(CursoRecursoAvance(usuario=current_user.usuario, curso=curso_id, recurso=codigo, completado=True))
+        # No pre-built index exists when a learner was enrolled outside the
+        # enrollment views (scripted or admin enrollment). Copy the flag from
+        # the resource, exactly as _crear_indice_avance_curso does, or
+        # _actualizar_avance_curso counts this lesson as zero.
+        database.session.add(
+            CursoRecursoAvance(
+                usuario=current_user.usuario,
+                curso=curso_id,
+                recurso=codigo,
+                completado=True,
+                requerido=recurso.requerido,
+            )
+        )
     database.session.commit()
     flash(_("Recurso marcado como completado."), "success")
     _actualizar_avance_curso(curso_id, current_user.usuario)
