@@ -127,6 +127,9 @@ echo "==> Refreshing volume-shadowed templates and static assets from the image"
 # copytree(dirs_exist_ok=True), minus the empty-only guard that caused the trap.
 docker compose exec -T app sh -c 'cp -a /app/now_lms/templates/. /app/themes/ && cp -a /app/now_lms/static/. /app/data/'
 
+echo "==> Upserting repository-owned Intent Solutions pages"
+docker compose exec -T app /usr/bin/python3.12 scripts/seed_intent_pages.py
+
 echo "==> Restarting app so Jinja/caches pick up the refreshed templates"
 docker compose restart app
 
