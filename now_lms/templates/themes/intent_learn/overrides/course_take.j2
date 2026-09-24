@@ -381,6 +381,7 @@
                             <div class="isl-card">
                                 <div class="isl-card-body">
                                     <h3>{{ _('Course tools') }}</h3>
+                                    {% if config.ENABLE_COURSE_COMMUNICATION %}
                                     <div class="isl-quick">
                                         <a href="{{ url_for('msg.course_messages', course_code=curso.codigo) }}">
                                             <i class="bi bi-chat-left-text" aria-hidden="true"></i>
@@ -395,6 +396,7 @@
                                             <span>{{ _('All my courses') }}</span>
                                         </a>
                                     </div>
+                                    {% endif %}
                                 </div>
                             </div>
 

@@ -17,7 +17,7 @@ from datetime import datetime
 # ---------------------------------------------------------------------------------------
 # Third-party libraries
 # ---------------------------------------------------------------------------------------
-from flask import Blueprint, abort, flash, redirect, render_template, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, url_for
 from flask_login import current_user, login_required
 from werkzeug.wrappers import Response
 
@@ -41,6 +41,13 @@ ROUTE_MSG_VIEW_THREAD = "msg.view_thread"
 TEMPLATE_STANDALONE_REPORT = "learning/mensajes/standalone_report.html"
 
 msg = Blueprint("msg", __name__, template_folder=DIRECTORIO_PLANTILLAS)
+
+
+@msg.before_request
+def course_messaging_is_enabled() -> None:
+    """Keep legacy internal messaging reversible but off in deployments."""
+    if not current_app.config.get("ENABLE_COURSE_COMMUNICATION", False):
+        abort(404)
 
 
 def _get_course_codes_for_user(user) -> list[str]:

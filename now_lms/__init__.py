@@ -509,6 +509,9 @@ def create_app(app_name="now_lms", testing=False, config_overrides=None):
                 "APPLICATION_ROOT": "/",
                 "PREFERRED_URL_SCHEME": "http",
                 "DEBUG_TB_INTERCEPT_REDIRECTS": False,  # Disable redirect interception in tests
+                # Keep legacy forum/message tests runnable regardless of the
+                # NOW_LMS_ENABLE_COURSE_COMMUNICATION deployment setting.
+                "ENABLE_COURSE_COMMUNICATION": True,
             }
         )
 

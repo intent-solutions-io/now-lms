@@ -129,7 +129,7 @@ permitir_docente %}
                         {% endif %}
 
                         <!-- Messages Section for Enrolled Students -->
-                        {% if current_user.tipo == "student" and permitir_estudiante %}
+                        {% if config.ENABLE_COURSE_COMMUNICATION and current_user.tipo == "student" and permitir_estudiante %}
                         <div class="card mt-3">
                             <div class="card-header">
                                 <h6 class="mb-0"><i class="bi bi-chat-left-text"></i> {{ _('Mensajes') }}</h6>
