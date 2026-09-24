@@ -128,7 +128,8 @@ echo "==> Refreshing volume-shadowed templates and static assets from the image"
 docker compose exec -T app sh -c 'cp -a /app/now_lms/templates/. /app/themes/ && cp -a /app/now_lms/static/. /app/data/'
 
 echo "==> Upserting repository-owned Intent Solutions pages"
-docker compose exec -T app /usr/bin/python3.12 scripts/seed_intent_pages.py
+docker compose exec -T -e PYTHONPATH=/app app \
+    /usr/bin/python3.12 /app/scripts/seed_intent_pages.py
 
 echo "==> Restarting app so Jinja/caches pick up the refreshed templates"
 docker compose restart app
