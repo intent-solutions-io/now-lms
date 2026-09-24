@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 # Everything below is checkable against the schema. Nothing here is aspirational.
 PRIVACY = """
@@ -117,22 +118,11 @@ PRIVACY = """
 </p>
 """.strip()
 
-ABOUT = """
-<h2>Intent Solutions Learn</h2>
-<p>
-  This is the private learning platform for the Intent Solutions cohort: the
-  courses, the practice material, and the community where members ask questions,
-  show what they have built, and share what worked.
-</p>
-<p>
-  Access is by invitation. If you are not a member and would like to be, use the
-  access request link in the footer.
-</p>
-""".strip()
+ABOUT = (Path(__file__).resolve().parents[1] / "now_lms/content/intent_learn/about.html").read_text().strip()
 
 PAGINAS = [
     {"slug": "privacy-policy", "title": "Privacy Policy", "content": PRIVACY, "footer": True},
-    {"slug": "about-us", "title": "About Us", "content": ABOUT, "footer": True},
+    {"slug": "about-us", "title": "About Intent Solutions Learn", "content": ABOUT, "footer": True},
 ]
 
 # Facts this script deliberately does NOT assert. Printed on every run so they
