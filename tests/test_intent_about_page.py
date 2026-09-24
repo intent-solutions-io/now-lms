@@ -7,7 +7,6 @@ import json
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 ABOUT = (ROOT / "now_lms/content/intent_learn/about.html").read_text()
 DEPLOY = (ROOT / "scripts/deploy-vps.sh").read_text()
@@ -77,3 +76,23 @@ def test_deploy_upserts_repository_owned_pages():
     """A merge deploys the CMS source instead of leaving the live DB stale."""
     assert "-e PYTHONPATH=/app app" in DEPLOY
     assert "/usr/bin/python3.12 /app/scripts/seed_intent_pages.py" in DEPLOY
+
+
+def test_about_faq_schema_matches_visible_questions_and_answers():
+    """Search engines must receive the same answers visitors can actually read."""
+    from html import unescape
+
+    def plain_text(value):
+        return " ".join(unescape(re.sub(r"<[^>]+>", "", value)).split())
+
+    section = ABOUT.split('<section aria-labelledby="about-faq">', 1)[1].split("</section>", 1)[0]
+    visible = [
+        (plain_text(question), plain_text(answer))
+        for question, answer in re.findall(r"<article><h3>(.*?)</h3><p>(.*?)</p></article>", section, re.DOTALL)
+    ]
+    match = re.search(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', ABOUT, re.DOTALL)
+    assert match
+    payload = json.loads(match.group(1))
+    structured = [(item["name"], item["acceptedAnswer"]["text"]) for item in payload["mainEntity"]]
+    assert len(visible) == 7
+    assert structured == visible

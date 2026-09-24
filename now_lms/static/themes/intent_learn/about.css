@@ -15,7 +15,7 @@
     font-family: "Syne", system-ui, sans-serif;
     font-size: clamp(2.7rem, 7vw, 5.8rem);
     font-weight: 800;
-    letter-spacing: -0.045em;
+    letter-spacing: -0.04em;
     line-height: 0.96;
 }
 
@@ -128,7 +128,7 @@
 .isl-about-process article > span {
     display: block;
     margin-bottom: 2rem;
-    color: #c94213;
+    color: #a93710;
     font-size: 0.76rem;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -143,7 +143,7 @@
 
 .isl-about-placeholder,
 .isl-about-operations span {
-    color: #c94213;
+    color: #a93710;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.88em;
     font-weight: 750;
