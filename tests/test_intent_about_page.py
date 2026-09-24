@@ -75,4 +75,5 @@ def test_about_page_names_public_team_and_valid_faq_schema():
 
 def test_deploy_upserts_repository_owned_pages():
     """A merge deploys the CMS source instead of leaving the live DB stale."""
-    assert "python3.12 scripts/seed_intent_pages.py" in DEPLOY
+    assert "-e PYTHONPATH=/app app" in DEPLOY
+    assert "/usr/bin/python3.12 /app/scripts/seed_intent_pages.py" in DEPLOY
