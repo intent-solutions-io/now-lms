@@ -237,3 +237,11 @@ section records only what is Intent-Solutions-fork-specific.)
   (`intent_learn/overrides/course_view.j2`). Healthcheck `X-Forwarded-Proto` fix. Fork governance
   added (this file + `.github/CODEOWNERS`, PR #1). Per-operator admin accounts provisioned for the
   team. `gh-pages` retired; `delete_branch_on_merge` enabled.
+
+
+## September24 — Max team portrait
+
+Add a brighter, more tightly framed version of Max’s existing portrait for the Learn
+front door. Retain the original asset and existing grayscale team styling. The edited
+sibling was produced with the built-in image editing tool, with instructions to preserve
+identity, expression, glasses and clothing while correcting backlighting and framing.
