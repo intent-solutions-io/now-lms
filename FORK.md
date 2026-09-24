@@ -245,3 +245,11 @@ Add a brighter, more tightly framed version of Max’s existing portrait for the
 front door. Retain the original asset and existing grayscale team styling. The edited
 sibling was produced with the built-in image editing tool, with instructions to preserve
 identity, expression, glasses and clothing while correcting backlighting and framing.
+
+## September24 — Matching formal team portraits
+
+At the owner’s request, replace the active Max and Jeremy headshots with navy suits
+and plain light gray backgrounds. These edits use the existing portraits as identity
+references; the original image assets remain available for rollback. Versioned filenames
+avoid stale browser caches. The owner directs visual verification and immediate deployment
+for this photo-only update without waiting for the full application test suite.
