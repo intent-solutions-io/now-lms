@@ -9,7 +9,7 @@ from __future__ import annotations
 # Third-party libraries
 # ---------------------------------------------------------------------------------------
 from bleach import clean
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from markdown import markdown
 from werkzeug.wrappers import Response
@@ -60,6 +60,13 @@ ROUTE_FORUM_VER_FORO = "forum.ver_foro"
 # Blueprint definition
 # ---------------------------------------------------------------------------------------
 forum = Blueprint("forum", __name__)
+
+
+@forum.before_request
+def course_forum_is_enabled() -> None:
+    """Keep the legacy per-course forum reversible but off in deployments."""
+    if not current_app.config.get("ENABLE_COURSE_COMMUNICATION", False):
+        abort(404)
 
 
 # ---------------------------------------------------------------------------------------

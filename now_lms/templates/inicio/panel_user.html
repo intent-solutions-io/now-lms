@@ -217,7 +217,7 @@
                         </div>
 
                         <!-- Student Messages -->
-                        {% if current_user.tipo in ["student", "instructor", "moderator"] %}
+                        {% if config.ENABLE_COURSE_COMMUNICATION and current_user.tipo in ["student", "instructor", "moderator"] %}
                         <div
                             class="card mb-3"
                             style="border-radius: 15px; border: none; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1)"

@@ -195,6 +195,12 @@ CONFIGURACION["SQLALCHEMY_ENGINE_OPTIONS"] = {
 }
 # Opciones comunes de configuración.
 CONFIGURACION["PRESERVE_CONTEXT_ON_EXCEPTION"] = False
+# Course forums and internal course messaging stay ON by default so this flag
+# ships behaviour-neutral. Set NOW_LMS_ENABLE_COURSE_COMMUNICATION=0 to make the
+# Community Hub the single member-facing communication surface (reversible).
+CONFIGURACION["ENABLE_COURSE_COMMUNICATION"] = environ.get(
+    "NOW_LMS_ENABLE_COURSE_COMMUNICATION", "1"
+).strip().lower() in VALORES_TRUE
 # Carga de Archivos: https://flask-reuploaded.readthedocs.io/en/latest/configuration/
 CONFIGURACION["UPLOADS_AUTOSERVE"] = True
 CONFIGURACION["UPLOADED_FILES_DEST"] = DIRECTORIO_UPLOAD_ARCHIVOS
