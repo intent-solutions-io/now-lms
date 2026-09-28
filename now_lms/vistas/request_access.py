@@ -34,7 +34,7 @@ from flask_wtf import FlaskForm
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.wrappers import Response
 from wtforms import HiddenField, StringField, TextAreaField
-from wtforms.validators import DataRequired, Length, Regexp
+from wtforms.validators import DataRequired, Length, Regexp, ValidationError
 
 # ---------------------------------------------------------------------------------------
 # Local resources
@@ -63,6 +63,7 @@ SUBJECT_MAX = 200  # ContactMessage.subject is String(200)
 # truncation below is the defense in depth before the INSERT).
 NAME_MAX = 150  # ContactMessage.name is String(150)
 EMAIL_MAX = 150  # ContactMessage.email is String(150)
+PHONE_MAX = 32
 LINKS_MAX = 2000
 BUILDING_MAX = 4000
 ROLE_MAX = 200
@@ -70,7 +71,15 @@ SOURCE_MAX = 200
 UTM_MAX = 100
 UTM_FIELDS = ("utm_source", "utm_medium", "utm_campaign", "utm_content")
 
-# Anti-abuse: a human cannot fill four required fields in under this many seconds.
+# A phone number as people type it: optional leading +, digits and the usual
+# separators (space, dot, dash, parentheses), 8-15 digits in total. The floor
+# rejects a 7-digit local number (no area code: staff cannot call it back); the
+# ceiling is the E.164 maximum.
+_PHONE_CHARS = re.compile(r"^\+?[0-9 ().\-]+$")
+PHONE_MIN_DIGITS = 8
+PHONE_MAX_DIGITS = 15
+
+# Anti-abuse: a human cannot fill five required fields in under this many seconds.
 MIN_SUBMIT_SECONDS = 3
 # A form left open longer than this must be refreshed (also bounds token replay).
 MAX_TOKEN_AGE_SECONDS = 4 * 60 * 60
@@ -101,6 +110,7 @@ class RequestAccessForm(FlaskForm):
             Regexp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", message=_l("Enter a valid email address.")),
         ],
     )
+    phone = StringField(_l("Phone"), validators=[DataRequired(), Length(max=PHONE_MAX)])
     links = TextAreaField(_l("Links to your work"), validators=[DataRequired(), Length(max=LINKS_MAX)])
     building = TextAreaField(
         _l("What are you building? Where do you want sharper production judgment?"),
@@ -118,6 +128,13 @@ class RequestAccessForm(FlaskForm):
     website = StringField()
     # Signed issue-time token: too-young means a bot, too-old means a stale tab.
     ts = HiddenField()
+
+    def validate_phone(self, field: StringField) -> None:
+        """Accept common human formats; require 8-15 digits (E.164 upper bound)."""
+        value = (field.data or "").strip()
+        digits = sum(ch.isdigit() for ch in value)
+        if not _PHONE_CHARS.match(value) or not PHONE_MIN_DIGITS <= digits <= PHONE_MAX_DIGITS:
+            raise ValidationError(_("Enter a valid phone number, including the country code if outside the US."))
 
 
 def _ts_serializer() -> URLSafeTimedSerializer:
@@ -191,6 +208,8 @@ def _compose_message(form: RequestAccessForm) -> str:
         f"{field}: {_strip_crlf(getattr(form, field).data or '-')[:UTM_MAX] or '-'}" for field in UTM_FIELDS
     )
     return (
+        "Phone:\n"
+        f"{_strip_crlf(form.phone.data)[:PHONE_MAX]}\n\n"
         "Links to work:\n"
         f"{form.links.data.strip()[:LINKS_MAX]}\n\n"
         "What are you building / where do you want sharper judgment:\n"

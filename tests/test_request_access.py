@@ -29,6 +29,7 @@ RA_TEMPLATE_PATH = Path("now_lms/templates/themes/intent_learn/pages/request_acc
 VALID_DATA = {
     "name": "Ada Lovelace",
     "email": "ada@example.com",
+    "phone": "+1 (555) 123-4567",
     "links": "https://github.com/ada\nhttps://ada.dev",
     "building": "An agentic ETL pipeline that keeps eating my error budget.",
     "role_context": "Founder",
@@ -582,3 +583,48 @@ def test_request_access_template_is_autoescaped_html_with_defenses():
     assert "isl-ra-hp" in template  # honeypot wrapper
     assert "{{ form.ts }}" in template  # signed issue-time token
     assert "intentsolutions.io/privacy" in template
+
+
+def test_phone_is_stored_first_in_the_forwarded_message(client, db_session, fast_ok):
+    """The intake watcher forwards the message body to the owner's inbox and the
+    leads channel, so the phone number must be in the body, labeled, up top."""
+    response = _post(client, _get_ts_token(client))
+    assert response.status_code in REDIRECT_STATUS_CODES
+    (row,) = _stored_rows(db_session)
+    assert row.message.startswith("Phone:\n+1 (555) 123-4567\n\nLinks to work:\n")
+
+
+def test_missing_phone_does_not_store(client, db_session, fast_ok):
+    response = _post(client, _get_ts_token(client), phone="")
+    assert response.status_code == 200
+    assert _stored_rows(db_session) == []
+
+
+@pytest.mark.parametrize(
+    "phone",
+    ["555-1234", "call me", "+1 555 123 4567 ext 9", "12345", "+1234567890123456", "555<script>1234567"],
+)
+def test_invalid_phone_does_not_store(client, db_session, fast_ok, phone):
+    response = _post(client, _get_ts_token(client), phone=phone)
+    assert response.status_code == 200
+    assert _stored_rows(db_session) == []
+    assert b"Enter a valid phone number" in response.data
+
+
+@pytest.mark.parametrize(
+    "phone",
+    ["+1 (555) 123-4567", "555.123.4567", "5551234567", "+44 20 7946 0958", "+49-30-901820"],
+)
+def test_common_phone_formats_are_accepted(client, db_session, fast_ok, phone):
+    response = _post(client, _get_ts_token(client), phone=phone)
+    assert response.status_code in REDIRECT_STATUS_CODES
+    (row,) = _stored_rows(db_session)
+    assert f"Phone:\n{phone}\n" in row.message
+
+
+def test_phone_field_is_rendered_as_a_required_tel_input(client, db_session):
+    _use_intent_learn_theme(db_session)
+    html = client.get("/request-access").data.decode()
+    assert 'id="ra-phone"' in html
+    assert 'type="tel"' in html
+    assert 'autocomplete="tel"' in html
