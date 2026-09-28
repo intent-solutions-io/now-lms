@@ -396,6 +396,10 @@
 .isl-team-initials { display: grid; flex: 0 0 auto; place-items: center; background: rgb(var(--line)); color: var(--blueprint); font-size: 0.8rem; font-weight: 700; }
 .isl-team-name { margin: 0 0 0.2rem; color: var(--graphite); font-family: var(--font-display); font-size: 0.86rem; font-weight: 650; line-height: 1.25; }
 .isl-team-role { margin: 0; color: rgb(var(--ink-dim)); font-size: 0.68rem; line-height: 1.35; }
+.isl-team-bio { margin: 0.5rem 0 0; color: rgb(var(--ink-dim)); font-size: 0.78rem; line-height: 1.6; }
+.isl-team-photo[src$="heather-johnson.png"] { object-position: center 25%; filter: none; }
+.isl-team-link { margin: 1.5rem 0 0; text-align: center; }
+.isl-team-link a { display: inline-flex; align-items: center; min-height: 44px; color: var(--graphite); text-underline-offset: 0.2em; }
 
 /* Verified partner credential (Credly iframe) under the team grid. */
 .isl-cred { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; margin-top: clamp(2rem, 4vw, 3rem); padding-top: 1.25rem; border-top: 1px solid rgb(var(--line)); }

@@ -13,7 +13,8 @@
         {'photo': 'pablo-perez.jpeg',      'name': _('Pablo Perez'),      'role': _('Co-Founder & Project Manager')},
         {'photo': 'max-sheahan-suit.jpeg',      'name': _('Max Sheahan'),      'role': _('Lead Instructor')},
         {'photo': 'tim-neunzig.png',       'name': _('Tim Neunzig'),      'role': _('Head of German Operations')},
-        {'photo': 'tolulope-ariyo.jpeg',   'name': _('Tolulope Ariyo'),   'role': _('Software & Design Engineer')}
+        {'photo': 'tolulope-ariyo.jpeg',   'name': _('Tolulope Ariyo'),   'role': _('Software & Design Engineer')},
+        {'photo': 'heather-johnson.png', 'name': _('Heather C. Johnson, JD'), 'role': _('Legal Counsel'), 'bio': _('Florida-licensed attorney supporting Intent Solutions with contracts, governance, and startup legal matters.')}
     ] %}
     <head>
         {{ current_theme.headertags() }} {{ current_theme.local_style() }}
@@ -203,7 +204,7 @@
                     <div class="isl-section-head center">
                         <p class="isl-kicker">{{ _('Built by practitioners') }}</p>
                         <h2 id="team-title">{{ _('The people behind') }} <span class="isl-hl">{{ _('Intent Solutions') }}</span></h2>
-                        <p>{{ _('Operators and builders teaching from systems they actually run.') }}</p>
+                        <p>{{ _('The people behind our engineering, operations, instruction, and legal guidance.') }}</p>
                     </div>
                     <div class="isl-team-grid">
                         {% for m in team %}
@@ -213,10 +214,11 @@
                             {% else %}
                             <span class="isl-team-initials" aria-hidden="true">{{ m.name.split()[0][0] }}{{ m.name.split()[-1][0] }}</span>
                             {% endif %}
-                            <div><p class="isl-team-name">{{ m.name }}</p><p class="isl-team-role">{{ m.role }}</p></div>
+                            <div><p class="isl-team-name">{{ m.name }}</p><p class="isl-team-role">{{ m.role }}</p>{% if m.bio %}<p class="isl-team-bio">{{ m.bio }}</p>{% endif %}</div>
                         </article>
                         {% endfor %}
                     </div>
+                    <p class="isl-team-link"><a href="https://intentsolutions.io/about/#team">{{ _('Meet the Intent Solutions team') }}</a></p>
                     <div class="isl-cred">
                         {# Credly's official embedded_badge iframe — deliberately NOT their
                            script-based embed: that loader comes from Credly's CDN host, which
@@ -277,6 +279,7 @@
                 </div>
                 <div class="isl-footer-bottom">
                     <span>{{ _('© Intent Solutions. All rights reserved.') }}</span>
+                    <a href="https://intentsolutions.io/about/#team">{{ _('Our team') }}</a>
                     <a href="https://intentsolutions.io">{{ _('intentsolutions.io') }}</a>
                 </div>
             </div>
