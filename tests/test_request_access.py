@@ -613,7 +613,7 @@ def test_invalid_phone_does_not_store(client, db_session, fast_ok, phone):
 
 @pytest.mark.parametrize(
     "phone",
-    ["+1 (555) 123-4567", "555.123.4567", "5551234567", "+44 20 7946 0958", "+49-30-901820"],
+    ["+1 (555) 123-4567", "555.123.4567", "5551234567", "+44 20 7946 0958", "+49-30-901820", "03-1234-5678"],
 )
 def test_common_phone_formats_are_accepted(client, db_session, fast_ok, phone):
     response = _post(client, _get_ts_token(client), phone=phone)

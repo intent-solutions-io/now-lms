@@ -118,7 +118,7 @@
 
                             <div class="isl-ra-field">
                                 <label for="ra-phone">{{ _('Phone') }}</label>
-                                {{ form.phone(id='ra-phone', type='tel', placeholder='+1 555 123 4567', required=True, autocomplete='tel', inputmode='tel') }}
+                                {{ form.phone(id='ra-phone', type='tel', placeholder=_('+1 555 123 4567'), required=True, autocomplete='tel', inputmode='tel') }}
                                 {% for error in form.phone.errors %}<p class="isl-ra-error">{{ error }}</p>{% endfor %}
                             </div>
 
