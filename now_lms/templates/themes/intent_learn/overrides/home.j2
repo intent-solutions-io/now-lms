@@ -9,12 +9,12 @@
     {% set access_url = url_for('request_access.request_access') %}
     {% set team = [
         {'photo': 'jeremy-longshore-suit.jpeg', 'name': _('Jeremy Longshore'), 'role': _('Founder & CEO')},
+        {'photo': 'heather-johnson.png', 'name': _('Heather C. Johnson, JD'), 'role': _('Legal Counsel')},
         {'photo': 'opeyemi-ariyo.jpeg',    'name': _('Opeyemi Ariyo'),    'role': _('Co-Founder & Chief Technical Officer')},
         {'photo': 'pablo-perez.jpeg',      'name': _('Pablo Perez'),      'role': _('Co-Founder & Project Manager')},
         {'photo': 'max-sheahan-suit.jpeg',      'name': _('Max Sheahan'),      'role': _('Lead Instructor')},
         {'photo': 'tim-neunzig.png',       'name': _('Tim Neunzig'),      'role': _('Head of German Operations')},
         {'photo': 'tolulope-ariyo.jpeg',   'name': _('Tolulope Ariyo'),   'role': _('Software & Design Engineer')},
-        {'photo': 'heather-johnson.png', 'name': _('Heather C. Johnson, JD'), 'role': _('Legal Counsel'), 'bio': _('Florida-licensed attorney supporting Intent Solutions with contracts, governance, and startup legal matters.')}
     ] %}
     <head>
         {{ current_theme.headertags() }} {{ current_theme.local_style() }}
@@ -208,7 +208,7 @@
                             {% else %}
                             <span class="isl-team-initials" aria-hidden="true">{{ m.name.split()[0][0] }}{{ m.name.split()[-1][0] }}</span>
                             {% endif %}
-                            <div><p class="isl-team-name">{{ m.name }}</p><p class="isl-team-role">{{ m.role }}</p>{% if m.bio %}<p class="isl-team-bio">{{ m.bio }}</p>{% endif %}</div>
+                            <div><p class="isl-team-name">{{ m.name }}</p><p class="isl-team-role">{{ m.role }}</p></div>
                         </article>
                         {% endfor %}
                     </div>
