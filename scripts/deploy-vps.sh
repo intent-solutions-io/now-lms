@@ -151,7 +151,10 @@ bash scripts/deploy-smoke.sh
 # proof runs, while the new image is already serving. The operator would get a failure
 # about demo content and no verification at all.
 echo "==> Removing upstream demo content (idempotent; refuses anything in use)"
-docker compose exec -T app /usr/bin/python3.12 scripts/seed_practice_tracks.py --only-remove-demo \
+# PYTHONPATH=/app is required: running a file puts its own directory
+# (/app/scripts) on sys.path, not /app, so `import now_lms` fails without it —
+# which is how this step silently failed on every deploy until 2026-09-29.
+docker compose exec -T -e PYTHONPATH=/app app /usr/bin/python3.12 /app/scripts/seed_practice_tracks.py --only-remove-demo \
     || echo "WARN: demo-content cleanup failed; the deploy itself is verified and stands"
 
 if [ "${BUILD_SHA}" = "${ORIGIN_SHA}" ]; then

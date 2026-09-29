@@ -298,3 +298,14 @@ def test_modification_time_is_deliberately_not_the_guard(db_session):
 
     gone = database.session.execute(database.select(Curso).filter_by(codigo="details")).scalars().first()
     assert gone is None, "a touched-but-unmodified demo course is still demo content"
+
+
+def test_deploy_runs_the_demo_cleanup_with_the_app_on_the_import_path():
+    """Running a script file puts its own directory on sys.path, not /app, so the
+    deploy's cleanup exec must pass PYTHONPATH=/app or `import now_lms` fails and
+    the step silently no-ops (it is non-fatal by design)."""
+    deploy = (pathlib.Path(__file__).resolve().parents[1] / "scripts" / "deploy-vps.sh").read_text()
+    cleanup = [line for line in deploy.splitlines() if "seed_practice_tracks.py --only-remove-demo" in line]
+    assert len(cleanup) == 1
+    assert "-e PYTHONPATH=/app app" in cleanup[0]
+    assert "/usr/bin/python3.12 /app/scripts/seed_practice_tracks.py" in cleanup[0]
