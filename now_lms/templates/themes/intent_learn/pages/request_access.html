@@ -119,6 +119,12 @@
                             </div>
 
                             <div class="isl-ra-field">
+                                <label for="ra-phone">{{ _('Phone') }}</label>
+                                {{ form.phone(id='ra-phone', type='tel', placeholder=_('+1 555 123 4567'), required=True, autocomplete='tel', inputmode='tel') }}
+                                {% for error in form.phone.errors %}<p class="isl-ra-error">{{ error }}</p>{% endfor %}
+                            </div>
+
+                            <div class="isl-ra-field">
                                 <label for="ra-links">{{ _('Links to your work') }}</label>
                                 {{ form.links(id='ra-links', rows=3, placeholder=_('GitHub, portfolio, a product you shipped, writing — one per line'), required=True) }}
                                 {% for error in form.links.errors %}<p class="isl-ra-error">{{ error }}</p>{% endfor %}
