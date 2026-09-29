@@ -50,9 +50,11 @@
             data-website-id="9350d174-bb53-4f1d-be75-c8221a3f4717"
             data-host-url="/u"
         ></script>
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/estate-bar/estate-bar.css') }}" />
     </head>
 
     <body>
+        {% include "themes/intent_learn/estate_bar.j2" %}
         <!-- Inicio del bloque contenido -->
 
         {% block contenido %}{% endblock %}

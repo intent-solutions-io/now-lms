@@ -79,6 +79,10 @@ def test_front_door_renders_through_the_flask_route(client, db_session) -> None:
     # tests/test_request_access.py.
     body = response.data.decode("utf-8")
     assert 'href="/request-access"' in body, "the access-request CTA should land on the intake"
+    network = re.search(r'<nav class="is-estate-bar".*?</nav>', body, re.S)
+    assert network is not None, "the public route must render the shared network banner"
+    assert network.group().count("<a ") == 7
+    assert 'href="https://learn.intentsolutions.io/" aria-current="page"' in network.group()
 
 
 def test_request_access_page_keeps_the_rfc6068_mailto_split() -> None:
@@ -143,19 +147,24 @@ def test_front_door_expresses_the_selective_practice_doctrine() -> None:
 
 
 def test_front_door_maps_the_intent_solutions_network() -> None:
-    """Keep Learn separate while sharing the Labs/Evals evaluation method."""
+    """Keep all seven properties reachable through the canonical network banner."""
     template = _template()
+    assert '{% include "themes/intent_learn/estate_bar.j2" %}' in template
+    network = Path("now_lms/templates/themes/intent_learn/estate_bar.j2").read_text(encoding="utf-8")
 
     expected_links = (
         'href="https://intentsolutions.io/"',
         'href="https://labs.intentsolutions.io/"',
-        'href="https://labs.intentsolutions.io/start/"',
         'href="https://evals.intentsolutions.io/"',
+        'href="https://demos.intentsolutions.io/"',
         'href="https://learn.intentsolutions.io/" aria-current="page"',
+        'href="https://oma.intentsolutions.io/"',
+        'href="https://tonsofskills.com/"',
     )
     for link in expected_links:
-        assert link in template
+        assert link in network
 
+    assert 'href="https://labs.intentsolutions.io/start/"' in template
     assert "Learn teaches the operating method." in template
     assert "Labs publishes the evidence." in template
     assert "Evals provides the definitions" in template

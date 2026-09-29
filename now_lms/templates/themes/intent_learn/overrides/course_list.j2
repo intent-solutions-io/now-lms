@@ -16,6 +16,7 @@
         {{ current_theme.headertags() }} {{ current_theme.local_style() }}
         <title>{{ _('Practice Tracks · Intent Solutions Learn') }}</title>
         <link rel="stylesheet" href="{{ S }}/front-door.css" />
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/estate-bar/estate-bar.css') }}" />
     </head>
     {# Deliberately renders NO course data: the public catalog is a doctrine-voice
        teaser, and the `cursos` pagination object the route passes is unused. That is
@@ -27,6 +28,7 @@
        members are routed to pages/courses_member.html above, so there is no
        signed-in branch left to carry here. #}
     <body class="isl-root">
+        {% include "themes/intent_learn/estate_bar.j2" %}
         <header class="isl-header">
             <div class="isl-wrap">
                 <a class="isl-brand" href="/" aria-label="{{ _('Intent Solutions Learn — home') }}">
