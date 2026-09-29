@@ -259,3 +259,7 @@
         flex-direction: column;
     }
 }
+
+.isl-about .isl-about-person { display: flex; gap: 1.25rem; align-items: flex-start; }
+.isl-about-person img { width: 96px; height: 96px; flex: 0 0 96px; object-fit: cover; object-position: center 25%; border-radius: 0.5rem; }
+.isl-about-person > div { min-width: 0; }
