@@ -38,33 +38,6 @@
 .isl-root a { color: inherit; text-decoration: none; }
 .isl-root img { display: block; max-width: 100%; }
 
-.isl-network {
-    border-bottom: 1px solid #303638;
-    background: #101416;
-    color: #aeb7b9;
-}
-
-.isl-network .isl-wrap {
-    display: flex;
-    min-height: 2.25rem;
-    align-items: center;
-    gap: clamp(0.9rem, 2.3vw, 1.65rem);
-}
-
-.isl-network a {
-    display: inline-flex;
-    min-height: 36px;
-    align-items: center;
-    font-family: var(--font-mono);
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-}
-
-.isl-network a:hover,
-.isl-network a[aria-current='page'] { color: #fff; }
-.isl-network a:first-child { color: #ff7a1a; }
 
 .isl-root :focus-visible {
     outline: 3px solid var(--signal);
@@ -542,8 +515,6 @@
         backdrop-filter: blur(12px);
     }
     .isl-mobile-action .isl-btn { width: 100%; }
-    .isl-network .isl-wrap { padding-inline: 1rem; gap: 0.8rem; }
-    .isl-network a { font-size: 0.56rem; letter-spacing: 0.08em; }
     .isl-header .isl-wrap { min-height: 4rem; padding-inline: 1rem; }
     .isl-brand .word { display: none; }
     .isl-btn-sm { padding-inline: 0.72rem; }

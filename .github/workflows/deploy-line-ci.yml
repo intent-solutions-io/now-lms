@@ -188,6 +188,12 @@ jobs:
             - name: Check theme.min.css against theme.css
               run: python scripts/check_theme_minification.py
 
+            - name: Check the shared estate navigation
+              run: >-
+                  python scripts/check_estate_bar.py --site learn
+                  --vendor now_lms/static/themes/intent_learn/estate-bar
+                  now_lms/templates/themes/intent_learn/estate_bar.j2
+
     image:
         # The image build is the ONLY place the Dockerfile's own commands run, and
         # nothing used to execute it before a deploy. On 2026-08-02 a build-stage

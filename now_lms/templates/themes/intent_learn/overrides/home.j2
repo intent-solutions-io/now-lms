@@ -28,17 +28,11 @@
             data-website-id="9350d174-bb53-4f1d-be75-c8221a3f4717"
             data-host-url="/u"
         ></script>
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/estate-bar/estate-bar.css') }}" />
     </head>
 
     <body class="isl-root" id="top">
-        <nav class="isl-network" aria-label="{{ _('Intent Solutions network') }}">
-            <div class="isl-wrap">
-                <a href="https://intentsolutions.io/">{{ _('Intent Solutions') }}</a>
-                <a href="https://labs.intentsolutions.io/">{{ _('Labs') }}</a>
-                <a href="https://evals.intentsolutions.io/">{{ _('Evals') }}</a>
-                <a href="https://learn.intentsolutions.io/" aria-current="page">{{ _('Learn') }}</a>
-            </div>
-        </nav>
+        {% include "themes/intent_learn/estate_bar.j2" %}
         <header class="isl-header">
             <div class="isl-wrap">
                 <a class="isl-brand" href="#top" aria-label="{{ _('Intent Solutions Learn — home') }}">

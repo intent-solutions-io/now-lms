@@ -160,8 +160,10 @@
             }
             @media (prefers-reduced-motion: reduce) { .isl-root * { transition: none !important; } }
         </style>
+        <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/estate-bar/estate-bar.css') }}" />
     </head>
     <body class="isl-root">
+        {% include "themes/intent_learn/estate_bar.j2" %}
         <header class="isl-header">
             <div class="isl-wrap">
                 <a class="isl-brand" href="/" aria-label="Intent Solutions Learn — home">
