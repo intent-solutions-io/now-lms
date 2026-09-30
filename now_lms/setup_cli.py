@@ -62,8 +62,10 @@ def issue(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     if "@" not in email:
         raise click.BadParameter("must be an email address", param_hint="--email")
     open_case = database.session.execute(
-        database.select(SetupCase).filter(SetupCase.personal_email == email, SetupCase.status == "setup_pending")
-    ).scalar_one_or_none()
+        database.select(SetupCase)
+        .filter(SetupCase.personal_email == email, SetupCase.status == "setup_pending")
+        .order_by(SetupCase.created_at)
+    ).scalars().first()  # --allow-duplicate can leave several; report the oldest
     if open_case is not None and not allow_duplicate:
         raise click.ClickException(
             f"Case {open_case.id} is already pending for this email. Use 'lmsctl setup reissue {open_case.id}'."

@@ -395,24 +395,48 @@ def _finish(job: SetupJob, status: str, detail: str | None = None) -> None:
     database.session.commit()
 
 
-def enqueue_release(case: SetupCase) -> SetupJob:
-    """Idempotently create the release job phase 3 consumes; move the case to release_pending."""
-    job = database.session.execute(
+def _stage_release(case: SetupCase) -> None:
+    """Add the release job (if absent) and advance the case, without committing."""
+    existing = database.session.execute(
         database.select(SetupJob).filter_by(case_id=case.id, kind="release")
     ).scalar_one_or_none()
-    if job is None:
-        job = SetupJob(case_id=case.id, kind="release", status="release_pending", attempts=0)
-        database.session.add(job)
+    if existing is None:
+        database.session.add(SetupJob(case_id=case.id, kind="release", status="release_pending", attempts=0))
     if case.status == "agreement_accepted":
         case.status = "release_pending"
+
+
+def _complete_receipt(job: SetupJob, case: SetupCase) -> None:
+    """Mark the receipt sent AND enqueue the release in ONE commit.
+
+    Two commits would leave a window where the receipt is 'done' (so never selected
+    again) but no release job exists, stranding the case in agreement_accepted.
+    """
+    now = utc_now_naive()
+    job.status, job.last_error, job.completed_at, job.next_attempt_at = "done", None, now, None
+    _stage_release(case)
+    try:
+        database.session.commit()
+    except IntegrityError:
+        # Only possible if a concurrent worker created the release job first. The
+        # receipt was delivered either way: record that, keep the other release row.
+        database.session.rollback()
+        job.status, job.last_error, job.completed_at, job.next_attempt_at = "done", None, now, None
+        if case.status == "agreement_accepted":
+            case.status = "release_pending"
+        database.session.commit()
+
+
+def enqueue_release(case: SetupCase) -> SetupJob:
+    """Idempotently create the release job phase 3 consumes; move the case to release_pending."""
+    _stage_release(case)
     try:
         database.session.commit()
     except IntegrityError:
         database.session.rollback()
-        job = database.session.execute(
-            database.select(SetupJob).filter_by(case_id=case.id, kind="release")
-        ).scalar_one()
-    return job
+    return database.session.execute(
+        database.select(SetupJob).filter_by(case_id=case.id, kind="release")
+    ).scalar_one()
 
 
 def _build_receipt(case: SetupCase, acceptance: AgreementAcceptance):
@@ -469,8 +493,7 @@ def _run_receipt(job: SetupJob, case: SetupCase, acceptance: AgreementAcceptance
         # Class name only: SMTP exceptions can quote the recipient address.
         _finish(job, "pending", f"send failed: {type(error).__name__}")
         return
-    _finish(job, "done")
-    enqueue_release(case)
+    _complete_receipt(job, case)
 
 
 def _run_crm(job: SetupJob, case: SetupCase, acceptance: AgreementAcceptance) -> None:

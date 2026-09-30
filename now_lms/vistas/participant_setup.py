@@ -52,7 +52,7 @@ from now_lms.setup_validation import (
 participant_setup = Blueprint("participant_setup", __name__, template_folder=DIRECTORIO_PLANTILLAS)
 
 TEMPLATE = "themes/intent_learn/pages/participant_setup.html"
-PRIVACY_URL = "https://intentsolutions.io/privacy/"
+PRIVACY_URL = "https://intentsolutions.io/privacy/"  # default; override with SETUP_PRIVACY_URL
 
 DRAFT_FIELDS = (
     "legal_given_names",
@@ -138,7 +138,7 @@ def _render(state: str, status: int = 200, **context) -> Response:
         TEMPLATE,
         state=state,
         nonce=nonce,
-        privacy_url=PRIVACY_URL,
+        privacy_url=service.setting("SETUP_PRIVACY_URL", PRIVACY_URL),
         help_email=service.setting("SETUP_HELP_EMAIL"),
         **context,
     )

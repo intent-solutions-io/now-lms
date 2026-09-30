@@ -384,6 +384,36 @@ def test_receipt_is_sent_once_and_release_is_enqueued(client, db_session, issued
     assert db_session.get(SetupCase, case.id).status == "release_pending"
 
 
+def test_receipt_done_and_release_enqueue_share_one_commit(client, db_session, issued, recorders, monkeypatch):
+    """If the commit that records the receipt fails, neither state lands (no stranded case)."""
+    case, token = issued
+    commits = {"n": 0}
+    real_complete = service._complete_receipt
+
+    def _crash_on_commit(job, case_):
+        original = database.session.commit
+
+        def _boom():
+            commits["n"] += 1
+            raise RuntimeError("process died mid-commit")
+
+        monkeypatch.setattr(database.session, "commit", _boom)
+        try:
+            real_complete(job, case_)
+        finally:
+            monkeypatch.setattr(database.session, "commit", original)
+
+    monkeypatch.setattr(service, "_complete_receipt", _crash_on_commit)
+    with pytest.raises(RuntimeError):
+        _accept(client, token)
+    db_session.rollback()
+    assert commits["n"] == 1
+    receipt = db_session.execute(database.select(SetupJob).filter_by(case_id=case.id, kind="receipt_email")).scalar_one()
+    assert receipt.status == "sending"  # reclaimed by the runner after JOB_STALE_SENDING
+    assert db_session.execute(database.select(SetupJob).filter_by(case_id=case.id, kind="release")).first() is None
+    assert db_session.get(SetupCase, case.id).status == "agreement_accepted"
+
+
 def test_receipt_failure_is_retried_later_without_losing_anything(client, db_session, issued, recorders, monkeypatch):
     case, token = issued
     calls = []
@@ -525,6 +555,22 @@ def test_cli_issue_list_reissue(app, db_session, agreement_files):
     new_token = re.search(r"/setup/(\S+)", again.output).group(1)
     assert service.lookup_token(link.group(1)).state == "revoked"
     assert service.lookup_token(new_token).state == "valid"
+
+
+def test_cli_issue_reports_the_open_case_even_when_duplicates_exist(app, db_session, agreement_files):
+    runner = app.test_cli_runner()
+    for _ in range(2):
+        ok = runner.invoke(args=["setup", "issue", "--email", "dup@example.org", "--name", "D", "--allow-duplicate"])
+        assert ok.exit_code == 0, ok.output
+    refused = runner.invoke(args=["setup", "issue", "--email", "dup@example.org", "--name", "D"])
+    assert refused.exit_code == 1
+    assert "already pending" in refused.output
+
+
+def test_privacy_url_is_configurable(app, client, issued, monkeypatch):
+    _case, token = issued
+    monkeypatch.setitem(app.config, "SETUP_PRIVACY_URL", "https://example.org/privacy")
+    assert "https://example.org/privacy" in _page(client, token).get_data(as_text=True)
 
 
 def test_cli_issue_requires_a_base_url(app, db_session, agreement_files, monkeypatch):
