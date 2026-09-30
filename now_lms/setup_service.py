@@ -84,9 +84,14 @@ _HTML_ALLOWED_ATTRS = {"*": ["id", "class"], "a": ["href", "title"], "td": ["col
 # Configuration
 # ---------------------------------------------------------------------------------------
 def setting(name: str, default: str = "") -> str:
-    """App config first (tests, file config), then the environment."""
+    """App config first (tests, file config), then the environment, then the default.
+
+    Empty values count as unset: compose passes every variable, empty when not configured.
+    """
     value = current_app.config.get(name)
-    return str(value if value not in (None, "") else environ.get(name, default)).strip()
+    if value in (None, ""):
+        value = environ.get(name, "")
+    return str(value).strip() or default
 
 
 def token_ttl_days() -> int:

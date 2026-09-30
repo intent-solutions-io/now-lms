@@ -569,6 +569,8 @@ def test_cli_issue_reports_the_open_case_even_when_duplicates_exist(app, db_sess
 
 def test_privacy_url_is_configurable(app, client, issued, monkeypatch):
     _case, token = issued
+    monkeypatch.setenv("SETUP_PRIVACY_URL", "")  # compose passes unset variables as empty
+    assert "https://intentsolutions.io/privacy/" in _page(client, token).get_data(as_text=True)
     monkeypatch.setitem(app.config, "SETUP_PRIVACY_URL", "https://example.org/privacy")
     assert "https://example.org/privacy" in _page(client, token).get_data(as_text=True)
 
