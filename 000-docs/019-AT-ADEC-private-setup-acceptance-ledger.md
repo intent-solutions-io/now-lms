@@ -84,6 +84,7 @@ applicants retype structured data into PDF boxes); storing the agreement in the 
 | `SETUP_TOKEN_TTL_DAYS` | no | Link lifetime in days; default 14, capped at 90. |
 | `SETUP_BASE_URL` | for the CLI | Public origin used to print links, e.g. `https://learn.intentsolutions.io`. |
 | `SETUP_HELP_EMAIL` | recommended | Where applicants ask for a new link or help; shown on error pages and in the receipt. |
+| `SETUP_PRIVACY_URL` | no | Privacy Policy link beside the collection notice; defaults to `https://intentsolutions.io/privacy/`. |
 | `TWENTY_API_URL` | for CRM sync | Twenty base URL, e.g. `https://crm.intentsolutions.io`. Unset means CRM jobs wait (retry) without calling out. |
 | `TWENTY_API_KEY` | for CRM sync | Twenty API key. Environment/SOPS only; never logged, never stored. |
 

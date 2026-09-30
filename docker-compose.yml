@@ -110,6 +110,7 @@ services:
       SETUP_TOKEN_TTL_DAYS: ${LMS_SETUP_TOKEN_TTL_DAYS:-14}
       SETUP_BASE_URL: ${LMS_SETUP_BASE_URL:-}
       SETUP_HELP_EMAIL: ${LMS_SETUP_HELP_EMAIL:-}
+      SETUP_PRIVACY_URL: ${LMS_SETUP_PRIVACY_URL:-}
       # Twenty CRM hand-off after acceptance. Unset = CRM jobs wait (never lost).
       TWENTY_API_URL: ${LMS_TWENTY_API_URL:-}
       TWENTY_API_KEY: ${LMS_TWENTY_API_KEY:-}

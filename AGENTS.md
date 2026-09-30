@@ -78,7 +78,7 @@ Default admin after `database init`: `lms-admin` / `lms-admin`. **Never** ship t
 | `ADMIN_USER` / `ADMIN_PSWD` | Bootstrap admin credentials (release.yml uses `hello`/`world`). |
 | `SETUP_AGREEMENT_TEXT_PATH` / `SETUP_AGREEMENT_PDF_PATH` | Private setup page (`/setup/<token>`, ADR-11 `000-docs/019`): server paths of the User Agreement shown in full and its PDF. Never in the repo. Unset text path → page answers 503, nothing can be accepted. |
 | `SETUP_AGREEMENT_DOCUMENT_ID` / `SETUP_AGREEMENT_VERSION` | Identity and version recorded on every acceptance (with the SHA-256 of the displayed file). Bump the version whenever the files change. |
-| `SETUP_TOKEN_TTL_DAYS` / `SETUP_BASE_URL` / `SETUP_HELP_EMAIL` | Setup link lifetime (default 14, max 90), public origin for `lmsctl setup issue`, and the help/new-link address shown to applicants. |
+| `SETUP_TOKEN_TTL_DAYS` / `SETUP_BASE_URL` / `SETUP_HELP_EMAIL` / `SETUP_PRIVACY_URL` | Setup link lifetime (default 14, max 90), public origin for `lmsctl setup issue`, the help/new-link address shown to applicants, and the Privacy Policy link (defaults to the company policy). |
 | `TWENTY_API_URL` / `TWENTY_API_KEY` | Twenty CRM hand-off after acceptance (`now_lms/crm_sync.py`). Unset → CRM jobs wait. Key from SOPS/env only; never logged. |
 
 ## The fresh-DB gotcha (learned the hard way)
