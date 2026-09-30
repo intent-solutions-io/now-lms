@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 
 from now_lms.db import (
     BlogPost,
+    Certificacion,
     Curso,
     CursoSeccion,
     EstudianteCurso,
@@ -248,7 +249,7 @@ def test_the_seeded_body_is_what_marks_a_post_as_upstreams(db_session):
     )
 
 
-def test_a_seeded_certificate_does_not_protect_a_demo_course(db_session):
+def test_a_seeded_certificate_does_not_protect_a_demo_course(db_session, production_quiz_constraint):
     """Intent Solutions does not issue certifications — these are practice tests.
 
     `crear_certificacion()` seeds a Certificacion against course "now" for the admin,
@@ -366,12 +367,20 @@ def production_quiz_constraint(db_session):
     if database.engine.dialect.name != "postgresql":
         yield
         return
-    ddl = "ALTER TABLE evaluation DROP CONSTRAINT IF EXISTS evaluation_section_id_fkey, ADD CONSTRAINT evaluation_section_id_fkey FOREIGN KEY (section_id) REFERENCES curso_seccion(id)"
-    database.session.execute(database.text(ddl))
+    constraints = [
+        "ALTER TABLE evaluation DROP CONSTRAINT IF EXISTS evaluation_section_id_fkey, "
+        "ADD CONSTRAINT evaluation_section_id_fkey FOREIGN KEY (section_id) REFERENCES curso_seccion(id)",
+        # The seeded certificate blocked `now` on the 43e714c deploy for the same reason.
+        "ALTER TABLE certificacion DROP CONSTRAINT IF EXISTS certificacion_curso_fkey, "
+        "ADD CONSTRAINT certificacion_curso_fkey FOREIGN KEY (curso) REFERENCES curso(codigo)",
+    ]
+    for ddl in constraints:
+        database.session.execute(database.text(ddl))
     database.session.commit()
     yield
     database.session.rollback()
-    database.session.execute(database.text(ddl + " ON DELETE CASCADE"))
+    for ddl in constraints:
+        database.session.execute(database.text(ddl + " ON DELETE CASCADE"))
     database.session.commit()
 
 
@@ -445,3 +454,14 @@ def test_one_blocked_course_is_kept_and_the_others_are_still_removed(db_session,
     assert _course("resources") is None
     assert "[keep] details: still referenced" in out
     assert "[drop] resources" in out
+
+
+def test_a_member_certificate_protects_the_course(db_session, capsys):
+    """Safety net: a certificate held by anyone other than an admin is member data."""
+    _ensure_course("free")
+    member = _ensure_user("cert-member", "cert-member@example.com")
+    database.session.add(Certificacion(usuario=member.usuario, curso="free", certificado="default"))
+    database.session.commit()
+    tracks.remove_demo_courses(database)
+    assert _course("free") is not None
+    assert "member certificate" in capsys.readouterr().out
