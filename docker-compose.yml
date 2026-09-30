@@ -100,6 +100,19 @@ services:
       MAIL_USE_TLS: ${LMS_MAIL_USE_TLS:-False}
       MAIL_USE_SSL: ${LMS_MAIL_USE_SSL:-False}
       MAIL_DEFAULT_SENDER: ${LMS_MAIL_DEFAULT_SENDER:-}
+      # Private participant setup (/setup/<token>, ADR-11 000-docs/019). The agreement
+      # files live in the data volume, never in this public repo. With the text path
+      # unset the page answers 503 and nothing can be accepted.
+      SETUP_AGREEMENT_TEXT_PATH: ${LMS_SETUP_AGREEMENT_TEXT_PATH:-}
+      SETUP_AGREEMENT_PDF_PATH: ${LMS_SETUP_AGREEMENT_PDF_PATH:-}
+      SETUP_AGREEMENT_DOCUMENT_ID: ${LMS_SETUP_AGREEMENT_DOCUMENT_ID:-}
+      SETUP_AGREEMENT_VERSION: ${LMS_SETUP_AGREEMENT_VERSION:-}
+      SETUP_TOKEN_TTL_DAYS: ${LMS_SETUP_TOKEN_TTL_DAYS:-14}
+      SETUP_BASE_URL: ${LMS_SETUP_BASE_URL:-}
+      SETUP_HELP_EMAIL: ${LMS_SETUP_HELP_EMAIL:-}
+      # Twenty CRM hand-off after acceptance. Unset = CRM jobs wait (never lost).
+      TWENTY_API_URL: ${LMS_TWENTY_API_URL:-}
+      TWENTY_API_KEY: ${LMS_TWENTY_API_KEY:-}
     volumes:
       - nowlms-data:/app/data
       - nowlms-themes:/app/themes

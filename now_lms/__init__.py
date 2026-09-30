@@ -165,6 +165,8 @@ from now_lms.vistas.member_dashboard import member_dashboard
 from now_lms.vistas.prior_credentials import prior_credentials
 from now_lms.vistas.programs import program
 from now_lms.vistas.public_api import public_api
+from now_lms.setup_cli import setup_cli
+from now_lms.vistas.participant_setup import participant_setup
 from now_lms.vistas.request_access import request_access_bp
 from now_lms.vistas.resources import resource_d
 from now_lms.vistas.settings import setting
@@ -264,6 +266,7 @@ def registrar_modulos_en_la_aplicacion_principal(flask_app: Flask):
         flask_app.register_blueprint(program)
         flask_app.register_blueprint(public_api)
         flask_app.register_blueprint(request_access_bp)
+        flask_app.register_blueprint(participant_setup)
         flask_app.register_blueprint(resource_d)
         flask_app.register_blueprint(setting)
         flask_app.register_blueprint(custom_pages)
@@ -283,6 +286,11 @@ def registrar_modulos_en_la_aplicacion_principal(flask_app: Flask):
         flask_app.register_blueprint(admin_announcements)
         flask_app.register_blueprint(instructor_announcements)
         flask_app.register_blueprint(public_announcements)
+
+    # Fork-local operator commands (`lmsctl setup ...`). Registered on every app the
+    # factory builds so the CLI and the test runner see the same command set.
+    if "setup" not in flask_app.cli.commands:
+        flask_app.cli.add_command(setup_cli)
 
 
 # ---------------------------------------------------------------------------------------

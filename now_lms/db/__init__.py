@@ -17,7 +17,7 @@ from cuid2 import Cuid
 from flask import current_app, has_request_context
 from flask_login import UserMixin, current_user
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import event, select
+from sqlalchemy import DDL, event, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from now_lms.i18n import _
@@ -1791,6 +1791,176 @@ class ComunidadEventoModeracion(database.Model, BaseTabla):
     )
     motivo = database.Column(database.String(500), nullable=True)
     ocurrido_en = database.Column(database.DateTime, default=utc_now, nullable=False)
+
+
+# ---------------------------------------------------------------------------------------
+# Private participant setup (agreement acceptance ledger).
+#
+# Timestamps in these tables are stored as NAIVE UTC on purpose: the columns are
+# `timestamp without time zone` on PostgreSQL and SQLite has no zone at all, so
+# writing naive UTC keeps every comparison (token expiry, job scheduling) exact on
+# both engines. Use `utc_now_naive()` for them, never `utc_now()`.
+# ---------------------------------------------------------------------------------------
+SETUP_CASE_STATUSES: tuple[str, ...] = ("setup_pending", "agreement_accepted", "release_pending")
+SETUP_JOB_KINDS: tuple[str, ...] = ("receipt_email", "crm_sync", "release")
+LLAVE_FORANEA_SETUP_CASE: str = "setup_case.id"
+
+
+def utc_now_naive() -> datetime:
+    """Current UTC time without tzinfo, for the setup ledger's naive-UTC columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+class SetupCase(database.Model):
+    """One person's private setup: the stable case every token, draft and acceptance hangs off."""
+
+    __tablename__ = "setup_case"
+
+    id = database.Column(database.String(26), primary_key=True, default=generador_de_codigos_unicos)
+    # Links to the admission record outside this table: the application that led here
+    # and, when already known, the CRM person. Neither is ever taken from the browser.
+    application_ref = database.Column(database.String(64), nullable=True, index=True)
+    person_ref = database.Column(database.String(64), nullable=True, index=True)
+    personal_email = database.Column(database.String(254), nullable=False, index=True)
+    display_name = database.Column(database.String(150), nullable=False)
+    known_phone = database.Column(database.String(32), nullable=True)
+    access_scope = database.Column(database.String(300), nullable=True)
+    status = database.Column(database.String(30), nullable=False, default="setup_pending", index=True)
+    created_at = database.Column(database.DateTime, nullable=False, default=utc_now_naive)
+    updated_at = database.Column(database.DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class SetupToken(database.Model):
+    """A single-use, expiring setup link. Only the SHA-256 of the token is stored."""
+
+    __tablename__ = "setup_token"
+
+    id = database.Column(database.String(26), primary_key=True, default=generador_de_codigos_unicos)
+    case_id = database.Column(database.String(26), database.ForeignKey(LLAVE_FORANEA_SETUP_CASE), nullable=False, index=True)
+    token_hash = database.Column(database.String(64), nullable=False, unique=True, index=True)
+    created_at = database.Column(database.DateTime, nullable=False, default=utc_now_naive)
+    expires_at = database.Column(database.DateTime, nullable=False)
+    used_at = database.Column(database.DateTime, nullable=True)
+    revoked_at = database.Column(database.DateTime, nullable=True)
+
+
+class SetupDraft(database.Model):
+    """Saved, not-yet-accepted profile fields. A draft is never agreement acceptance."""
+
+    __tablename__ = "setup_draft"
+
+    id = database.Column(database.String(26), primary_key=True, default=generador_de_codigos_unicos)
+    case_id = database.Column(
+        database.String(26), database.ForeignKey(LLAVE_FORANEA_SETUP_CASE), nullable=False, unique=True, index=True
+    )
+    data = database.Column(database.JSON, nullable=False, default=dict)
+    updated_at = database.Column(database.DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class AgreementAcceptance(database.Model):
+    """Immutable click-to-accept record: the exact person, details, terms and assent.
+
+    Rows are insert-only. The ORM refuses UPDATE/DELETE (listeners below) and on
+    PostgreSQL a trigger refuses them at the database, so a later contact edit can
+    never rewrite what was accepted. One acceptance per case (UNIQUE case_id) is also
+    what makes a double-submitted form idempotent.
+    """
+
+    __tablename__ = "agreement_acceptance"
+
+    id = database.Column(database.String(26), primary_key=True, default=generador_de_codigos_unicos)
+    case_id = database.Column(
+        database.String(26), database.ForeignKey(LLAVE_FORANEA_SETUP_CASE), nullable=False, unique=True, index=True
+    )
+    personal_email = database.Column(database.String(254), nullable=False)
+    legal_given_names = database.Column(database.String(200), nullable=False)
+    legal_family_names = database.Column(database.String(200), nullable=True)
+    legal_full_name = database.Column(database.String(401), nullable=False)
+    single_name = database.Column(database.Boolean, nullable=False, default=False)
+    country_code = database.Column(database.String(2), nullable=False)
+    address_line1 = database.Column(database.String(200), nullable=False)
+    address_line2 = database.Column(database.String(200), nullable=True)
+    locality = database.Column(database.String(120), nullable=False)
+    region = database.Column(database.String(120), nullable=True)
+    postal_code = database.Column(database.String(20), nullable=True)
+    phone_e164 = database.Column(database.String(16), nullable=False)
+    whatsapp_permission = database.Column(database.Boolean, nullable=False, default=False)
+    access_scope = database.Column(database.String(300), nullable=True)
+    explanation_version = database.Column(database.String(50), nullable=False)
+    agreement_document_id = database.Column(database.String(100), nullable=False)
+    agreement_version = database.Column(database.String(50), nullable=False)
+    agreement_sha256 = database.Column(database.String(64), nullable=False)
+    agreement_pdf_sha256 = database.Column(database.String(64), nullable=True)
+    assent_text_version = database.Column(database.String(50), nullable=False)
+    assent_text = database.Column(database.Text, nullable=False)
+    accepted_at_utc = database.Column(database.DateTime, nullable=False, default=utc_now_naive)
+    ip_address = database.Column(database.String(45), nullable=True)
+    user_agent = database.Column(database.String(512), nullable=True)
+
+
+class SetupJob(database.Model):
+    """Durable follow-up work for an accepted case (receipt, CRM sync, release).
+
+    UNIQUE(case_id, kind) makes every enqueue idempotent: replaying an acceptance
+    cannot create a second receipt, a second CRM write or a second release.
+    """
+
+    __tablename__ = "setup_job"
+    __table_args__ = (database.UniqueConstraint("case_id", "kind", name="setup_job_unico_por_caso"),)
+
+    id = database.Column(database.String(26), primary_key=True, default=generador_de_codigos_unicos)
+    case_id = database.Column(database.String(26), database.ForeignKey(LLAVE_FORANEA_SETUP_CASE), nullable=False, index=True)
+    kind = database.Column(database.String(30), nullable=False)
+    # pending | sending | done | failed | needs_review | release_pending
+    status = database.Column(database.String(30), nullable=False, default="pending", index=True)
+    attempts = database.Column(database.Integer, nullable=False, default=0)
+    # Operator-facing reason. PII-free by construction: callers store status codes
+    # and short fixed strings, never response bodies, emails, names or addresses.
+    last_error = database.Column(database.String(300), nullable=True)
+    next_attempt_at = database.Column(database.DateTime, nullable=True)
+    created_at = database.Column(database.DateTime, nullable=False, default=utc_now_naive)
+    updated_at = database.Column(database.DateTime, nullable=False, default=utc_now_naive, onupdate=utc_now_naive)
+    completed_at = database.Column(database.DateTime, nullable=True)
+
+
+class AcceptanceImmutableError(RuntimeError):
+    """Raised when code tries to modify or delete an agreement acceptance."""
+
+
+@event.listens_for(AgreementAcceptance, "before_update")
+def _acceptance_no_update(_mapper, _connection, _target):
+    """Accepted records are frozen; there is no legitimate update path."""
+    raise AcceptanceImmutableError("agreement_acceptance rows are immutable")
+
+
+@event.listens_for(AgreementAcceptance, "before_delete")
+def _acceptance_no_delete(_mapper, _connection, _target):
+    """Accepted records are evidence; deleting one is not an application operation."""
+    raise AcceptanceImmutableError("agreement_acceptance rows are immutable")
+
+
+ACCEPTANCE_IMMUTABLE_FUNCTION_SQL = (
+    "CREATE OR REPLACE FUNCTION agreement_acceptance_immutable() RETURNS trigger AS $$ "
+    "BEGIN RAISE EXCEPTION 'agreement_acceptance rows are immutable'; END; $$ LANGUAGE plpgsql"
+)
+ACCEPTANCE_IMMUTABLE_TRIGGER_SQL = (
+    "CREATE TRIGGER agreement_acceptance_no_modify BEFORE UPDATE OR DELETE ON agreement_acceptance "
+    "FOR EACH ROW EXECUTE FUNCTION agreement_acceptance_immutable()"
+)
+
+# Fresh installs build the schema with create_all() and stamp the Alembic head, so the
+# migration never runs there: attach the trigger to table creation as well. TRUNCATE
+# (used by the PostgreSQL test fixture) does not fire row-level triggers.
+event.listen(
+    AgreementAcceptance.__table__,
+    "after_create",
+    DDL(ACCEPTANCE_IMMUTABLE_FUNCTION_SQL).execute_if(dialect="postgresql"),
+)
+event.listen(
+    AgreementAcceptance.__table__,
+    "after_create",
+    DDL(ACCEPTANCE_IMMUTABLE_TRIGGER_SQL).execute_if(dialect="postgresql"),
+)
 
 
 # Event listeners for audit field population and validation
