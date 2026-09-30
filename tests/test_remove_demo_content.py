@@ -16,7 +16,24 @@ import pathlib
 
 import pytest
 
-from now_lms.db import BlogPost, Curso, EstudianteCurso, Usuario, database
+from datetime import datetime
+
+from sqlalchemy.exc import IntegrityError
+
+from now_lms.db import (
+    BlogPost,
+    Curso,
+    CursoSeccion,
+    EstudianteCurso,
+    Evaluation,
+    EvaluationAttempt,
+    EvaluationReopenRequest,
+    Question,
+    QuestionOption,
+    Usuario,
+    UserEvent,
+    database,
+)
 
 _PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "seed_practice_tracks.py"
 _spec = importlib.util.spec_from_file_location("seed_practice_tracks", _PATH)
@@ -309,3 +326,122 @@ def test_deploy_runs_the_demo_cleanup_with_the_app_on_the_import_path():
     assert len(cleanup) == 1
     assert "-e PYTHONPATH=/app app" in cleanup[0]
     assert "/usr/bin/python3.12 /app/scripts/seed_practice_tracks.py" in cleanup[0]
+
+
+def _ensure_quiz(code):
+    """Give a demo course a section with a quiz, question and option (as upstream's
+    `now` course has in production), returning the evaluation."""
+    _ensure_course(code)
+    section = database.session.execute(database.select(CursoSeccion).filter_by(curso=code)).scalars().first()
+    if section is None:
+        section = CursoSeccion(curso=code, nombre="Quiz section", descripcion="Section with a quiz")
+        database.session.add(section)
+        database.session.flush()
+    evaluation = Evaluation(section_id=section.id, title="Demo quiz", passing_score=70.0)
+    database.session.add(evaluation)
+    database.session.flush()
+    question = Question(evaluation_id=evaluation.id, type="boolean", text="Is this a demo?", order=1)
+    database.session.add(question)
+    database.session.flush()
+    database.session.add(QuestionOption(question_id=question.id, text="Yes", is_correct=True))
+    database.session.commit()
+    return evaluation
+
+
+def _course(code):
+    return database.session.execute(database.select(Curso).filter_by(codigo=code)).scalars().first()
+
+
+@pytest.fixture
+def production_quiz_constraint(db_session):
+    """Make evaluation.section_id match PRODUCTION, not the model.
+
+    The model declares ON DELETE CASCADE, so a freshly created schema quietly
+    cascades a section delete to its quizzes. Production's schema predates that and
+    has a plain foreign key (verified 2026-09-29: 102 of its foreign keys have no ON
+    DELETE action), which is why the cleanup crashed there and passed here. On
+    PostgreSQL, recreate the constraint the production way for this test; SQLite does
+    not enforce foreign keys in this suite, so there is nothing to mirror.
+    """
+    if database.engine.dialect.name != "postgresql":
+        yield
+        return
+    ddl = "ALTER TABLE evaluation DROP CONSTRAINT IF EXISTS evaluation_section_id_fkey, ADD CONSTRAINT evaluation_section_id_fkey FOREIGN KEY (section_id) REFERENCES curso_seccion(id)"
+    database.session.execute(database.text(ddl))
+    database.session.commit()
+    yield
+    database.session.rollback()
+    database.session.execute(database.text(ddl + " ON DELETE CASCADE"))
+    database.session.commit()
+
+
+def test_a_demo_course_with_a_quiz_is_removed_with_its_quiz(db_session, capsys, production_quiz_constraint):
+    """Production failure 2026-09-29: the section delete hit evaluation_section_id_fkey."""
+    evaluation = _ensure_quiz("now")
+    evaluation_id = evaluation.id
+    tracks.remove_demo_courses(database)
+    assert _course("now") is None
+    assert database.session.get(Evaluation, evaluation_id) is None
+    assert database.session.execute(database.select(Question).filter_by(evaluation_id=evaluation_id)).first() is None
+    assert "[drop] now" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("member_row", ["attempt", "reopen request", "quiz event"])
+def test_member_activity_on_a_demo_quiz_protects_the_course(db_session, capsys, member_row):
+    evaluation = _ensure_quiz("now")
+    member = _ensure_user("quiz-member", "quiz-member@example.com")
+    if member_row == "attempt":
+        database.session.add(EvaluationAttempt(evaluation_id=evaluation.id, user_id=member.usuario))
+    elif member_row == "reopen request":
+        database.session.add(
+            EvaluationReopenRequest(user_id=member.usuario, evaluation_id=evaluation.id, justification_text="Please")
+        )
+    else:
+        database.session.add(
+            UserEvent(
+                user_id=member.usuario,
+                course_id="now",
+                evaluation_id=evaluation.id,
+                resource_type="evaluation",
+                title="Demo quiz",
+                start_time=datetime(2026, 9, 29),
+            )
+        )
+    database.session.commit()
+    tracks.remove_demo_courses(database)
+    assert _course("now") is not None
+    assert "[keep] now:" in capsys.readouterr().out
+
+
+def test_a_course_activity_event_protects_the_course(db_session, capsys):
+    """user_events cascades on course delete, so it must refuse rather than vanish."""
+    _ensure_course("free")
+    member = _ensure_user("event-member", "event-member@example.com")
+    database.session.add(
+        UserEvent(user_id=member.usuario, course_id="free", resource_type="meet", title="Office hours", start_time=datetime(2026, 9, 29))
+    )
+    database.session.commit()
+    tracks.remove_demo_courses(database)
+    assert _course("free") is not None
+    assert "activity event" in capsys.readouterr().out
+
+
+def test_one_blocked_course_is_kept_and_the_others_are_still_removed(db_session, capsys, monkeypatch):
+    """An unknown reference must keep that one course, never crash the whole cleanup."""
+    for code in ("details", "resources"):
+        _ensure_course(code)
+    real_flush = database.session.flush
+
+    def flush(*args, **kwargs):
+        if any(isinstance(obj, Curso) and obj.codigo == "details" for obj in database.session.deleted):
+            raise IntegrityError("DELETE FROM curso", {}, Exception("still referenced from table mystery"))
+        return real_flush(*args, **kwargs)
+
+    monkeypatch.setattr(database.session, "flush", flush)
+    tracks.remove_demo_courses(database)
+    monkeypatch.undo()
+    out = capsys.readouterr().out
+    assert _course("details") is not None
+    assert _course("resources") is None
+    assert "[keep] details: still referenced" in out
+    assert "[drop] resources" in out

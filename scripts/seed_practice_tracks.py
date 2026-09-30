@@ -50,6 +50,8 @@ import argparse
 import sys
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import DBAPIError, IntegrityError
+
 from now_lms import lms_app
 from now_lms.db import (
     Announcement,
@@ -60,9 +62,13 @@ from now_lms.db import (
     CursoSeccion,
     CursoUsuarioAvance,
     EstudianteCurso,
+    Evaluation,
+    EvaluationAttempt,
+    EvaluationReopenRequest,
     ForoMensaje,
     Mensaje,
     Pago,
+    UserEvent,
     database,
 )
 
@@ -188,12 +194,34 @@ MEMBER_OWNED = (
     (CursoUsuarioAvance, "curso", "progress record"),
     (Coupon, "curso", "coupon"),
     (Announcement, "course_id", "announcement"),
+    # The database cascades these on course delete (ON DELETE CASCADE), so without
+    # this guard a member's calendar/activity rows would vanish silently.
+    (UserEvent, "course_id", "activity event"),
 )
+
+
+def _course_evaluations(db, code: str) -> list:
+    """Evaluations (quizzes) attached to any section of this course."""
+    section_ids = db.select(CursoSeccion.id).filter_by(curso=code)
+    return db.session.execute(db.select(Evaluation).filter(Evaluation.section_id.in_(section_ids))).scalars().all()
 
 
 def _rows_a_person_owns(db, code: str) -> list:
     """Every member-owned row that a delete of this course would take with it."""
     found = []
+    # A quiz's attempts (and their answers), reopen requests and activity events are
+    # members' own records: attempts cascade through the ORM and the other two through
+    # ON DELETE CASCADE, so all three must refuse the delete, not ride along with it.
+    evaluation_ids = [evaluation.id for evaluation in _course_evaluations(db, code)]
+    if evaluation_ids:
+        for model, label in (
+            (EvaluationAttempt, "quiz attempt"),
+            (EvaluationReopenRequest, "quiz reopen request"),
+            (UserEvent, "quiz activity event"),
+        ):
+            count = len(db.session.execute(db.select(model).filter(model.evaluation_id.in_(evaluation_ids))).scalars().all())
+            if count:
+                found.append(f"{count} {label}{'' if count == 1 else 's'}")
     for model, column, label in MEMBER_OWNED:
         if not hasattr(model, column):
             continue
@@ -244,10 +272,29 @@ def remove_demo_courses(db) -> None:
         if owned:
             print(f"[keep] {code}: {', '.join(owned)} — refusing to delete")
             continue
-        for model in (CursoRecurso, CursoSeccion):
-            for row in db.session.execute(db.select(model).filter_by(curso=code)).scalars().all():
-                db.session.delete(row)
-        db.session.delete(curso)
+        # One savepoint per course: if anything still references it (a table this
+        # list does not know about), that course is rolled back and kept, and the
+        # other demo courses are still cleaned. Never a half-deleted course.
+        savepoint = db.session.begin_nested()
+        try:
+            # Quizzes first: their sections cannot be deleted while referenced. The
+            # ORM cascades each quiz's questions and answer options (demo content);
+            # member attempts were refused above.
+            for evaluation in _course_evaluations(db, code):
+                db.session.delete(evaluation)
+            db.session.flush()
+            for model in (CursoRecurso, CursoSeccion):
+                for row in db.session.execute(db.select(model).filter_by(curso=code)).scalars().all():
+                    db.session.delete(row)
+                db.session.flush()
+            db.session.delete(curso)
+            db.session.flush()
+        except (IntegrityError, DBAPIError) as error:
+            savepoint.rollback()
+            reason = str(getattr(error, "orig", error)).splitlines()[0][:160]
+            print(f"[keep] {code}: still referenced ({reason}) — refusing to delete")
+            continue
+        savepoint.commit()
         print(f"[drop] {code}")
     db.session.commit()
 
