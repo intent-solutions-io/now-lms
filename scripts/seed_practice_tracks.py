@@ -56,6 +56,7 @@ from now_lms import lms_app
 from now_lms.db import (
     Announcement,
     BlogPost,
+    Certificacion,
     Coupon,
     Curso,
     CursoRecurso,
@@ -69,6 +70,7 @@ from now_lms.db import (
     Mensaje,
     Pago,
     UserEvent,
+    Usuario,
     database,
 )
 
@@ -172,9 +174,13 @@ def _stamp(row, who: str = "seed_practice_tracks"):
     return row
 
 
-# Tables holding rows a PERSON owns that hang off a course. Deleting a Curso cascades
-# through all of them silently — 27 foreign keys point at `curso.codigo` and the
-# cascades are declared at the database level, so nothing raises and nothing logs.
+# Tables holding rows a PERSON owns that hang off a course. The MODELS declare these
+# foreign keys ON DELETE CASCADE, so on a fresh schema deleting a Curso cascades
+# through all of them silently. Production's schema predates many of those
+# declarations (102 of its foreign keys have no ON DELETE action, verified
+# 2026-09-29, fork issue #128), so there a delete can instead be refused by the
+# database. The cleanup must be correct under both: guard member rows here, and
+# delete demo-only dependents explicitly rather than relying on a cascade.
 #
 # Checking enrollments alone is not enough, and not hypothetically: `crear_certificacion()`
 # seeds a Certificacion for course "now" against the admin with NO matching
@@ -185,7 +191,10 @@ def _stamp(row, who: str = "seed_practice_tracks"):
 # Certificacion rows that exist are upstream's own demo data: `crear_certificacion()`
 # seeds one against course "now" for the admin, with no matching enrollment. Treating
 # that as a member asset would mean the cleanup could never remove `now`, which is
-# exactly the demo course most visible on the front door.
+# exactly the demo course most visible on the front door. Because production does
+# not cascade that foreign key, remove_demo_courses deletes the seeded certificate
+# explicitly; a certificate held by anyone other than an admin still refuses the
+# delete (_rows_a_person_owns), as a safety net should that policy ever change.
 MEMBER_OWNED = (
     (EstudianteCurso, "curso", "enrollment"),
     (Pago, "curso", "payment"),
@@ -212,6 +221,16 @@ def _rows_a_person_owns(db, code: str) -> list:
     # A quiz's attempts (and their answers), reopen requests and activity events are
     # members' own records: attempts cascade through the ORM and the other two through
     # ON DELETE CASCADE, so all three must refuse the delete, not ride along with it.
+    admins = db.select(Usuario.usuario).filter_by(tipo="admin")
+    member_certificates = len(
+        db.session.execute(
+            db.select(Certificacion).filter(Certificacion.curso == code, Certificacion.usuario.not_in(admins))
+        )
+        .scalars()
+        .all()
+    )
+    if member_certificates:
+        found.append(f"{member_certificates} member certificate{'' if member_certificates == 1 else 's'}")
     evaluation_ids = [evaluation.id for evaluation in _course_evaluations(db, code)]
     if evaluation_ids:
         for model, label in (
@@ -282,6 +301,10 @@ def remove_demo_courses(db) -> None:
             # member attempts were refused above.
             for evaluation in _course_evaluations(db, code):
                 db.session.delete(evaluation)
+            db.session.flush()
+            # Upstream's seeded admin certificate (member-held ones were refused above).
+            for certificate in db.session.execute(db.select(Certificacion).filter_by(curso=code)).scalars().all():
+                db.session.delete(certificate)
             db.session.flush()
             for model in (CursoRecurso, CursoSeccion):
                 for row in db.session.execute(db.select(model).filter_by(curso=code)).scalars().all():
