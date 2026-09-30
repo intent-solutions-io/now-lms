@@ -15,7 +15,7 @@ Do not rename the `now_lms` package, do not edit core views for branding. Brandi
 ## Architecture (load-bearing)
 
 - **Entry point**: `now_lms/__init__.py` — `create_app()` factory + module-level `lms_app`. Blueprints registered in `registrar_modulos_en_la_aplicacion_principal()`.
-- **CLI**: `now_lms/cli.py` — `lmsctl` entry point. Groups: `database {init,seed,backup,restore,migrate,drop,reset,engine}`, `session {clear,stats}`, `info {system,path,routes,course}`, `settings {theme_,lang_,timezone_}{get,set,list}`, `admin {reset_password,set_admin}`, `user {new,set_password}`, `cache {info,clear,stats}`. Plus `serve` (waitress/gunicorn) via `run.py`, not `cli.py`.
+- **CLI**: `now_lms/cli.py` — `lmsctl` entry point. Groups: `database {init,seed,backup,restore,migrate,drop,reset,engine}`, `session {clear,stats}`, `info {system,path,routes,course}`, `settings {theme_,lang_,timezone_}{get,set,list}`, `admin {reset_password,set_admin}`, `user {new,set_password}`, `cache {info,clear,stats}`, and the fork-local `setup {issue,reissue,list,process-jobs,failed-work,requeue,resolve-crm}` (defined in `now_lms/setup_cli.py`, registered by the app factory; see ADR-11). Plus `serve` (waitress/gunicorn) via `run.py`, not `cli.py`.
 - **Server**: `run.py` — auto-selects waitress (default, cross-platform) or gunicorn (Linux, `WSGI_SERVER=gunicorn`). `now_lms/worker_config.py` derives workers/threads from env + CPU. Waitress strips `X-Forwarded-*` unless `NOW_LMS_TRUSTED_PROXY` is set — see env table.
 - **DB**: SQLAlchemy + flask-alembic + flask-session. Multi-backend (SQLite default, PostgreSQL via pg8000, MySQL via mysql-connector). **Production on this fork runs PostgreSQL** (`postgres:16` container, `postgresql+pg8000://...db:5432/nowlms`, see `docker-compose.yml` line 49). The SQLite path is test-only; `tests/conftest.py` forces `sqlite:///:memory:` unless `DATABASE_URL` is exported. **The PG path is the high-fidelity verification** for any code change — pre-existing SQLite fixture bugs (e.g. `ad_sense` table not populated for some tests) are SQLite-specific and not a regression signal on the production path. The fresh-PG-bootstrap fix from PR #179 is what makes the PG container boot correctly on a clean deploy. `now_lms/db/initial_data.py` ships default config/users/courses.
 - **Views**: `now_lms/vistas/` (Spanish for "views"). New blueprints land next to existing siblings.
@@ -76,6 +76,10 @@ Default admin after `database init`: `lms-admin` / `lms-admin`. **Never** ship t
 | `CI` | `True` in tests → in-memory SQLite. |
 | `LOG_LEVEL` | `TRACE`/`DEBUG`/`INFO`/`WARNING`/`ERROR`. |
 | `ADMIN_USER` / `ADMIN_PSWD` | Bootstrap admin credentials (release.yml uses `hello`/`world`). |
+| `SETUP_AGREEMENT_TEXT_PATH` / `SETUP_AGREEMENT_PDF_PATH` | Private setup page (`/setup/<token>`, ADR-11 `000-docs/019`): server paths of the User Agreement shown in full and its PDF. Never in the repo. Unset text path → page answers 503, nothing can be accepted. |
+| `SETUP_AGREEMENT_DOCUMENT_ID` / `SETUP_AGREEMENT_VERSION` | Identity and version recorded on every acceptance (with the SHA-256 of the displayed file). Bump the version whenever the files change. |
+| `SETUP_TOKEN_TTL_DAYS` / `SETUP_BASE_URL` / `SETUP_HELP_EMAIL` | Setup link lifetime (default 14, max 90), public origin for `lmsctl setup issue`, and the help/new-link address shown to applicants. |
+| `TWENTY_API_URL` / `TWENTY_API_KEY` | Twenty CRM hand-off after acceptance (`now_lms/crm_sync.py`). Unset → CRM jobs wait. Key from SOPS/env only; never logged. |
 
 ## The fresh-DB gotcha (learned the hard way)
 
