@@ -194,6 +194,8 @@ Merging it will conflict with #57, which rewrote the same catalogues. **#57 reco
 
 ## Fork changelog
 
+- **2026-09-30** — Align the Intent Learn homepage and repository-owned About content with the company deployment thesis. Teaching transfers operating capability; engineering, evaluations, demos, and reusable tools inform the shared practice. Member flows and platform behavior are unchanged.
+
 Fork-relevant, most recent first. (Upstream feature history lives in the root `CHANGELOG.md`; this
 section records only what is Intent-Solutions-fork-specific.)
 
