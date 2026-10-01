@@ -118,10 +118,10 @@ def test_front_door_expresses_the_selective_practice_doctrine() -> None:
     template = _template()
 
     required_language = (
-        "Separate practice · shared proof standard",
+        "One company · shared operating method",
         "Learn the method.",
         "Prove the work.",
-        "same evaluation method used in Intent Labs",
+        "Learn to define done, test the claim, and use evidence to operate and improve real systems.",
         "Learn teaches it.",
         "Labs demonstrates it. Evals defines the result.",
         "Credentials are optional. Production standards are not.",
@@ -165,8 +165,8 @@ def test_front_door_maps_the_intent_solutions_network() -> None:
         assert link in network
 
     assert 'href="https://labs.intentsolutions.io/start/"' in template
-    assert "Learn teaches the operating method." in template
-    assert "Labs publishes the evidence." in template
+    assert "Learn transfers that knowledge" in template
+    assert "Intent engineering, Labs evaluations, and working demos feed the methods practiced here." in template
     assert "Evals provides the definitions" in template
 
 
