@@ -1,0 +1,18 @@
+{{ _('Your agreement acceptance receipt') }}
+
+{{ _('This confirms that you accepted the User Agreement on your private setup page. Keep this email for your records.') }}
+
+{{ _('Accepted by (legal name)') }}: {{ acceptance.legal_full_name }}
+{{ _('Agreement') }}: {{ acceptance.agreement_document_id }}
+{{ _('Version') }}: {{ acceptance.agreement_version }}
+{{ _('Accepted on') }}: {{ accepted_at }}
+{{ _('Acceptance reference') }}: {{ acceptance.id }}
+{{ _('Document fingerprint (SHA-256)') }}: {{ acceptance.agreement_sha256 }}
+
+{% if pdf_attached %}{{ _('A PDF copy of the agreement you accepted is attached.') }}{% else %}{{ _('Reply to this email if you would like a PDF copy of the agreement you accepted.') }}{% endif %}
+
+{{ _('What happens next: access is prepared separately, and a welcome email follows once it is ready. There is nothing else you need to do now.') }}
+{% if help_email %}
+{{ _('Questions:') }} {{ help_email }}
+{% endif %}
+Intent Solutions
