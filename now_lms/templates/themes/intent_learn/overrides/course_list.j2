@@ -17,7 +17,8 @@
         <title>{{ _('Practice Tracks · Intent Solutions Learn') }}</title>
         <link rel="stylesheet" href="{{ S }}/front-door.css" />
         <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/estate-bar/estate-bar.css') }}" />
-    </head>
+        <link rel="stylesheet" href="/static/themes/intent_learn/intent-partner.css" />
+</head>
     {# Deliberately renders NO course data: the public catalog is a doctrine-voice
        teaser, and the `cursos` pagination object the route passes is unused. That is
        not laziness — `_course_explore_query` filters `Curso.publico.is_(True)` and
@@ -46,6 +47,7 @@
                 </nav>
             </div>
         </header>
+        {% include "themes/intent_learn/partner_badge.j2" %}
 
         <main>
             <section class="isl-section" aria-labelledby="tracks-title">

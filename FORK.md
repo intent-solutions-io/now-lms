@@ -255,3 +255,7 @@ and plain light gray backgrounds. These edits use the existing portraits as iden
 references; the original image assets remain available for rollback. Versioned filenames
 avoid stale browser caches. The owner directs visual verification and immediate deployment
 for this photo-only update without waiting for the full application test suite.
+
+### Public partner artwork (2026-10-14)
+
+The Intent Learn theme displays the original Claude Partner Network Select Services Partner SVG with explicit Intent Solutions attribution. Shared theme markup covers anonymous content pages and the public home, course catalog, and access request. Authenticated learning flows remain unchanged. Artwork and styles are self-hosted; upstream LMS code is unchanged.
