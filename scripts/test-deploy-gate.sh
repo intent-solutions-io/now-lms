@@ -103,4 +103,5 @@ check "detached refuses"          1 "${rc}" "${out}" "detached HEAD"
 
 echo
 echo "passed=${pass} failed=${fail}"
-[ "${fail}" -eq 0 ]
+[ "${fail}" -eq 0 ] || exit 1
+bash "${REPO_ROOT}/scripts/test-public-teaser-smoke.sh"

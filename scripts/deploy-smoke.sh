@@ -49,10 +49,17 @@ if grep -o 'mailto:[^"?]*' <<<"${ra}" | grep -q '%40'; then
     fail "mailto address is still percent-encoded (%40)"
 fi
 
-# 5. The catalog is the doctrine teaser: no course cards, no vendor names.
+# 5. The catalog is the doctrine teaser: no course cards or vendor curriculum.
+# The two exact accessibility attributes on the public company credential are
+# intentional. Remove only those attributes; vendor text anywhere else, even
+# inside the partner strip, must still fail this check.
 teaser="$(curl -fsS --max-time 20 -H 'X-Forwarded-Proto: https' http://127.0.0.1:8080/course/explore)"
 grep -q 'isl-tracks-list' <<<"${teaser}" || fail "/course/explore is not serving the practice-tracks teaser"
-if grep -Eq 'isl-course-grid|CCA-|Claude|Anthropic' <<<"${teaser}"; then
+badge_alt='alt="Claude Partner Network: Select Services Partner"'
+badge_label='aria-label="About Intent Solutions, a Claude Partner Network Select Services Partner"'
+teaser_curriculum="${teaser//"${badge_alt}"/}"
+teaser_curriculum="${teaser_curriculum//"${badge_label}"/}"
+if grep -Eq 'isl-course-grid|CCA-|Claude|Anthropic' <<<"${teaser_curriculum}"; then
     fail "/course/explore is leaking course cards or vendor names to the public"
 fi
 
