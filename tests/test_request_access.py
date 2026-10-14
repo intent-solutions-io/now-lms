@@ -6,8 +6,8 @@
 The intake stores to the native contact_messages table with the ``[ACCESS] ``
 subject discriminator, sends an applicant receipt best-effort, and defends itself (CSRF,
 honeypot, timed token, rate limit, length caps). The practice-tracks teaser
-tests live here too: both surfaces exist so the public site never leaks course
-or vendor names to anonymous visitors.
+tests live here too: both surfaces keep course titles and vendor-specific
+curriculum private while allowing the public company partner credential.
 """
 
 import importlib
@@ -473,10 +473,16 @@ def test_explore_serves_the_teaser_to_anonymous_visitors(client, db_session):
     # Doctrine copy, including the founder-approved honesty sentence.
     assert "One practice." in body
     assert "That invitation is earned, not sold." in body
-    # Zero course cards, zero vendor names — even with public courses in the DB.
+    # Company partner status is public; vendor-specific curriculum stays private.
     assert "isl-course-grid" not in body
+    partner = re.search(r'<aside[^>]+data-intent-partner>.*?</aside>', body, re.DOTALL)
+    assert partner is not None
+    assert "Built by <strong>Intent Solutions</strong>" in partner.group()
+    assert "Claude Partner Network: Select Services Partner" in partner.group()
+    assert body.count("data-intent-partner") == 1
+    without_partner = body[:partner.start()] + body[partner.end():]
     for leaked in ("Claude", "Anthropic", "CCA-"):
-        assert leaked not in body
+        assert leaked not in without_partner
 
 
 def _signed_in(app, db_session, usuario: str, tipo: str):
