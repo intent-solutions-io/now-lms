@@ -51,10 +51,12 @@
             data-host-url="/u"
         ></script>
         <link rel="stylesheet" href="{{ url_for('static', filename='themes/intent_learn/estate-bar/estate-bar.css') }}" />
-    </head>
+        <link rel="stylesheet" href="/static/themes/intent_learn/intent-partner.css" />
+</head>
 
     <body>
         {% include "themes/intent_learn/estate_bar.j2" %}
+        {% if not current_user.is_authenticated %}{% include "themes/intent_learn/partner_badge.j2" %}{% endif %}
         <!-- Inicio del bloque contenido -->
 
         {% block contenido %}{% endblock %}
