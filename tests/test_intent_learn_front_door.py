@@ -81,7 +81,7 @@ def test_front_door_renders_through_the_flask_route(client, db_session) -> None:
     assert 'href="/request-access"' in body, "the access-request CTA should land on the intake"
     network = re.search(r'<nav class="is-estate-bar".*?</nav>', body, re.S)
     assert network is not None, "the public route must render the shared network banner"
-    assert network.group().count("<a ") == 7
+    assert network.group().count("<a ") == 8
     assert 'href="https://learn.intentsolutions.io/" aria-current="page"' in network.group()
 
 
@@ -147,7 +147,7 @@ def test_front_door_expresses_the_selective_practice_doctrine() -> None:
 
 
 def test_front_door_maps_the_intent_solutions_network() -> None:
-    """Keep all seven properties reachable through the canonical network banner."""
+    """Keep all properties and Explore reachable through the canonical network banner."""
     template = _template()
     assert '{% include "themes/intent_learn/estate_bar.j2" %}' in template
     network = Path("now_lms/templates/themes/intent_learn/estate_bar.j2").read_text(encoding="utf-8")
@@ -255,3 +255,27 @@ def test_umami_tracker_is_same_origin_on_both_visitor_surfaces() -> None:
         assert 'data-website-id="9350d174-bb53-4f1d-be75-c8221a3f4717"' in text
         assert 'data-host-url="/u"' in text, f"{path}: posts must stay same-origin"
         assert "analytics.intentsolutions.io" not in text, f"{path}: cross-origin tracker load would be refused by the CSP"
+
+
+def test_program_preview_keeps_the_member_program_route():
+    """The empty guest catalog gains context without hiding members' programs."""
+    from types import SimpleNamespace
+    from jinja2 import DictLoader
+
+    template = Path("now_lms/templates/themes/intent_learn/overrides/program_list.j2").read_text(encoding="utf-8")
+    env = Environment(loader=DictLoader({
+        "program": template,
+        "inicio/programas.html": "member programs",
+        "themes/intent_learn/overrides/course_list.j2": "public practice tracks",
+    }))
+    assert env.get_template("program").render(current_user=SimpleNamespace(is_authenticated=False)).strip() == "public practice tracks"
+    assert env.get_template("program").render(current_user=SimpleNamespace(is_authenticated=True)).strip() == "member programs"
+
+
+def test_public_pages_expose_discovery_beyond_the_mobile_hidden_nav():
+    """Explore and About remain outside the desktop-only primary links."""
+    for path in [TEMPLATE_PATH, REQUEST_ACCESS_PATH, Path("now_lms/templates/themes/intent_learn/overrides/course_list.j2")]:
+        body = path.read_text(encoding="utf-8")
+        discovery = body.split('class="isl-wrap isl-discovery"', 1)[1].split("</nav>", 1)[0]
+        assert 'href="https://intentsolutions.io/projects/"' in discovery
+        assert 'href="/page/about-us"' in discovery

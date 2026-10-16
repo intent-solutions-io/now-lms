@@ -34,19 +34,13 @@ def test_about_page_has_complete_ordered_entity_architecture():
     for field in [
         "Company Name",
         "Type",
-        "Founded",
         "Founder",
-        "Headquarters",
         "Website",
         "Core Offering",
         "Pricing",
         "Contract Terms",
         "Services",
         "Communication",
-        "Notable Clients",
-        "Customers Served",
-        "Projects Delivered",
-        "Competitors",
         "Social",
         "Part of",
     ]:
@@ -96,3 +90,11 @@ def test_about_faq_schema_matches_visible_questions_and_answers():
     structured = [(item["name"], item["acceptedAnswer"]["text"]) for item in payload["mainEntity"]]
     assert len(visible) == 7
     assert structured == visible
+
+
+def test_about_keeps_unknown_claims_out_of_public_copy():
+    """Incomplete business facts must not ship as placeholders or invented claims."""
+    assert "[[" not in ABOUT
+    assert "Headquarters" not in ABOUT
+    assert 'href="https://intentsolutions.io/projects/"' in ABOUT
+    assert "This page does not list a public price." in ABOUT

@@ -548,3 +548,6 @@
 @media (prefers-reduced-motion: reduce) {
     .isl-root * { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+.isl-discovery { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; padding-top: 0.5rem; }
+.isl-discovery a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; font-size: 0.875rem; }

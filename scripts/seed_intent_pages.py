@@ -1,46 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Replace the upstream boilerplate footer pages with Intent Solutions' own.
+"""Upsert the repository-owned Learn About page and factual data overview.
 
-Two problems with the seeded defaults this fixes:
+The public About content is maintained in now_lms/content/intent_learn/about.html.
+The data overview describes existing behavior without inventing legal terms.
+Existing public slugs remain reachable, including from older member bookmarks.
 
-1. **They are upstream's text.** The shipped privacy page names no company, no
-   jurisdiction and no contact route that reliably exists — it tells members to
-   use "our contact form", which 404s whenever ``enable_contact`` is off. A page
-   that makes claims on Intent Solutions' behalf without naming Intent Solutions
-   is worse than no page.
-2. **They are seeded per language and never corrected.**
-   ``crear_paginas_estaticas_predeterminadas()`` reads ``Configuracion.lang`` and
-   guards on ``if not existing``, so a deployment seeded in the wrong language
-   keeps Spanish or Portuguese titles forever, and changing the language
-   afterwards does nothing. That is why the preview footer read "Política de
-   Privacidad" while the database said ``lang = 'en'``.
-
-This script UPSERTS instead: it corrects an existing row rather than skipping it,
-so it is safe to re-run and it repairs drift. Idempotent by content — running it
-twice reports no change the second time.
-
-**What this page is and is not.** The data-handling description below is factual
-and derived from the schema: every category listed is something this application
-demonstrably stores. The formal legal terms — the entity, the governing law, the
-retention schedule, the rights procedure — are NOT invented here. They are marked
-as outstanding on the page itself, because a privacy policy that states an
-unverified jurisdiction is a worse liability than one that admits it is pending.
-Jeremy owns those facts; see the OUTSTANDING block below.
-
-Usage::
-
-    DATABASE_URL=... python3 scripts/seed_intent_pages.py
-    DATABASE_URL=... python3 scripts/seed_intent_pages.py --dry-run
+Usage: python3 scripts/seed_intent_pages.py [--dry-run]
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
-# Everything below is checkable against the schema. Nothing here is aspirational.
+# Factual Learn data overview; no invented legal, retention or contract terms.
 PRIVACY = """
 <h2>What this page covers</h2>
 <p>
@@ -102,20 +76,12 @@ PRIVACY = """
   account closed, use the contact route below and say so plainly; a person will
   answer you.</p>
 
-<h2>What is still being finalised</h2>
-<p>
-  Intent Solutions is finalising the formal terms that belong in a privacy policy:
-  the legal entity and its jurisdiction, the retention periods for each category
-  above, the named contact for data requests, and the full list of infrastructure
-  providers involved in running this platform. Those are not stated on this page
-  yet because stating them before they are settled would be worse than admitting
-  they are pending. This page will be replaced when they are.
-</p>
-<p>
-  In the meantime, everything described above is accurate about how the platform
-  behaves today, and any question about your data will be answered by a person
-  rather than a policy document.
-</p>
+<h2>Questions about your information</h2>
+<p>For questions about the information described here, contact
+<a href="mailto:support@intentsolutions.io">support@intentsolutions.io</a>.
+This page describes Learn's data handling; it does not set a retention schedule or contract terms.</p>
+<p><a href="/">Back to Learn</a> ·
+<a href="https://intentsolutions.io/projects/">Explore all Intent</a></p>
 """.strip()
 
 ABOUT = (Path(__file__).resolve().parents[1] / "now_lms/content/intent_learn/about.html").read_text().strip()
@@ -124,18 +90,6 @@ PAGINAS = [
     {"slug": "privacy-policy", "title": "Privacy Policy", "content": PRIVACY, "footer": True},
     {"slug": "about-us", "title": "About Intent Solutions Learn", "content": ABOUT, "footer": True},
 ]
-
-# Facts this script deliberately does NOT assert. Printed on every run so they
-# cannot quietly become someone's assumption that the page is complete.
-OUTSTANDING = [
-    "Legal entity name and form, and the governing jurisdiction",
-    "Retention period per data category",
-    "Named contact (and postal address, if one is required) for data requests",
-    "Whether GDPR / UK GDPR / CCPA apply, given where cohort members actually live",
-    "The infrastructure and sub-processor list for this deployment",
-    "Whether intentsolutions.io/privacy (currently an empty stub) becomes the canonical policy",
-]
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Upsert the Intent Solutions footer pages.")
@@ -195,9 +149,7 @@ def main() -> None:
         else:
             print("No change: pages already match.")
 
-    print("\nSTILL OWED BY INTENT SOLUTIONS before this page is a real privacy policy:", file=sys.stderr)
-    for punto in OUTSTANDING:
-        print(f"  - {punto}", file=sys.stderr)
+
 
 
 if __name__ == "__main__":
