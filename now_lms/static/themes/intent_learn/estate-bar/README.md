@@ -4,7 +4,7 @@ The one top strip that links the Intent Solutions properties. It is identical on
 every site that carries it: same links, order, labels, font and spacing. The only
 thing a site may change is the accent color of the current-property link.
 
-`INTENT SOLUTIONS · LABS · EVALS · DEMOS · LEARN · OMARCHY · TONS OF SKILLS`
+`INTENT SOLUTIONS · EXPLORE · LABS · EVALS · DEMOS · LEARN · OMARCHY · TONS OF SKILLS`
 
 This folder is the single source. Every other copy is vendored from here and
 checked against `manifest.sha256`. Authority: `000-docs/088-AT-DSGN-estate-bar-amendment.md`.

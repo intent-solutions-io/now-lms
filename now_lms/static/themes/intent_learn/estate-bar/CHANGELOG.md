@@ -1,3 +1,7 @@
+# 1.1.0 — 2026-10-16
+
+Add Explore immediately after Company so the complete experience directory is visible on narrow screens. Canonical destination: https://intentsolutions.io/projects/. Carrier identities and existing links remain unchanged.
+
 # Estate bar changelog
 
 ## 1.0.0 (2026-09-19)

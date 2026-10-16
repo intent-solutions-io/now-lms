@@ -273,3 +273,6 @@ The existing fork-branded `templates/auth/login.html` remains the login surface:
 The repair changes its admission/return links without introducing a new core view
 patch. A future upstream authentication-theme seam should retire that existing
 shared-template customization.
+
+Estate navigation v1.1 is vendored from company commit `0d0b7807520515f33bc6de1ccfbb7a54deba057e`.
+The canonical manifest and Learn fragment are checked together in CI.
