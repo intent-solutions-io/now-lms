@@ -262,7 +262,7 @@ def test_program_preview_keeps_the_member_program_route():
     from types import SimpleNamespace
     from jinja2 import DictLoader
 
-    template = Path("now_lms/templates/themes/intent_learn/overrides/program_list.j2").read_text()
+    template = Path("now_lms/templates/themes/intent_learn/overrides/program_list.j2").read_text(encoding="utf-8")
     env = Environment(loader=DictLoader({
         "program": template,
         "inicio/programas.html": "member programs",
@@ -275,7 +275,7 @@ def test_program_preview_keeps_the_member_program_route():
 def test_public_pages_expose_discovery_beyond_the_mobile_hidden_nav():
     """Explore and About remain outside the desktop-only primary links."""
     for path in [TEMPLATE_PATH, REQUEST_ACCESS_PATH, Path("now_lms/templates/themes/intent_learn/overrides/course_list.j2")]:
-        body = path.read_text()
+        body = path.read_text(encoding="utf-8")
         discovery = body.split('class="isl-wrap isl-discovery"', 1)[1].split("</nav>", 1)[0]
         assert 'href="https://intentsolutions.io/projects/"' in discovery
         assert 'href="/page/about-us"' in discovery
