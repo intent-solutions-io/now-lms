@@ -255,3 +255,27 @@ def test_umami_tracker_is_same_origin_on_both_visitor_surfaces() -> None:
         assert 'data-website-id="9350d174-bb53-4f1d-be75-c8221a3f4717"' in text
         assert 'data-host-url="/u"' in text, f"{path}: posts must stay same-origin"
         assert "analytics.intentsolutions.io" not in text, f"{path}: cross-origin tracker load would be refused by the CSP"
+
+
+def test_program_preview_keeps_the_member_program_route():
+    """The empty guest catalog gains context without hiding members' programs."""
+    from types import SimpleNamespace
+    from jinja2 import DictLoader
+
+    template = Path("now_lms/templates/themes/intent_learn/overrides/program_list.j2").read_text()
+    env = Environment(loader=DictLoader({
+        "program": template,
+        "inicio/programas.html": "member programs",
+        "themes/intent_learn/overrides/course_list.j2": "public practice tracks",
+    }))
+    assert env.get_template("program").render(current_user=SimpleNamespace(is_authenticated=False)).strip() == "public practice tracks"
+    assert env.get_template("program").render(current_user=SimpleNamespace(is_authenticated=True)).strip() == "member programs"
+
+
+def test_public_pages_expose_discovery_beyond_the_mobile_hidden_nav():
+    """Explore and About remain outside the desktop-only primary links."""
+    for path in [TEMPLATE_PATH, REQUEST_ACCESS_PATH, Path("now_lms/templates/themes/intent_learn/overrides/course_list.j2")]:
+        body = path.read_text()
+        discovery = body.split('class="isl-wrap isl-discovery"', 1)[1].split("</nav>", 1)[0]
+        assert 'href="https://intentsolutions.io/projects/"' in discovery
+        assert 'href="/page/about-us"' in discovery

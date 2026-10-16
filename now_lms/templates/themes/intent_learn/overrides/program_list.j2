@@ -1,0 +1,6 @@
+{# Private program browsing remains unchanged; guests see the actual practice offer. #}
+{% if current_user.is_authenticated %}
+{% include "inicio/programas.html" %}
+{% else %}
+{% include "themes/intent_learn/overrides/course_list.j2" %}
+{% endif %}
