@@ -259,3 +259,17 @@ for this photo-only update without waiting for the full application test suite.
 ### Public partner artwork (2026-10-14)
 
 The Intent Learn theme displays the original Claude Partner Network Select Services Partner SVG with explicit Intent Solutions attribution. Shared theme markup covers anonymous content pages and the public home, course catalog, and access request. Authenticated learning flows remain unchanged. Artwork and styles are self-hosted; upstream LMS code is unchanged.
+
+## Public discovery repair (2026-10-16)
+
+Learn public pages link to the company Explore directory and the repository-owned
+About page. CMS content in `content/intent_learn/about.html` and the seeded data
+overview is English-only, as before this change; no translated CMS edition is
+claimed. Guest program exploration uses the theme override while authenticated
+program browsing keeps the upstream template.
+
+The existing fork-branded `templates/auth/login.html` remains the login surface:
+`user.inicio_sesion` resolves that path directly and has no theme login resolver.
+The repair changes its admission/return links without introducing a new core view
+patch. A future upstream authentication-theme seam should retire that existing
+shared-template customization.

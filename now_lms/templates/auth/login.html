@@ -35,7 +35,7 @@
                     {% if show_forgot_password %}
                     <a href="{{ url_for('user.forgot_password') }}"><i class="bi bi-key" aria-hidden="true"></i> {{ _("¿Olvidaste tu contraseña?") }}</a>
                     {% endif %}
-                    <a href="/request-access">{{ _('Need access? Apply to Learn') }}</a>
+                    <a href="{{ url_for('request_access.request_access') }}">{{ _('Need access? Apply to Learn') }}</a>
                     <a href="{{ url_for('home.pagina_de_inicio') }}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {{ _('Back to Learn') }}</a>
                 </div>
             </form>
