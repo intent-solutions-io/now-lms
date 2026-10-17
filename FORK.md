@@ -276,3 +276,17 @@ shared-template customization.
 
 Estate navigation v1.1 is vendored from company commit `0d0b7807520515f33bc6de1ccfbb7a54deba057e`.
 The canonical manifest and Learn fragment are checked together in CI.
+
+## Public deployment freshness (2026-10-17)
+
+The fork deployment expires only the current-generation anonymous, query-free
+responses for `/`, `/home`, `/course/explore` and `/program/explore` after the
+application restart. It does not clear the cache, bump shared generations, scan
+Redis, or touch sessions and member/course responses. Other query variants retain
+their normal TTL.
+
+The image build generates a theme-only release fragment from `BUILD_SHA`.
+Production smoke requires that marker on the ordinary public HTTPS URLs, with no
+query bypass or cookies, in addition to the existing image and access-boundary
+checks. Source-only development omits the generated fragment. These are fork-local
+deployment checks, not changes to upstream cache behavior.

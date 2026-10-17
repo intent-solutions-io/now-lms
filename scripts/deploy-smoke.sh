@@ -82,11 +82,24 @@ for code in CCA-A CCA-B CCA-F free IS-START now postgresql python resources deta
     esac
 done
 
-# 8. Record repository state in the receipt, not just local state. The gate that
+# 8. The actual public ingress must render this release on ordinary anonymous
+# URLs. Never add a query parameter, cache-bypass header or authenticated cookie:
+# those hid stale shared response caches during the 2026-10-16 deployment.
+# The marker is generated into the theme by Dockerfile from the same BUILD_SHA
+# checked above; unlike the historic static markers it changes every release.
+for path in / /home /course/explore /program/explore; do
+    public_page="$(curl -fsS --max-time 20 "https://learn.intentsolutions.io${path}")" \
+        || fail "public ${path} did not serve"
+    grep -Fq "<meta name=\"intent-learn-release\" content=\"${want}\" />" <<<"${public_page}" \
+        || fail "public ${path} is not rendering release ${want} (stale cache, template or ingress)"
+done
+
+# 9. Record repository state in the receipt, not just local state. The gate that
 #    REFUSES a divergent deploy lives in deploy-vps.sh (it is the one that can
 #    fetch); this line exists so a green smoke can never again be read as "the
 #    checkout matches the repo" when nobody checked. No fetch here on purpose —
-#    a smoke check should not depend on the network to report what it observed.
+#    the repository-state receipt reports the last fetch, separately from the public
+#    HTTPS observations above.
 branch="$(git rev-parse --abbrev-ref HEAD)"
 repo_state="origin/${branch} not fetched in this checkout — repository state UNKNOWN"
 if [ "${branch}" != "HEAD" ] && git rev-parse --verify --quiet "origin/${branch}^{commit}" >/dev/null; then

@@ -25,6 +25,14 @@ STUB
 cat > "${fixture}/bin/curl" <<'STUB'
 #!/bin/bash
 case "${!#}" in
+  https://learn.intentsolutions.io*)
+    if [[ "${!#}" == *\?* ]]; then echo 'unexpected query bypass' >&2; exit 1; fi
+    if [ "${!#}" = "https://learn.intentsolutions.io${STALE_PUBLIC_PATH:-missing}" ]; then
+      echo '<meta name="intent-learn-release" content="old-release" />'
+    else
+      echo '<meta name="intent-learn-release" content="fixture-commit" />'
+    fi
+    ;;
   */course/explore) printf '%s' "$TEST_TEASER" ;;
   */request-access) echo '<form class="isl-ra-form"><a href="mailto:support@example.invalid">Contact</a></form>' ;;
   */contact) echo 404 ;;
@@ -54,3 +62,14 @@ if TEST_TEASER="${TEST_TEASER/Built by/Anthropic curriculum}" bash "${fixture}/s
 fi
 grep -q 'leaking course cards or vendor names' "${fixture}/result"
 echo 'PASS: public teaser smoke (2 allowed responses, 5 rejected leaks)'
+
+# An image/loopback check can pass while the public ingress still serves an old
+# shared response. Every plain public entry path must reject that exact defect.
+for path in / /home /course/explore /program/explore; do
+  if STALE_PUBLIC_PATH="${path}" bash "${fixture}/scripts/deploy-smoke.sh" >"${fixture}/result" 2>&1; then
+    echo "FAIL: stale public ${path} was accepted" >&2
+    exit 1
+  fi
+  grep -Fq "public ${path} is not rendering release fixture-commit" "${fixture}/result"
+done
+echo 'PASS: stale public responses rejected on all four ordinary URLs'

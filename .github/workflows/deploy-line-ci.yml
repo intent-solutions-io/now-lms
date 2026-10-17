@@ -150,6 +150,7 @@ jobs:
                            scripts/vps-sync.sh \
                            scripts/install-vps-reset-only.sh \
                            scripts/test-deploy-gate.sh \
+                           scripts/test-public-teaser-smoke.sh \
                            scripts/test-reset-only-hook.sh; do
                       bash -n "$f" || exit 1
                   done

@@ -101,7 +101,9 @@ COPY now_lms/config/Caddyfile /etc/caddy/Caddyfile
 # rather than mint another unidentifiable image (that blind spot is how the July
 # checkout/image/volume three-way drift happened; see fork issue #14).
 ARG BUILD_SHA
-RUN test -n "${BUILD_SHA}" && echo "${BUILD_SHA}" > /app/BUILD_SHA
+RUN test -n "${BUILD_SHA}" && echo "${BUILD_SHA}" > /app/BUILD_SHA \
+    && printf '<meta name="intent-learn-release" content="%s" />\n' "${BUILD_SHA}" \
+       > /app/now_lms/templates/themes/intent_learn/release.j2
 LABEL io.intentsolutions.commit="${BUILD_SHA}"
 
 # Compile application translations. The freshness gate catches stale .mo
