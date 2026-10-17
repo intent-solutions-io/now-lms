@@ -141,6 +141,10 @@ for _ in $(seq 1 30); do
     sleep 5
 done
 
+echo "==> Expiring only anonymous plain public-page cache entries"
+docker compose exec -T -e PYTHONPATH=/app app \
+    /usr/bin/python3.12 /app/scripts/refresh_public_cache.py
+
 echo "==> Smoke check"
 bash scripts/deploy-smoke.sh
 
