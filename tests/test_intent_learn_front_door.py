@@ -279,3 +279,10 @@ def test_public_pages_expose_discovery_beyond_the_mobile_hidden_nav():
         discovery = body.split('class="isl-wrap isl-discovery"', 1)[1].split("</nav>", 1)[0]
         assert 'href="https://intentsolutions.io/projects/"' in discovery
         assert 'href="/page/about-us"' in discovery
+
+
+def test_front_door_has_no_public_sign_in_call_to_action():
+    """Request access is the only public action; the login route itself stays reachable."""
+    template = TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert "inicio_sesion" not in template
+    assert "Member sign in" not in template
