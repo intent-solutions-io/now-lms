@@ -40,8 +40,6 @@
                     <span class="isl-nav-actions">
                         {% if current_user.is_authenticated %}
                         <a class="isl-btn isl-btn-primary isl-btn-sm" href="{{ url_for('home.panel') }}">{{ _('Dashboard') }}</a>
-                        {% else %}
-                        <a class="isl-btn isl-btn-secondary isl-btn-sm" href="{{ url_for('user.inicio_sesion') }}">{{ _('Sign in') }}</a>
                         {% endif %}
                     </span>
                 </nav>

@@ -11348,14 +11348,6 @@ msgstr ""
 msgid "Founder & CEO"
 msgstr ""
 
-#: now_lms/templates/themes/intent_learn/overrides/home.j2:12
-msgid "Opeyemi Ariyo"
-msgstr ""
-
-#: now_lms/templates/themes/intent_learn/overrides/home.j2:12
-msgid "Co-Founder & Chief Technical Officer"
-msgstr ""
-
 #: now_lms/templates/themes/intent_learn/overrides/home.j2:13
 msgid "Pablo Perez"
 msgstr ""
@@ -11378,14 +11370,6 @@ msgstr ""
 
 #: now_lms/templates/themes/intent_learn/overrides/home.j2:15
 msgid "Head of German Operations"
-msgstr ""
-
-#: now_lms/templates/themes/intent_learn/overrides/home.j2:16
-msgid "Tolulope Ariyo"
-msgstr ""
-
-#: now_lms/templates/themes/intent_learn/overrides/home.j2:16
-msgid "Software & Design Engineer"
 msgstr ""
 
 #: now_lms/templates/themes/intent_learn/overrides/home.j2:38

@@ -505,6 +505,11 @@
 @media (max-width: 520px) {
     .isl-root { padding-bottom: calc(4.75rem + env(safe-area-inset-bottom)); }
     .isl-mobile-action {
+        /* Hidden until the hero call to action has scrolled away (front-door.js);
+           the header already carries the same button. */
+        transform: translateY(110%);
+        visibility: hidden;
+        transition: transform 0.2s ease, visibility 0s linear 0.2s;
         position: fixed;
         z-index: 1000;
         right: 0;
@@ -517,17 +522,21 @@
         box-shadow: 0 -8px 24px rgb(17 24 39 / 0.12);
         backdrop-filter: blur(12px);
     }
+    .isl-mobile-action.is-visible { transform: none; visibility: visible; transition-delay: 0s; }
     .isl-mobile-action .isl-btn { width: 100%; }
     .isl-header .isl-wrap { min-height: 4rem; padding-inline: 1rem; }
     .isl-brand .word { display: none; }
     .isl-btn-sm { padding-inline: 0.72rem; }
-    .isl-hero { padding: 4rem 0; }
-    .isl-hero-copy h1 { max-width: 100%; font-size: clamp(2.5rem, 12vw, 3.2rem); line-height: 1; }
+    /* Short top padding: the partner row above already separates the hero. */
+    .isl-hero { padding: 2rem 0 3.5rem; }
+    /* -0.055em is for desktop sizes; at phone sizes it closes the word spaces. */
+    .isl-hero-copy h1 { max-width: 100%; font-size: clamp(2.4rem, 11.5vw, 3.1rem); letter-spacing: -0.025em; word-spacing: 0.08em; line-height: 1.04; }
     .isl-kicker { font-size: 0.61rem; }
     .isl-cta-row { display: grid; grid-template-columns: 1fr; }
     .isl-cta-row .isl-btn { width: 100%; white-space: normal; text-align: center; }
     .isl-proof-grid { grid-template-columns: 1fr; }
     .isl-proof-item,
+    .isl-proof-item + .isl-proof-item,
     .isl-proof-item:first-child,
     .isl-proof-item:last-child { padding: 1.2rem 0; border-left: 0; border-top: 1px solid rgb(var(--line)); }
     .isl-proof-item:first-child { border-top: 0; }
@@ -551,3 +560,29 @@
 
 .isl-discovery { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; padding-top: 0.5rem; }
 .isl-discovery a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; font-size: 0.875rem; }
+
+/* Phone layout for the estate bar, discovery links and partner row. The estate bar
+   is vendored (estate-bar.css says not to edit it), so the override lives here. */
+@media (max-width: 720px) {
+    /* Wrap instead of scrolling: no word is ever cut off at the edge. */
+    .isl-root .is-estate-bar__inner {
+        flex-wrap: wrap;
+        gap: 0 1rem;
+        padding: 0 16px;
+        overflow: visible;
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+    .isl-root .is-estate-bar__inner a { min-height: 36px; font-size: 11px; letter-spacing: 0.06em; }
+    .isl-root .is-estate-bar__inner a:last-child { padding-right: 0; }
+
+    /* One tidy row of three short links with even spacing. */
+    .isl-discovery { flex-wrap: wrap; gap: 0 0.8rem; padding-top: 0; padding-bottom: 0; }
+    .isl-discovery a { min-height: 40px; font-size: 0.78rem; white-space: nowrap; }
+
+    /* Partner row: label on top, badge underneath, nothing squeezed. */
+    .isl-root .intent-partner__inner { flex-direction: column; align-items: flex-start; gap: 6px; min-height: 0; padding: 10px 16px 12px; }
+    .isl-root .intent-partner__owner { text-align: left; }
+    .isl-root .intent-partner__owner strong { display: inline; }
+    .isl-root .intent-partner__image { width: min(100%, 260px); }
+}

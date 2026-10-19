@@ -51,13 +51,14 @@ def test_about_page_names_public_team_and_valid_faq_schema():
     """Public roster and FAQ structured data stay extractable from the CMS source."""
     for person in [
         "Jeremy Longshore",
-        "Opeyemi Ariyo",
         "Pablo Perez",
         "Max Sheahan",
         "Tim Neunzig",
-        "Tolulope Ariyo",
     ]:
         assert person in ABOUT
+
+    for removed in ["Opeyemi Ariyo", "Tolulope Ariyo"]:
+        assert removed not in ABOUT
 
     match = re.search(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', ABOUT, re.DOTALL)
     assert match
