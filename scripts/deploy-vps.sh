@@ -8,7 +8,8 @@
 # the container. This script closes all three gaps:
 #   1. The image records its commit (BUILD_SHA file + label; the build FAILS
 #      without it).
-#   2. The volume-shadowed content is refreshed from the freshly built image.
+#   2. The volume-shadowed content is refreshed from the freshly built image (theme
+#      directories mirrored with deletions, upload-bearing /app/data merged only).
 #      NOW_LMS_THEMES_DIR (/app/themes) is Flask's ENTIRE template root and
 #      NOW_LMS_DATA_DIR (/app/data) serves all static assets, and the app only
 #      populates them when EMPTY (upstream's empty-only guard) — so without this
@@ -121,11 +122,22 @@ for _ in $(seq 1 30); do
 done
 
 echo "==> Refreshing volume-shadowed templates and static assets from the image"
-# cp -a source/. dest/ merges: files present in the image overwrite their stale
-# volume copies; anything ONLY in the volume (user uploads under /app/data, e.g.
-# files/public) is left untouched — same semantics as upstream's
-# copytree(dirs_exist_ok=True), minus the empty-only guard that caused the trap.
-docker compose exec -T app sh -c 'cp -a /app/now_lms/templates/. /app/themes/ && cp -a /app/now_lms/static/. /app/data/'
+# Two different ownership rules, on purpose:
+#  * /app/themes is the Flask template root and the image owns all of it, so it is
+#    MIRRORED: files removed from the repo disappear on deploy.
+#  * /app/data also holds operator uploads (files/public, ...), so it is only MERGED
+#    with cp -a (same semantics as upstream's copytree(dirs_exist_ok=True), minus the
+#    empty-only guard that caused the trap). The one subtree the image owns outright,
+#    static/themes (the intent_learn team photos live there), is then MIRRORED.
+# `cp -a` alone never deletes, which is how two photos removed in #140 outlived the
+# deploy. scripts/mirror-image-dir.sh refuses /app/data itself, so a wrong edit here
+# cannot turn this step into an upload wipe.
+docker compose exec -T app sh -c '
+    set -e
+    sh /app/scripts/mirror-image-dir.sh /app/now_lms/templates /app/themes
+    cp -a /app/now_lms/static/. /app/data/
+    sh /app/scripts/mirror-image-dir.sh /app/now_lms/static/themes /app/data/themes
+'
 
 echo "==> Upserting repository-owned Intent Solutions pages"
 docker compose exec -T -e PYTHONPATH=/app app \
