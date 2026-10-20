@@ -60,6 +60,33 @@ def test_about_page_names_public_team_and_valid_faq_schema():
     for removed in ["Opeyemi Ariyo", "Tolulope Ariyo"]:
         assert removed not in ABOUT
 
+
+def test_about_page_shows_a_photo_for_every_team_member():
+    """Every public team member gets the same photo card, not just one of them."""
+    for name, photo in [
+        ("Jeremy Longshore", "jeremy-longshore-suit.jpeg"),
+        ("Heather C. Johnson, JD", "heather-johnson.png"),
+        ("Pablo Perez", "pablo-perez.jpeg"),
+        ("Max Sheahan", "max-sheahan-suit.jpeg"),
+        ("Tim Neunzig", "tim-neunzig.png"),
+    ]:
+        assert f'src="/data/themes/intent_learn/team/{photo}" alt="{name}"' in ABOUT
+        assert (ROOT / "now_lms/static/themes/intent_learn/team" / photo).is_file()
+    assert ABOUT.count('class="isl-about-person"') == 5
+
+
+def test_about_page_uses_role_address_not_personal_email():
+    """Public pages carry role addresses only."""
+    assert "jeremy@" not in ABOUT
+
+
+def test_theme_navbar_offers_request_access_not_login_to_visitors():
+    """Learn is invitation-only: anonymous visitors see no login or sign-up buttons."""
+    navbar = (ROOT / "now_lms/templates/themes/intent_learn/navbar.j2").read_text()
+    assert "user.inicio_sesion" not in navbar
+    assert "user.crear_cuenta" not in navbar
+    assert "url_for('request_access.request_access')" in navbar
+
     match = re.search(r'<script type="application/ld\+json">\s*(.*?)\s*</script>', ABOUT, re.DOTALL)
     assert match
     payload = json.loads(match.group(1))

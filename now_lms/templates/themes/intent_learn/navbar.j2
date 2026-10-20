@@ -156,11 +156,11 @@
             </ul>
             <div class="text-end">
                 {% if not current_user.is_authenticated %}
-                <a class="btn btn-primary me-2" href="{{ url_for('user.inicio_sesion') }}" role="button"
-                    >{{ _('Iniciar Sesión') }}</a
-                >
-                <a class="btn btn-warning me-2" href="{{ url_for('user.crear_cuenta') }}" role="button"
-                    >{{ _('Crear Cuenta') }}</a
+                {# Public visitors get no login or sign-up calls to action: Learn is
+                   invitation-only, so the one public door is the access request (the
+                   /user/login route itself is untouched for existing members). #}
+                <a class="btn btn-primary me-2" href="{{ url_for('request_access.request_access') }}" role="button"
+                    >Request access</a
                 >
                 {% else %}
                 <ul class="navbar-nav">
