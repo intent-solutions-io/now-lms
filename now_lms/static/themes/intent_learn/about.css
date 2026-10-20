@@ -258,6 +258,38 @@
         align-items: flex-start;
         flex-direction: column;
     }
+
+    /* Key facts: stack each row (label above value) instead of a 620px-wide
+       table that clipped off the right edge of a phone screen. */
+    .isl-about table {
+        min-width: 0;
+    }
+
+    .isl-about tr,
+    .isl-about th,
+    .isl-about td {
+        display: block;
+        width: auto;
+    }
+
+    .isl-about tr {
+        padding: 0.85rem 0;
+        border-bottom: 1px solid #d3dbd7;
+    }
+
+    .isl-about tr:last-child {
+        border-bottom: 0;
+    }
+
+    .isl-about th,
+    .isl-about td {
+        padding: 0;
+        border-bottom: 0;
+    }
+
+    .isl-about th {
+        margin-bottom: 0.3rem;
+    }
 }
 
 .isl-about .isl-about-person { display: flex; gap: 1.25rem; align-items: flex-start; }

@@ -126,3 +126,11 @@ def test_about_keeps_unknown_claims_out_of_public_copy():
     assert "Headquarters" not in ABOUT
     assert 'href="https://intentsolutions.io/projects/"' in ABOUT
     assert "This page does not list a public price." in ABOUT
+
+
+def test_key_facts_table_stacks_on_phones():
+    """The 620px Key facts table must not clip on a phone: rows stack under 760px."""
+    css = (ROOT / "now_lms/static/themes/intent_learn/about.css").read_text()
+    mobile = css[css.index("@media (max-width: 760px)"):]
+    assert "min-width: 0;" in mobile
+    assert "display: block;" in mobile
