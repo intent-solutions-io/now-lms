@@ -64,11 +64,11 @@ def test_about_page_names_public_team_and_valid_faq_schema():
 def test_about_page_shows_a_photo_for_every_team_member():
     """Every public team member gets the same photo card, not just one of them."""
     for name, photo in [
-        ("Jeremy Longshore", "jeremy-longshore-suit.jpeg"),
-        ("Heather C. Johnson, JD", "heather-johnson.png"),
-        ("Pablo Perez", "pablo-perez.jpeg"),
-        ("Max Sheahan", "max-sheahan-suit.jpeg"),
-        ("Tim Neunzig", "tim-neunzig.png"),
+        ("Jeremy Longshore", "jeremy-longshore-studio.jpeg"),
+        ("Heather C. Johnson, JD", "heather-johnson-studio.jpeg"),
+        ("Pablo Perez", "pablo-perez-studio.jpeg"),
+        ("Max Sheahan", "max-sheahan-studio.jpeg"),
+        ("Tim Neunzig", "tim-neunzig-studio.jpeg"),
     ]:
         assert f'src="/data/themes/intent_learn/team/{photo}" alt="{name}"' in ABOUT
         assert (ROOT / "now_lms/static/themes/intent_learn/team" / photo).is_file()
@@ -134,3 +134,11 @@ def test_key_facts_table_stacks_on_phones():
     mobile = css[css.index("@media (max-width: 760px)"):]
     assert "min-width: 0;" in mobile
     assert "display: block;" in mobile
+
+
+def test_team_cards_show_name_and_title_only():
+    """Team cards carry a photo, a name and a title, with no bio paragraphs."""
+    cards = re.findall(r'<article class="isl-about-person">.*?</article>', ABOUT)
+    assert len(cards) == 5
+    for card in cards:
+        assert card.count("<p>") == 1, card
