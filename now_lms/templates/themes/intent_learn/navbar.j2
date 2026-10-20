@@ -160,7 +160,7 @@
                    invitation-only, so the one public door is the access request (the
                    /user/login route itself is untouched for existing members). #}
                 <a class="btn btn-primary me-2" href="{{ url_for('request_access.request_access') }}" role="button"
-                    >Request access</a
+                    >{{ _("Request access") }}</a
                 >
                 {% else %}
                 <ul class="navbar-nav">
