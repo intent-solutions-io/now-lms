@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="{{ current_locale() }}">
+    <body style="margin: 0; padding: 0; background: #f3f6f4; color: #161b1d; font-family: Arial, sans-serif">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: #f3f6f4">
+            <tr>
+                <td align="center" style="padding: 32px 16px">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 620px; border: 1px solid #d3dbd7; background: #ffffff">
+                        <tr>
+                            <td style="padding: 24px 32px; border-bottom: 1px solid #d3dbd7; font-size: 16px; font-weight: 700">
+                                Intent<span style="color: #ef5a24">Solutions</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 32px 32px 12px">
+                                <h1 style="margin: 0 0 16px; font-size: 26px; line-height: 1.2">{{ _('Your agreement acceptance receipt') }}</h1>
+                                <p style="margin: 0 0 16px; color: #4f5b60; font-size: 16px; line-height: 1.65">
+                                    {{ _('This confirms that you accepted the User Agreement on your private setup page. Keep this email for your records.') }}
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0 32px 24px">
+                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size: 15px; line-height: 1.6; border-top: 1px solid #d3dbd7">
+                                    <tr><td style="padding: 8px 0; color: #4f5b60; width: 42%">{{ _('Accepted by (legal name)') }}</td><td style="padding: 8px 0">{{ acceptance.legal_full_name }}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #4f5b60">{{ _('Agreement') }}</td><td style="padding: 8px 0">{{ acceptance.agreement_document_id }}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #4f5b60">{{ _('Version') }}</td><td style="padding: 8px 0">{{ acceptance.agreement_version }}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #4f5b60">{{ _('Accepted on') }}</td><td style="padding: 8px 0">{{ accepted_at }}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #4f5b60">{{ _('Acceptance reference') }}</td><td style="padding: 8px 0; font-family: monospace">{{ acceptance.id }}</td></tr>
+                                    <tr><td style="padding: 8px 0; color: #4f5b60">{{ _('Document fingerprint (SHA-256)') }}</td><td style="padding: 8px 0; font-family: monospace; font-size: 12px; word-break: break-all">{{ acceptance.agreement_sha256 }}</td></tr>
+                                </table>
+                                <p style="margin: 16px 0 0; color: #4f5b60; font-size: 15px; line-height: 1.65">
+                                    {% if pdf_attached %}{{ _('A PDF copy of the agreement you accepted is attached.') }}{% else %}{{ _('Reply to this email if you would like a PDF copy of the agreement you accepted.') }}{% endif %}
+                                </p>
+                                <p style="margin: 16px 0 0; color: #4f5b60; font-size: 15px; line-height: 1.65">
+                                    {{ _('What happens next: access is prepared separately, and a welcome email follows once it is ready. There is nothing else you need to do now.') }}
+                                </p>
+                                {% if help_email %}
+                                <p style="margin: 16px 0 0; color: #697478; font-size: 13px; line-height: 1.55">{{ _('Questions:') }} <a href="mailto:{{ help_email }}" style="color: #2e5c59">{{ help_email }}</a></p>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+</html>
