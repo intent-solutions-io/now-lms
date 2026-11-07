@@ -71,6 +71,14 @@
                             {{ _('Learn is the practitioner practice of Intent Solutions, an applied AI engineering company.') }}
                             <strong>{{ _('Learn to define done, test the claim, and use evidence to operate and improve real systems.') }}</strong>
                         </p>
+                        {# Joining paragraph: verbatim from the public how-it-works page copy
+                           (https://intentsolutions.io/how-it-works/). Keep the two in step. #}
+                        <p class="lede isl-joining">{{ _('Applying is free. Requests are reviewed. Accepted members sign a mutual NDA and a User Agreement, receive a company mailbox, and use it to register for Claude Certified Architect (CCA): Foundations. The exam fee is paid by the member. Joining creates no employment relationship and guarantees no work, no certification and no partner-program standing.') }}</p>
+                        <p class="isl-joining-note">{{ _('Review is selective, on the quality of your work and not on a payment.') }} {{ _('Intent Solutions is a Select Services Partner in the Claude Partner Network.') }}</p>
+                        <p class="isl-joining-links">
+                            <a href="https://intentsolutions.io/how-it-works/">{{ _('How joining works') }}</a>
+                            <a href="https://intentsolutions.io/estate/">{{ _('The estate') }}</a>
+                        </p>
                         <div class="isl-cta-row">
                             {% if current_user.is_authenticated %}
                             <a class="isl-btn isl-btn-primary" href="{{ url_for('home.panel') }}">{{ _('Enter your practice') }} <span aria-hidden="true">→</span></a>
@@ -115,7 +123,7 @@
                     <div class="isl-section-head">
                         <p class="isl-kicker">{{ _('How the room works') }}</p>
                         <h2 id="practice-title">{{ _('A practice,') }} <span class="isl-hl">{{ _('not a course catalog.') }}</span></h2>
-                        <p>{{ _('Practice turns engineering knowledge into capability you can carry into your own work. Members use live review and evidence to sharpen how they build, evaluate, and operate systems; deeper access remains invitation-only.') }}</p>
+                        <p>{{ _('Practice turns engineering knowledge into capability you can carry into your own work. Members use live review and evidence to sharpen how they build, evaluate, and operate systems.') }}</p>
                     </div>
                     <div class="isl-journey">
                         <article class="isl-stage" data-step="1">
@@ -229,8 +237,8 @@
                             width="150"
                             height="270"
                             loading="lazy"
-                            title="{{ _('Anthropic Claude Partner badge — Claude Code, verified on Credly') }}"></iframe>
-                        <p class="isl-cred-note">{{ _('Verified Anthropic partner credential') }}</p>
+                            title="{{ _('Claude Partner Network badge, issued on Credly') }}"></iframe>
+                        <p class="isl-cred-note">{{ _('Claude Partner Network badge, issued on Credly') }}</p>
                     </div>
                 </div>
             </section>
@@ -239,7 +247,7 @@
                 <div class="isl-wrap">
                     <p class="isl-kicker">{{ _('Standards over spectacle') }}</p>
                     <h2 id="final-title">{{ _('Looking for a room that takes the work seriously?') }}</h2>
-                    <p>{{ _('Tell us what you are building and where you want sharper judgment. Access is selective because the quality of the room is the product.') }}</p>
+                    <p>{{ _('Tell us what you are building and where you want sharper judgment. Applying is free.') }}</p>
                     <div class="isl-cta-row">
                         {% if current_user.is_authenticated %}
                         <a class="isl-btn isl-btn-primary" href="{{ url_for('home.panel') }}">{{ _('Go to your dashboard') }} <span aria-hidden="true">→</span></a>
@@ -268,6 +276,7 @@
                     <div>
                         <span class="fb"><img src="{{ S }}/logo-mark.png" alt="" width="22" height="22" /> {{ _('Intent Solutions Learn') }}</span>
                         <p class="isl-footer-note">{{ _('Part of one Intent Solutions company: engineering, evaluations, demos, teaching, and reusable tools that help teams carry the work forward.') }}</p>
+                        <p class="isl-footer-note">{{ _('Questions:') }} <a href="mailto:support@intentsolutions.io">support@intentsolutions.io</a></p>
                     </div>
                     <nav class="isl-legal" aria-label="{{ _('Legal') }}">
                         <a href="https://intentsolutions.io/terms">{{ _('Terms of Service') }}</a>

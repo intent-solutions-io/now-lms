@@ -221,6 +221,10 @@
 .isl-hero-copy .lede strong { color: var(--graphite); font-weight: 600; }
 .isl-cta-row { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 2rem; }
 .isl-fit-note { margin: 1rem 0 0; color: rgb(var(--ink-faint)); font-family: var(--font-mono); font-size: 0.68rem; }
+.isl-hero-copy .isl-joining { margin-top: 1.1rem; font-size: 0.98rem; line-height: 1.6; }
+.isl-joining-note { max-width: 57ch; margin: 0.75rem 0 0; color: rgb(var(--ink-dim)); font-size: 0.9rem; line-height: 1.55; }
+.isl-joining-links { display: flex; flex-wrap: wrap; gap: 0 1.25rem; margin: 0.35rem 0 0; }
+.isl-joining-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--graphite); font-size: 0.875rem; text-decoration: underline; text-underline-offset: 3px; }
 
 .isl-standard {
     position: relative;
@@ -373,7 +377,7 @@
 .isl-team-link { margin: 1.5rem 0 0; text-align: center; }
 .isl-team-link a { display: inline-flex; align-items: center; min-height: 44px; color: var(--graphite); text-underline-offset: 0.2em; }
 
-/* Verified partner credential (Credly iframe) under the team grid. */
+/* Claude Partner Network badge (Credly iframe) under the team grid. */
 .isl-cred { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; margin-top: clamp(2rem, 4vw, 3rem); padding-top: 1.25rem; border-top: 1px solid rgb(var(--line)); }
 .isl-cred iframe { max-width: 100%; border: 0; }
 .isl-cred-note { margin: 0; color: rgb(var(--ink-dim)); font-size: 0.68rem; line-height: 1.35; }
@@ -411,6 +415,8 @@
 .isl-footer .fb { display: inline-flex; align-items: center; gap: 0.55rem; color: #fff; font-family: var(--font-display); font-size: 0.9rem; font-weight: 650; }
 .isl-footer .fb img { width: 22px; height: 22px; object-fit: contain; }
 .isl-footer-note { max-width: 42ch; margin: 0.65rem 0 0; color: #909b9e; font-size: 0.77rem; }
+.isl-footer-note a { color: #aeb7b9; text-underline-offset: 3px; }
+.isl-footer-note a:hover { color: #fff; }
 .isl-legal { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 1.25rem; }
 .isl-legal a { display: inline-flex; min-height: 44px; align-items: center; color: #c6cdcf; font-size: 0.74rem; }
 .isl-legal a:hover { color: #fff; }

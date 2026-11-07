@@ -125,7 +125,20 @@ def test_about_keeps_unknown_claims_out_of_public_copy():
     assert "[[" not in ABOUT
     assert "Headquarters" not in ABOUT
     assert 'href="https://intentsolutions.io/projects/"' in ABOUT
-    assert "This page does not list a public price." in ABOUT
+    # Joining is free; the only fee is the exam fee the member pays the testing provider.
+    assert "This page does not list a public price." not in ABOUT
+    assert "Free to apply and free to join." in ABOUT
+    assert "Intent Solutions does not sell exam access." in ABOUT
+
+
+def test_about_describes_a_practitioner_community_and_states_partner_standing():
+    """The LMS is not part of the joining path, and the partner sentence is exact."""
+    assert "Intent Solutions is a Select Services Partner in the Claude Partner Network." in ABOUT
+    for retired in ("private learning platform", "enter the platform", "through the platform"):
+        assert retired not in ABOUT.lower()
+    assert "Practitioner community, request-access form, and support@intentsolutions.io" in ABOUT
+    for overclaim in ("verified", "endorsed", "certified partner"):
+        assert overclaim not in ABOUT.lower()
 
 
 def test_key_facts_table_stacks_on_phones():
