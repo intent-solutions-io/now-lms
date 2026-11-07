@@ -146,6 +146,47 @@ def test_front_door_expresses_the_selective_practice_doctrine() -> None:
         assert phrase not in lowered
 
 
+JOINING_PARAGRAPH = (
+    "Applying is free. Requests are reviewed. Accepted members sign a mutual NDA and a User Agreement, "
+    "receive a company mailbox, and use it to register for Claude Certified Architect (CCA): Foundations. "
+    "The exam fee is paid by the member. Joining creates no employment relationship and guarantees no work, "
+    "no certification and no partner-program standing."
+)
+
+
+def test_front_door_states_how_joining_works_in_one_consistent_voice() -> None:
+    """The root must not say free and invitation-only at once, and must name the process.
+
+    The joining paragraph is copied verbatim from the public how-it-works page
+    (intentsolutions.io/how-it-works/); the same sentence is the form's promise.
+    """
+    template = _template()
+
+    assert JOINING_PARAGRAPH in template
+    assert "Review is selective, on the quality of your work and not on a payment." in template
+    # The old framing contradicted the form's "free to join".
+    assert "invitation-only" not in template
+    assert "Access is selective because the quality of the room is the product." not in template
+    assert "Applying is free." in template
+
+    assert 'href="https://intentsolutions.io/how-it-works/">{{ _(\'How joining works\') }}' in template
+    assert 'href="https://intentsolutions.io/estate/">{{ _(\'The estate\') }}' in template
+    assert 'href="mailto:support@intentsolutions.io"' in template
+    assert "jeremy@" not in template
+
+
+def test_front_door_partner_standing_is_exact_and_never_verified_or_endorsed() -> None:
+    """Standing is Select Services Partner in the Claude Partner Network, nothing stronger."""
+    template = _template()
+
+    assert "Intent Solutions is a Select Services Partner in the Claude Partner Network." in template
+    assert "Claude Partner Network badge, issued on Credly" in template
+    assert "www.credly.com/embedded_badge/ddf22fb4-0aa6-46b3-a93b-0b45b509e471" in template
+    lowered = template.lower()
+    for overclaim in ("verified anthropic", "verified on credly", "endorsed", "anthropic-verified"):
+        assert overclaim not in lowered
+
+
 def test_front_door_maps_the_intent_solutions_network() -> None:
     """Keep all properties and Explore reachable through the canonical network banner."""
     template = _template()

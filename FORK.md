@@ -194,6 +194,8 @@ Merging it will conflict with #57, which rewrote the same catalogues. **#57 reco
 
 ## Fork changelog
 
+- **2026-11-07**: Learn root and About now say one thing about joining: applying is free, requests are reviewed, and the exam fee is paid by the member. The partner standing is the exact sentence "Intent Solutions is a Select Services Partner in the Claude Partner Network." and the Credly caption no longer says "verified". The root links How joining works and The estate on intentsolutions.io and lists support@intentsolutions.io. About describes a practitioner community, not a private platform. Theme and repository-owned content only; the login, member app, blog and data-overview routes are unchanged.
+
 - **2026-09-30** — Align the Intent Learn homepage and repository-owned About content with the company deployment thesis. Teaching transfers operating capability; engineering, evaluations, demos, and reusable tools inform the shared practice. Member flows and platform behavior are unchanged.
 
 Fork-relevant, most recent first. (Upstream feature history lives in the root `CHANGELOG.md`; this
