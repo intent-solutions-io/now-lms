@@ -27,6 +27,10 @@ cat > "${fixture}/bin/curl" <<'STUB'
 case "${!#}" in
   https://learn.intentsolutions.io*)
     if [[ "${!#}" == *\?* ]]; then echo 'unexpected query bypass' >&2; exit 1; fi
+    if [ "${!#}" = "https://learn.intentsolutions.io/home" ]; then
+      printf '%s' "${HOME_REDIRECT:-302 https://learn.intentsolutions.io/}"
+      exit 0
+    fi
     if [ "${!#}" = "https://learn.intentsolutions.io${STALE_PUBLIC_PATH:-missing}" ]; then
       echo '<meta name="intent-learn-release" content="old-release" />'
     else
@@ -65,11 +69,21 @@ echo 'PASS: public teaser smoke (2 allowed responses, 5 rejected leaks)'
 
 # An image/loopback check can pass while the public ingress still serves an old
 # shared response. Every plain public entry path must reject that exact defect.
-for path in / /home /course/explore /program/explore; do
+for path in / /course/explore /program/explore; do
   if STALE_PUBLIC_PATH="${path}" bash "${fixture}/scripts/deploy-smoke.sh" >"${fixture}/result" 2>&1; then
     echo "FAIL: stale public ${path} was accepted" >&2
     exit 1
   fi
   grep -Fq "public ${path} is not rendering release fixture-commit" "${fixture}/result"
 done
-echo 'PASS: stale public responses rejected on all four ordinary URLs'
+echo 'PASS: stale public responses rejected on all three rendered URLs'
+
+# /home is redirected to / by the ingress; anything else from it must fail.
+for answer in '200 ' '301 https://learn.intentsolutions.io/' '302 https://example.invalid/'; do
+  if HOME_REDIRECT="${answer}" bash "${fixture}/scripts/deploy-smoke.sh" >"${fixture}/result" 2>&1; then
+    echo "FAIL: /home answer '${answer}' was accepted" >&2
+    exit 1
+  fi
+  grep -Fq 'public /home should redirect to /' "${fixture}/result"
+done
+echo 'PASS: /home must 302 to / (3 wrong answers rejected)'

@@ -87,12 +87,17 @@ done
 # those hid stale shared response caches during the 2026-10-16 deployment.
 # The marker is generated into the theme by Dockerfile from the same BUILD_SHA
 # checked above; unlike the historic static markers it changes every release.
-for path in / /home /course/explore /program/explore; do
+# /home is not in this list: the ingress redirects the duplicate /home to /
+# (302, Caddy @lms_dupe), so the redirect itself is asserted below instead.
+for path in / /course/explore /program/explore; do
     public_page="$(curl -fsS --max-time 20 "https://learn.intentsolutions.io${path}")" \
         || fail "public ${path} did not serve"
     grep -Fq "<meta name=\"intent-learn-release\" content=\"${want}\" />" <<<"${public_page}" \
         || fail "public ${path} is not rendering release ${want} (stale cache, template or ingress)"
 done
+home_redirect="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "https://learn.intentsolutions.io/home")"
+[ "${home_redirect}" = "302 https://learn.intentsolutions.io/" ] \
+    || fail "public /home should redirect to / but answered: ${home_redirect}"
 
 # 9. Record repository state in the receipt, not just local state. The gate that
 #    REFUSES a divergent deploy lives in deploy-vps.sh (it is the one that can
